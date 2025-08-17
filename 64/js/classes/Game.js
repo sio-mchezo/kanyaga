@@ -653,7 +653,7 @@ class Game {
     let onQuit = () => {
       if (this.activeMinigameInfo) this.activeMinigameInfo.canvas.remove();
       this.activeMinigameInfo = null;
-      this.player.z += 6;
+      if (i <= 3) this.player.z += 6;
       this.sceneTransitions.push(new SceneTransition(1, "circle", "out"));
     };
 
