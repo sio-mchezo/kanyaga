@@ -7,8 +7,7 @@ class IntroScene {
     };
     if (overlay) overlay.style['pointerEvents'] = 'none'; // allow clicks past the joystick overlay
 
-    // Example usage
-    const canvas = document.createElement('canvas');
+    const titleCanvasArr = sliceCanvas(titleImg, 64, 64);
 
     const ftlCanvasArr = sliceCanvas(ftlImg, 64, 64);
     let solarFlareCanvasArr = sliceCanvas(solarFlareImg, 64, 64);
@@ -43,6 +42,8 @@ class IntroScene {
     const workshopChargingAltCanvasArr = sliceCanvas(workshopChargingAltImg, 64, 64);
     const workshopChargingStableCanvasArr = sliceCanvas(workshopChargingStableImg, 64, 64);
 
+    const tapeCanvasArr = sliceCanvas(tapeImg, 64, 64);
+
     const ACTORS = {
       dad: {
         happy: engiHappyCanvasArr[0],
@@ -66,6 +67,16 @@ class IntroScene {
 
     // // build frames
     const frames = [];
+
+    frames.push(
+      ...titleCanvasArr.map((n,i) => {
+        return {
+          canvas: n,
+          duration: 250,
+          text: `     INSERT COIN`
+        };
+      })
+    );
 
     const INTRO_TEXT = `Next Star: H374b`;
 
@@ -354,6 +365,21 @@ class IntroScene {
       text: "Very well...",
       sfx: 'bot_talk'
     });
+    frames.push({
+      canvas: ACTORS.dad.smirk,
+      duration: 300,
+      text: "It's shanty time!",
+      sfx: 'talk3'
+    });
+    frames.push(
+      ...tapeCanvasArr.map((n,i) => {
+        return {
+          canvas: n,
+          duration: 250,
+          sfx: i === 2 ? 'cassette' : undefined,
+        };
+      })
+    );
 
     this.cfp = new CanvasFramePlayer(target, frames, 12, () => this.onQuit());
     this.cfp.play();
