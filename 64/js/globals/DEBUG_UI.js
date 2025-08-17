@@ -26,7 +26,7 @@ DEBUG_UI.init = () => {
 DEBUG_UI.update = (time) => {
   if (typeof DEBUG_UI !== "undefined") {
     DEBUG_UI.updateDebugMap();
-    DEBUG_UI.updatePlayerPos();
+    //DEBUG_UI.updatePlayerPos();
   }
 };
 DEBUG_UI.initMapSelection = () => {
@@ -189,6 +189,8 @@ DEBUG_UI.updateDebugMap = () => {
   }
   debugCtx.clearRect(0, 0, debugMap.width, debugMap.height);
   debugCtx.drawImage(olimg, 0, 0, debugMap.width, debugMap.height);
+  GAME.hitCtx.fillStyle = '#000000'; // paint over the white square in top left, from debug times
+  GAME.hitCtx.fillRect(140,140, 250, 250);
 
   GAME.currentMap.houseGroup.children.forEach((house) => {
     if (!house.visible) return;

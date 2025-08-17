@@ -337,7 +337,7 @@ class Game {
     treeGroup.userData.instances.push(treeInstance);
 
     treeInstance.root.position.set(x, _y, z);
-    treeInstance.root.scale.multiplyScalar(0.5);
+    treeInstance.root.scale.multiplyScalar(0.75);
     const treeId = "tree-" + treeGroup.children.length;
     treeInstance.root.name = treeId;
     if (this.debugMode) console.groupEnd();
@@ -664,16 +664,16 @@ class Game {
         if (i == 10 && !this.hasScaledTrees.dryad) {
             console.log("DRYAD");
             this.hasScaledTrees.dryad = true;
-            this.charTrees.dryad.forEach(t => t.scale.multiplyScalar(20));
+            this.charTrees.dryad.forEach(t => t.scale.multiplyScalar(13.33333));
         }
         if (i == 11 && !this.hasScaledTrees.elf) {
             console.log("ELFIE", this.charTrees.elf);
             this.hasScaledTrees.elf = true;
-            this.charTrees.elf.forEach(t => t.scale.multiplyScalar(20));
+            this.charTrees.elf.forEach(t => t.scale.multiplyScalar(13.33333));
         }
         if (i == 12 && !this.hasScaledTrees.squirrel) {
             this.hasScaledTrees.squirrel = true;
-            this.charTrees.squirrel.forEach(t => t.scale.multiplyScalar(20));
+            this.charTrees.squirrel.forEach(t => t.scale.multiplyScalar(13.33333));
         }
 
         if (Object.keys(this.minigameScores).length < 4) return;
@@ -681,6 +681,7 @@ class Game {
         if (!dd) return;
         dd.disabled = false;
         dd.houseInstance.root.visible = true;
+        DEBUG_UI.update(time);
       }
     };
 
@@ -862,6 +863,7 @@ class Game {
     }
   }
 
+  hasDrawnDebugMap = false;
   update(time) {
     if (this.activeMinigameInfo) {
       this.updateMinigame(time);
@@ -869,7 +871,7 @@ class Game {
       this.updatePlayer(time);
       this.checkDoors(time);
 
-      if (typeof DEBUG_UI !== "undefined") {
+      if (typeof DEBUG_UI !== "undefined" && !this.hasDrawnDebugMap) {
         DEBUG_UI.update(time);
       }
     }
