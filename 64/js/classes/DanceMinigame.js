@@ -13,7 +13,7 @@ class DanceMinigame {
     this.onQuit = () => {
       if (overlay) overlay.style['pointerEvents'] = 'auto'; // restore the joystick overlay's clickability
       onQuit();
-      GAME.startMinigame(postMinigameId, TIME);
+      if (postMinigameId) GAME.startMinigame(postMinigameId, TIME);
     };
     if (overlay) overlay.style['pointerEvents'] = 'none'; // allow clicks past the joystick overlay
     this.canvas = canvas;
