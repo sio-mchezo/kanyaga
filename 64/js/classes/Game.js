@@ -1,4 +1,5 @@
 class Game {
+  minigameScores = {};
   constructor(
     options = {
       canvas,
@@ -91,7 +92,6 @@ class Game {
       antialias: false,
       canvas: this.canvas,
     });
-    console.log("this.canvas:", this.canvas);
     this.renderer.setClearColor(0x0088ff);
     this.renderer.shadowMap.enabled = true;
     this.renderer.setPixelRatio(64 / 64);
@@ -135,11 +135,6 @@ class Game {
       300,
       300,
     );
-    console.log("this.currentMap.mapImg:", this.currentMap.mapImg);
-    console.log(
-      "this.currentMap.displacementMapImg:",
-      this.currentMap.displacementMapImg,
-    );
     const material = new THREE.MeshStandardMaterial({
       displacementMap: new THREE.CanvasTexture(
         this.currentMap.displacementMapImg,
@@ -150,7 +145,6 @@ class Game {
       metalness: 0,
       roughness: 20,
     });
-    console.log("material:", material);
     material.map.magFilter = THREE.NearestFilter;
     material.map.minFilter = THREE.NearestFilter;
 
@@ -189,7 +183,6 @@ class Game {
     this.hero = new THREE.Group();
     this.hero.name = "hero";
     this.scene.add(this.hero);
-    console.log("this.hero.position:", this.hero.position);
     this.camera.lookAt(this.hero.position);
     this.heroFacetex = new THREE.TextureLoader().load("assets/face.png");
     this.heroFacetex.magFilter = THREE.NearestFilter;
@@ -252,7 +245,7 @@ class Game {
     });
     if (this.debugMode) console.groupEnd();
   }
-  initHouse({ x, y, z, modelJsonObj }) {
+  initHouse({ x, y, z, modelJsonObj, disabled }) {
     if (this.debugMode) console.groupCollapsed("GAME.initHouse");
     const _y = y ?? this.getMapHeight({ x, z }, false);
     const { houseGroup } = this.currentMap;
@@ -264,6 +257,7 @@ class Game {
     houseInstance.root.scale.multiplyScalar(10);
     const houseId = "house-" + houseGroup.children.length;
     houseInstance.root.name = houseId;
+    houseInstance.root.visible = !disabled;
 
     const door = houseInstance.instances.door;
 
@@ -295,10 +289,12 @@ class Game {
 
     this.doorDataList.push({
       houseId,
+      houseInstance: houseInstance,
       obj: houseInstance.instances.door,
       minigameIndex: houseGroup.children.length - 1,
       //pivot: houseInstance.groups.pivot,
       pivot,
+      disabled,
     });
     if (this.debugMode) console.groupEnd();
   }
@@ -308,7 +304,6 @@ class Game {
     this.currentMap.treeGroup = new THREE.Group();
 
     const { treeGroup, trees = [] } = this.currentMap;
-    console.log("trees:", trees);
     treeGroup.name = "treeGroup";
     treeGroup.userData.instances = [];
     this.scene.add(treeGroup);
@@ -474,7 +469,6 @@ class Game {
     ];
 
     let value = samples.reduce((sum, x) => (sum += x)) / samples.length;
-    // console.log("value:", value);
 
     const ratio = value / 255;
     const displacementScale = this.currentMap.displacementScale; // scale factor for height
@@ -527,6 +521,7 @@ class Game {
       // No currently triggered doorway, check if we any are close enough to trigger
       for (let i = 0; i < doorDataList.length; i++) {
         let doorData = doorDataList[i];
+        if (doorData.disabled) continue;
         let doorPos = new THREE.Vector3();
         doorData.obj.getWorldPosition(doorPos);
 
@@ -592,6 +587,7 @@ class Game {
 
       this.initHouses();
       this.initTrees();
+      this.initRocket();
     } else {
       console.warn(`Map not found: ${mapName}`);
     }
@@ -599,14 +595,12 @@ class Game {
 
   clearGroups() {
     const houseUuids = this.currentMap.houseGroup.children.map((n) => n.uuid);
-    // console.log("houseUuids:", houseUuids);
     houseUuids.forEach((uuid) => {
       const obj = this.scene.getObjectByProperty("uuid", uuid);
       if (obj) obj.parent.remove(obj);
     });
 
     const treeUuids = this.currentMap.treeGroup.children.map((n) => n.uuid);
-    // console.log("treeUuids:", treeUuids);
     treeUuids.forEach((uuid) => {
       const obj = this.scene.getObjectByProperty("uuid", uuid);
       obj.parent.remove(obj);
@@ -632,7 +626,6 @@ class Game {
       );
     };
     if (this.minigameDataMap[i] === undefined) {
-      debugger;
       return abort();
     }
 
@@ -647,11 +640,19 @@ class Game {
     canvas.className = "minigame-canvas";
     document.body.append(canvas);
 
-    let onQuit = () => {
+    let onQuit = (checkCompletion = false) => {
       if (this.activeMinigameInfo) this.activeMinigameInfo.canvas.remove();
       this.activeMinigameInfo = null;
       if (i <= 3) this.player.z += 6;
       this.sceneTransitions.push(new SceneTransition(1, "circle", "out"));
+
+      if (checkCompletion) {
+        if (Object.keys(this.minigameScores).length < 4) return;
+        let dd = this.doorDataList[this.doorDataList.length - 1]
+        if (!dd) return;
+        dd.disabled = false;
+        dd.houseInstance.root.visible = true;
+      }
     };
 
     this.sceneTransitions.push(new SceneTransition(1, "circle", "out"));
@@ -834,10 +835,8 @@ class Game {
 
   update(time) {
     if (this.activeMinigameInfo) {
-      // console.log("Updating minigame...");
       this.updateMinigame(time);
     } else {
-      // console.log("Updating game...");
       this.updatePlayer(time);
       this.checkDoors(time);
 

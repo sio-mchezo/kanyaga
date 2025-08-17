@@ -36,7 +36,17 @@ class CharacterScene {
     const frames = [];
 
     let actorCanvas = ACTORS[charName][emotion];
-    let text = { sad: "Our trees are sick", happy: "You did it!" }[emotion];
+    let text = {
+      elf: {
+        sad: "Our trees are sick", happy: "Healing energy!",
+      },
+      squirrel: {
+        sad: "I miss my trees", happy: "That was nuts!",
+      },
+      dryad: {
+        sad: "The forest weeps", happy: "Bountiful growth!",
+      }
+    }[charName][emotion];
     frames.push({
       canvas: actorCanvas,
       duration: 455,

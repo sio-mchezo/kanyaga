@@ -80,7 +80,6 @@ PIXEL_TEXT.textCanvas = (
     });
     return canvas;
   }
-  debugger;
 };
 PIXEL_TEXT.measureWidth = (text, kerning = 1) => {
   let width =

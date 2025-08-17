@@ -174,7 +174,6 @@ DEBUG_UI.updatePlayerPos = () => {
   const xvar = document.getElementById("xvar");
   if (!xvar) {
     console.warn("xvar element not found");
-    debugger;
     return;
   }
   xvar.innerHTML = Math.floor(GAME.player.x);
@@ -192,6 +191,7 @@ DEBUG_UI.updateDebugMap = () => {
   debugCtx.drawImage(olimg, 0, 0, debugMap.width, debugMap.height);
 
   GAME.currentMap.houseGroup.children.forEach((house) => {
+    if (!house.visible) return;
     let uv = {
       u: house.position.x / 4096 / 2 + 0.5,
       v: house.position.z / 4096 / 2 + 0.5,
