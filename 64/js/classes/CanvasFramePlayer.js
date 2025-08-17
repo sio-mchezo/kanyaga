@@ -15,6 +15,8 @@ class CanvasFramePlayer {
     this.ctx = targetCanvas.getContext('2d', { alpha: true, desynchronize: true });
     this.ctx.imageSmoothingEnabled = false;
 
+    this._musicPlayer = null; // <---- NEW: keep track of zzfxM player instance
+
     this.frames = frames;
     this.fps = Math.max(1, fps | 0);
     this.defaultInterval = 1000 / this.fps;
@@ -131,17 +133,41 @@ class CanvasFramePlayer {
 
   // --- internals ---
   _enterFrame(index, ts) {
+    console.log('enter frame');
     // reset per-frame state (do NOT remove the click listener)
     this._awaitingClick = false;
     this._clickLogic = null;
+
+    // --- stop any previous zzfxM music if it was playing ---
+    if (this._musicPlayer && typeof this._musicPlayer.stop === 'function') {
+      try { this._musicPlayer.stop(); } catch(_) {}
+      this._musicPlayer = null;
+    }
 
     this._i = index;
     const f = this.frames[this._i] || {};
     const dur = (f.duration > 0 ? f.duration : this.defaultInterval);
     this._frameEndsAt = ts + dur;
-    // --- SFX support ---
+
+    // --- SFX support (unchanged) ---
     if (f.sfx && typeof f.sfx === 'string' && typeof SFX !== 'undefined' && SFX && SFX[f.sfx]) {
       try { zzfx(...SFX[f.sfx]); } catch (err) { console.warn('SFX error:', err); }
+    }
+    console.log("f.zzfxM:", f.zzfxM);
+    // --- ZZFXM MUSIC support (NEW) ---
+    if (f.zzfxM && typeof f.zzfxM === 'string'
+        && typeof ZZFXM_MUSIC !== 'undefined'
+        && ZZFXM_MUSIC[f.zzfxM]) {
+          // debugger;
+      try {
+        // zzfxM(data, volume?, tempo?, returnPlayer?)
+        // returnPlayer=true makes it return a player control object
+        // this._musicPlayer = zzfxM(ZZFXM_MUSIC[f.zzfxM], 1, 1, true);
+        
+        const songBuffer = zzfxM(...ZZFXM_MUSIC[f.zzfxM]);
+        this._musicPlayer = zzfxP(...songBuffer);
+      }
+      catch (err) { console.warn('zzfxM error:', err); }
     }
 
     // prepare text overlay
@@ -161,11 +187,18 @@ class CanvasFramePlayer {
       const key = String(f.text);
       const indices = (this.textMap[key] || []).slice().sort((a, b) => a - b);
       this._group = { text: key, indices, active: true };
-      this._textEndsAt = Number.POSITIVE_INFINITY;
 
+      this._textEndsAt = Number.POSITIVE_INFINITY;
       this._clickLogic = () => {
         if (!this._group || !this._group.active) return;
         this._group.active = false;
+
+        // --- stop music when exiting the group ---
+        if (this._musicPlayer && typeof this._musicPlayer.stop === 'function') {
+          try { this._musicPlayer.stop(); } catch(_) {}
+          this._musicPlayer = null;
+        }
+
         const lastIdx = this._group.indices[this._group.indices.length - 1];
         let next = lastIdx + 1;
         if (next >= this.frames.length) {
