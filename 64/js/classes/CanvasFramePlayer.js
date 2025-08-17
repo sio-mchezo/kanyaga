@@ -133,7 +133,6 @@ class CanvasFramePlayer {
 
   // --- internals ---
   _enterFrame(index, ts) {
-    console.log('enter frame');
     // reset per-frame state (do NOT remove the click listener)
     this._awaitingClick = false;
     this._clickLogic = null;
@@ -153,7 +152,6 @@ class CanvasFramePlayer {
     if (f.sfx && typeof f.sfx === 'string' && typeof SFX !== 'undefined' && SFX && SFX[f.sfx]) {
       try { zzfx(...SFX[f.sfx]); } catch (err) { console.warn('SFX error:', err); }
     }
-    console.log("f.zzfxM:", f.zzfxM);
     // --- ZZFXM MUSIC support (NEW) ---
     if (f.zzfxM && typeof f.zzfxM === 'string'
         && typeof ZZFXM_MUSIC !== 'undefined'
