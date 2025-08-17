@@ -42,7 +42,7 @@ class CreditsScene {
         return {
           canvas: n,
           duration: 250,
-          text: "Code/Art by dr okra",
+          text: "Code/Art by          dr okra",
           sfx: (i % 4) === 0 ? 'heartbeat' : undefined
         };
       })
