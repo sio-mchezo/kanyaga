@@ -4,7 +4,6 @@ class IntroScene {
     this.onQuit = () => {
       if (overlay) overlay.style['pointerEvents'] = 'auto'; // restore the joystick overlay's clickability
       onQuit();
-      GAME.startMinigame(13, TIME);
     };
     if (overlay) overlay.style['pointerEvents'] = 'none'; // allow clicks past the joystick overlay
 
@@ -73,7 +72,8 @@ class IntroScene {
       ...titleCanvasArr.map((n,i) => {
         return {
           canvas: n,
-          duration: 250,
+          duration: 280,
+          zzfxM: 'intro',
           text: `     INSERT COIN`
         };
       })
