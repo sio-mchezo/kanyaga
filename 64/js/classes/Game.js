@@ -357,40 +357,40 @@ class Game {
     this.objectArr.push(this.currentMap.characterGroup);
 
     let elf = new CrappyObjectInstance(elf_model);
-    let x = 250;
-    let z = -190;
+    let x = -110;
+    let z = 70;
     let y = this.getMapHeight({x,z}, false);
     elf.root.position.set(x, y, z);
     elf.root.scale.multiplyScalar(30);
     this.currentMap.characterGroup.add(elf.root);
 
     let dryad = new CrappyObjectInstance(dryad_model);
-    x = -250;
-    z = -190;
+    x = -350;
+    z = 210;
     y = this.getMapHeight({x,z}, false);
     dryad.root.position.set(x, y, z);
     dryad.root.scale.multiplyScalar(30);
     this.currentMap.characterGroup.add(dryad.root);
 
     let squirrel = new CrappyObjectInstance(squirrel_model);
-    x = 40;
-    z = -190;
+    x = 290;
+    z = 170;
     y = this.getMapHeight({x,z}, false);
     squirrel.root.position.set(x, y, z);
     squirrel.root.scale.multiplyScalar(30);
     this.currentMap.characterGroup.add(squirrel.root);
 
     let kid = new CrappyObjectInstance(kid_model);
-    x = 0;
-    z = -40;
+    x = -120;
+    z = 600;
     y = this.getMapHeight({x,z}, false);
     kid.root.position.set(x, y, z);
     kid.root.scale.multiplyScalar(30);
     this.currentMap.characterGroup.add(kid.root);
 
     let dad = new CrappyObjectInstance(dad_model);
-    x = 40;
-    z = -40;
+    x = -30;
+    z = 600;
     y = this.getMapHeight({x,z}, false);
     dad.root.position.set(x, y, z);
     dad.root.scale.multiplyScalar(30);
@@ -483,12 +483,9 @@ class Game {
     if (!this.prevX) {
       this.prevX = position.x;
     }
-    if (this.prevX !== position.x) {
-      console.log("value:", value, this.currentMap.waterLevel);
-    }
     this.prevX = position.x;
     if (isPlayer) {
-      if (value < this.currentMap.waterLevel) value = this.currentMap.waterLevel;
+      if (value < this.currentMap.waterLevel) value = this.currentMap.waterLevel - 40;
     }
     if (this.debugMode) console.groupEnd();
     return value;

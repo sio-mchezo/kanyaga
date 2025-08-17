@@ -26,15 +26,9 @@
     <script src="js/globals/PIXEL_FONT_boxyMin.js"></script>
     <script src="js/utils/PIXEL_TEXT.js"></script>
 
-    <img src="assets/terrain/natron_bump.png" id="natronBumpImg" style="display:none;">
-    <img src="assets/terrain/natron_color.png" id="natronColorImg" style="display:none;">
     <img src="assets/terrain/hit.png" id="natronHit" style="display: none" />
-    <img src="assets/terrain/atoll_bump.png" id="atollBumpImg" style="display:none;">
-    <img src="assets/terrain/atoll_color.png" id="atollColorImg" style="display:none;">
     <img src="assets/terrain/crab_bump.png" id="crabBumpImg" style="display:none;">
     <img src="assets/terrain/crab_color.png" id="crabColorImg" style="display:none;">
-    <img src="assets/terrain/flower_bump.png" id="flowerBumpImg" style="display:none;">
-    <img src="assets/terrain/flower_color.png" id="flowerColorImg" style="display:none;">
 
     <img src="assets/treeBark_35x150.png" id="barkImg" style="display:none;">
     <img src="assets/face.png" id="heroFaceImg" style="display:none;">
@@ -104,20 +98,21 @@
             height: 64,
             mapWidth: 1024,
             mapHeight: 1024,
-            currentMapName: "Natron",
+            currentMapName: "Crab",
             displacementBias: 0,
             maps: {
-                "Natron": {
-                    mapImg: document.getElementById('natronColorImg'),
-                    displacementMapImg: document.getElementById('natronBumpImg'),
-                    waterLevel: 80,
+                "Crab": {
+                    mapImg: document.getElementById('crabColorImg'),
+                    displacementMapImg: document.getElementById('crabBumpImg'),
+                    waterLevel: 200,
                     displacementScale: 100,
                     houses: [
-                        { x: -220, z: -260, modelJsonObj: MODELS_CONFIG.house },
-                        { x: 220, z: -260, modelJsonObj: MODELS_CONFIG.house },
-                        { x: 0, z: -260, modelJsonObj: MODELS_CONFIG.house },
+                        { x: -380, z: 160, modelJsonObj: MODELS_CONFIG.house },
+                        { x: -80, z: 20, modelJsonObj: MODELS_CONFIG.house },
+                        { x: 260, z: 120, modelJsonObj: MODELS_CONFIG.house },
                     ],
                     trees: [
+                    /*
                         { x: 70, z: 160, modelJsonObj: MODELS_CONFIG.tree_Alder_5 },
                         { x: -120, z: -200, modelJsonObj: MODELS_CONFIG.tree_Ash_2 },
                         { x: 180, z: 300, modelJsonObj: MODELS_CONFIG.tree_Aspen_7 },
@@ -133,25 +128,8 @@
                         { x: -200, z: -560, modelJsonObj: MODELS_CONFIG.tree_SweetChestnut_2 },
                         { x: 480, z: 600, modelJsonObj: MODELS_CONFIG.tree_Sycamore_9 },
                         { x: -820, z: -300, modelJsonObj: MODELS_CONFIG.tree_TurkeyOak_1 },
+                        */
                     ],
-                },
-                "Atoll": {
-                    mapImg: document.getElementById('atollColorImg'),
-                    displacementMapImg: document.getElementById('atollBumpImg'),
-                    waterLevel: 180,
-                    displacementScale: 200,
-                },
-                "Crab": {
-                    mapImg: document.getElementById('crabColorImg'),
-                    displacementMapImg: document.getElementById('crabBumpImg'),
-                    waterLevel: 550,
-                    displacementScale: 400,
-                },
-                "Flower": {
-                    mapImg: document.getElementById('flowerColorImg'),
-                    displacementMapImg: document.getElementById('flowerBumpImg'),
-                    waterLevel: 80,
-                    displacementScale: 200,
                 },
             },
             player: {
@@ -159,8 +137,8 @@
                 size: 32,
                 count: 4,
                 fps: 16,
-                x: 0,
-                z: 0,
+                x: -5,
+                z: 40,
                 xlerp: 0,
                 zlerp: 0,
                 vx: 0,

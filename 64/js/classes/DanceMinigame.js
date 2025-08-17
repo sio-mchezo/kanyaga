@@ -12,6 +12,7 @@ class DanceMinigame {
     let overlay = document.getElementById('joystick-overlay');
     this.onQuit = () => {
       if (overlay) overlay.style['pointerEvents'] = 'auto'; // restore the joystick overlay's clickability
+      if (this.myAudioNode) this.myAudioNode.stop();
       onQuit();
       if (postMinigameId) GAME.startMinigame(postMinigameId, TIME);
     };
@@ -30,13 +31,13 @@ class DanceMinigame {
       let mySongData = zzfxM(...songData);
 
       // Play the song (returns a AudioBufferSourceNode)
-      let myAudioNode = zzfxP(...mySongData);
+      this.myAudioNode = zzfxP(...mySongData);
     };
     this.scoreDrawer = new ScoreDrawer(this);
     this.danceClubScene = new DanceClubScene(this.canvas);
     this.playMusic();
     if (songName == 'seaShanty') this.BEAT_COUNT = 22;
-    window.setTimeout(() => this.done(), songName == 'seaShanty' ? 25000 : 23000);
+    window.setTimeout(() => this.done(), songName == 'seaShanty' ? 26000 : 23500);
   }
   done() {
     this.dead = true;
