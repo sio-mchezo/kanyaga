@@ -4,7 +4,6 @@ class IntroScene {
     this.onQuit = () => {
       if (overlay) overlay.style['pointerEvents'] = 'auto'; // restore the joystick overlay's clickability
       onQuit();
-      GAME.startMinigame(13, TIME);
     };
     if (overlay) overlay.style['pointerEvents'] = 'none'; // allow clicks past the joystick overlay
 
@@ -75,7 +74,7 @@ class IntroScene {
     // // build frames
     const frames = [];
 
-    frames.push({ canvas: preCanvas, duration: 150, text: "Click, or tap, or     sniff, or whatever" });
+    frames.push({ canvas: preCanvas, duration: 150, text: "Click, or tap, or sniff, or whatever" });
 
     frames.push(
       ...titleCanvasArr.map((n,i) => {
@@ -266,7 +265,12 @@ class IntroScene {
     frames.push({canvas: bsLayCanvasArr[5], duration: 350, text: "5 minutes later..."});
 
     frames.push({canvas: engiShockCanvasArr[0], duration: 650, text: "It's a BEAT BOT!", sfx: 'talk4'});
-
+    
+    frames.push({canvas: kidHappyCanvasArr[0], duration: 455, text: "A what bot?", sfx: 'talk3'});
+    frames.push({canvas: ACTORS.dad.shock, duration: 650, text: "A 'BEAT BOT', from the galactic core.", sfx: 'talk4'});
+    frames.push({canvas: ACTORS.dad.happy, duration: 650, text: "They help trees grow.", sfx: 'talk4'});
+    frames.push({canvas: kidHappyCanvasArr[0], duration: 455, text: "How?", sfx: 'talk3'});
+    frames.push({canvas: ACTORS.dad.smirk, duration: 650, text: "By grooving to 'lit beats'.", sfx: 'talk4'});
     frames.push({canvas: kidHappyCanvasArr[0], duration: 455, text: "Can you fix it?", sfx: 'talk3'});
     frames.push({canvas: engiSmirkCanvasArr[0], duration: 650, text: "Yes, but don't tell your mother.", sfx: 'talk4'});
     frames.push({canvas: kidHappyCanvasArr[0], duration: 455, text: "I won't, I swear!", sfx: 'talk3'});
