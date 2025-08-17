@@ -314,6 +314,8 @@ class Game {
     if (this.debugMode) console.groupEnd();
   }
   initTree({ x, y, z, modelJsonObj }) {
+    x *= 16;
+    z *= 16;
     if (this.debugMode) console.groupCollapsed("GAME.initTree");
     const _y = y ?? this.getMapHeight({ x, z }, false);
     const treeInstance = new CrappyObjectInstance(modelJsonObj, TREE_TYPES);
