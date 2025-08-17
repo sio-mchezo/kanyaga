@@ -75,7 +75,7 @@ class IntroScene {
     // // build frames
     const frames = [];
 
-    frames.push({ canvas: preCanvas, duration: 150, text: "Click, or tap, or sniff, or whatever" });
+    frames.push({ canvas: preCanvas, duration: 150, text: "Click, or tap, or     sniff, or whatever" });
 
     frames.push(
       ...titleCanvasArr.map((n,i) => {
