@@ -313,7 +313,14 @@ class Game {
     });
     if (this.debugMode) console.groupEnd();
   }
-  initTree({ x, y, z, modelJsonObj }) {
+
+  charTrees = {
+    elf: [],
+    dryad: [],
+    squirrel: [],
+  };
+  hasScaledTrees = {};
+  initTree({ x, y, z, modelJsonObj,charName }) {
     x *= 16;
     z *= 16;
     if (this.debugMode) console.groupCollapsed("GAME.initTree");
@@ -323,10 +330,14 @@ class Game {
     const { treeGroup } = this.currentMap;
     treeGroup.add(treeInstance.root);
 
+    if (this.charTrees[charName]) {
+      this.charTrees[charName].push(treeInstance.root);
+    }
+
     treeGroup.userData.instances.push(treeInstance);
 
     treeInstance.root.position.set(x, _y, z);
-    treeInstance.root.scale.multiplyScalar(10);
+    treeInstance.root.scale.multiplyScalar(0.5);
     const treeId = "tree-" + treeGroup.children.length;
     treeInstance.root.name = treeId;
     if (this.debugMode) console.groupEnd();
@@ -649,6 +660,22 @@ class Game {
       this.sceneTransitions.push(new SceneTransition(1, "circle", "out"));
 
       if (checkCompletion) {
+        console.log('OK>>>>', i, this.hasScaledTrees);
+        if (i == 10 && !this.hasScaledTrees.dryad) {
+            console.log("DRYAD");
+            this.hasScaledTrees.dryad = true;
+            this.charTrees.dryad.forEach(t => t.scale.multiplyScalar(20));
+        }
+        if (i == 11 && !this.hasScaledTrees.elf) {
+            console.log("ELFIE", this.charTrees.elf);
+            this.hasScaledTrees.elf = true;
+            this.charTrees.elf.forEach(t => t.scale.multiplyScalar(20));
+        }
+        if (i == 12 && !this.hasScaledTrees.squirrel) {
+            this.hasScaledTrees.squirrel = true;
+            this.charTrees.squirrel.forEach(t => t.scale.multiplyScalar(20));
+        }
+
         if (Object.keys(this.minigameScores).length < 4) return;
         let dd = this.doorDataList[this.doorDataList.length - 1]
         if (!dd) return;
