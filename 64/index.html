@@ -11,6 +11,7 @@
     <script src="js/classes/SceneTransition.js"></script>
     <script src="js/classes/CanvasFramePlayer.js"></script>
     <script src="js/classes/IntroScene.js"></script>
+    <script src="js/classes/CharacterScene.js"></script>
     <script src="js/classes/Ease.js"></script>
     <script src="js/classes/GoldSmashMinigame.js"></script>
     <script src="js/classes/DanceMinigame.js"></script>
@@ -74,6 +75,7 @@
   <img src="assets/frames/kid_run.png" style="display:none;" id="kidRunImg">
   <img src="assets/frames/beep_boop.png" style="display:none;" id="beepBoopImg">
   <img src="assets/frames/charged_bot.png" style="display:none;" id="chargedBotImg">
+  <img src="assets/frames/housechars.png" style="display:none;" id="houseCharactersImg">
 </head>
 
 <body>
@@ -174,12 +176,19 @@
             camOffsetY: 0,
             treeScale: 12,
             minigames: {
-                //0: {  handlerClass: DanceMinigame, arg: 'dryadsRage' },
-                1: { handlerClass: DanceMinigame, arg: 'lofiVibin' },
-                2: { handlerClass: DanceMinigame, arg: 'bootsNCats' },
-                0: { handlerClass: DanceMinigame, arg: 'seaShanty' },
-                4: { handlerClass: IntroScene }
-            }
+                0: { handlerClass: CharacterScene, arg: ['dryad','sad',10] },
+                1: { handlerClass: CharacterScene, arg: ['elf','sad',11] },
+                2: { handlerClass: CharacterScene, arg: ['squirrel','sad',12] },
+                4: { handlerClass: IntroScene },
+
+                20: { handlerClass: CharacterScene, arg: ['dryad','happy'] },
+                21: { handlerClass: CharacterScene, arg: ['elf','happy'] },
+                22: { handlerClass: CharacterScene, arg: ['squirrel','happy'] },
+
+                10: { handlerClass: DanceMinigame, arg: ['dryadsRage',20] },
+                11: { handlerClass: DanceMinigame, arg: ['lofiVibin',21] },
+                12: { handlerClass: DanceMinigame, arg: ['bootsNCats',22] },
+            },
         });
 
         if (typeof DEBUG_UI !== 'undefined') {

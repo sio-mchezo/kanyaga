@@ -6,11 +6,14 @@ class DanceMinigame {
   // TODO pre-space out all the note times, don't spawn per time elapsed, spawn per time progression through total duration
   score = 0;
   zapYPixel = 1;
-  constructor(canvas, onQuit, songName) {
+  constructor(canvas, onQuit, args) {
+    let songName = args[0];
+    let postMinigameId = args[1];
     let overlay = document.getElementById('joystick-overlay');
     this.onQuit = () => {
       if (overlay) overlay.style['pointerEvents'] = 'auto'; // restore the joystick overlay's clickability
       onQuit();
+      GAME.startMinigame(postMinigameId, TIME);
     };
     if (overlay) overlay.style['pointerEvents'] = 'none'; // allow clicks past the joystick overlay
     this.canvas = canvas;
