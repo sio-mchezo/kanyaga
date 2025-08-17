@@ -74,7 +74,7 @@ class IntroScene {
     // // build frames
     const frames = [];
 
-    frames.push({ canvas: preCanvas, duration: 150, text: "Click, or tap, or sniff, or whatever" });
+    frames.push({ canvas: preCanvas, duration: 150, text: "Click, or tap, or     sniff, or whatever" });
 
     frames.push(
       ...titleCanvasArr.map((n,i) => {
@@ -268,7 +268,7 @@ class IntroScene {
     
     frames.push({canvas: kidHappyCanvasArr[0], duration: 455, text: "A what bot?", sfx: 'talk3'});
     frames.push({canvas: ACTORS.dad.shock, duration: 650, text: "A 'BEAT BOT', from the galactic core.", sfx: 'talk4'});
-    frames.push({canvas: ACTORS.dad.happy, duration: 650, text: "They help trees grow.", sfx: 'talk4'});
+    frames.push({canvas: ACTORS.dad.happy, duration: 650, text: "They help trees      grow.", sfx: 'talk4'});
     frames.push({canvas: kidHappyCanvasArr[0], duration: 455, text: "How?", sfx: 'talk3'});
     frames.push({canvas: ACTORS.dad.smirk, duration: 650, text: "By grooving to 'lit beats'.", sfx: 'talk4'});
     frames.push({canvas: kidHappyCanvasArr[0], duration: 455, text: "Can you fix it?", sfx: 'talk3'});
