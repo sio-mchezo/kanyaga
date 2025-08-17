@@ -47,6 +47,7 @@ class CreditsScene {
         };
       })
     );
+    /*
     frames.push(
       ...kidRunCanvasArr.map((n,i) => {
         return {
@@ -57,6 +58,7 @@ class CreditsScene {
         };
       })
     );
+    */
     frames.push(
       ...[
         houseCharsCanvasArr[4],
