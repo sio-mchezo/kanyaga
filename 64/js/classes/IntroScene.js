@@ -65,9 +65,17 @@ class IntroScene {
     // splashDownCanvasArr = splashDownCanvasArr.slice(0, -2);
 
     // console.log("splashDownCanvasArr.length:", splashDownCanvasArr.length);
+    const preCanvas = document.createElement('canvas');
+    preCanvas.width = 64;
+    preCanvas.height = 64;
 
+    const preCtx = preCanvas.getContext('2d');
+    preCtx.fillStyle = "#000";
+    preCtx.fillRect(0,0,64,64);
     // // build frames
     const frames = [];
+
+    frames.push({ canvas: preCanvas, duration: 150, text: "Click, or tap, or sniff, or whatever" });
 
     frames.push(
       ...titleCanvasArr.map((n,i) => {
