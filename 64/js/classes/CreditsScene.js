@@ -2,8 +2,8 @@ class CreditsScene {
   constructor(target, onQuit) {
     let overlay = document.getElementById('joystick-overlay');
     this.onQuit = () => {
-      if (overlay) overlay.style['pointerEvents'] = 'auto'; // restore the joystick overlay's clickability
-      onQuit();
+      //if (overlay) overlay.style['pointerEvents'] = 'auto'; // restore the joystick overlay's clickability
+      //onQuit();
     };
     if (overlay) overlay.style['pointerEvents'] = 'none'; // allow clicks past the joystick overlay
 
@@ -54,6 +54,19 @@ class CreditsScene {
           duration: 250,
           text: "End Music by Bryce with Rice",
           sfx: (i % 4) === 0 ? 'heartbeat' : undefined
+        };
+      })
+    );
+    frames.push(
+      ...[
+        houseCharsCanvasArr[4],
+        houseCharsCanvasArr[5]
+      ].map((n,i) => {
+        return {
+          canvas: n,
+          duration: 150,
+          text: "THANKS 4 PLAYING!",
+          sfx: i === 1 ? 'keyboard_clack' : undefined
         };
       })
     );
