@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DF-Style Combat MVP — Single File (JS)</title>
+  <style>
+    :root { --bg:#0b0f12; --fg:#e9eef3; --muted:#9fb0bf; --accent:#6ee7ff; --panel:#131922; }
+    html,body { margin:0; height:100%; font:14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif; color:var(--fg); background:linear-gradient(180deg, #0b0f12, #0a0d11); }
+    .wrap { max-width: 960px; margin: 24px auto; padding: 0 16px; }
+    h1 { font-size: 20px; margin: 0 0 12px; letter-spacing: .2px; }
+    .card { background: var(--panel); border:1px solid #1c2531; border-radius: 12px; padding: 16px; box-shadow: 0 8px 30px rgba(0,0,0,.35); }
+    .row { display:flex; gap:12px; flex-wrap: wrap; }
+    .row > * { flex: 1 1 220px; }
+    label { display:block; font-size:12px; color:var(--muted); margin-bottom: 6px; }
+    select, input[type="number"], input[type="text"] { width:100%; background:#0f141b; color:var(--fg); border:1px solid #202b38; border-radius:10px; padding:10px 12px; outline:none; }
+    button { background: var(--accent); color:#00222b; border:0; border-radius: 10px; padding: 10px 14px; font-weight: 700; cursor:pointer; }
+    button:active { transform: translateY(1px); }
+    pre { background:#0a0f14; border:1px solid #1b2430; color:#cfe8ff; border-radius: 12px; padding: 12px; overflow:auto; max-height: 50vh; }
+    .muted { color: var(--muted); }
+    .footer { margin-top:12px; color:#7b90a6; font-size: 12px; }
+    .grid { display:grid; grid-template-columns: 1fr; gap: 16px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>DF‑Style Combat MVP — JS Reference</h1>
+    <div class="card grid">
+      <div class="row">
+        <div>
+          <label>Attacker</label>
+          <select id="attacker"></select>
+        </div>
+        <div>
+          <label>Defender</label>
+          <select id="defender"></select>
+        </div>
+        <div>
+          <label>Attack Mode</label>
+          <select id="mode">
+            <option value="slash">slash</option>
+            <option value="stab">stab</option>
+            <option value="blunt">blunt</option>
+          </select>
+        </div>
+        <div>
+          <label>Seed</label>
+          <input id="seed" type="text" value="1337" />
+        </div>
+      </div>
+      <div class="row" style="align-items:flex-end;">
+        <div style="flex:0 0 auto">
+          <button id="run">Run Attack</button>
+        </div>
+        <div style="flex:0 0 auto">
+          <button id="run10">Run 10× (different seeds)</button>
+        </div>
+      </div>
+      <pre id="out"></pre>
+      <div class="footer">
+        Deterministic by seed. All numbers are toy values; the point is the architecture + flow: <span class="muted">hit → armor layers → tissue layers → wound → narration</span>.
+      </div>
+    </div>
+  </div>
+
+  <script>
+  // ---------------------------
+  // Deterministic RNG (Mulberry32)
+  // ---------------------------
+  function mulberry32(a) {
+    let t = a >>> 0;
+    return function() {
+      t |= 0; t = (t + 0x6D2B79F5) | 0;
+      let r = Math.imul(t ^ (t >>> 15), 1 | t);
+      r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function seededInt(rng, a, b) { // inclusive
+    return Math.floor(rng() * (b - a + 1)) + a;
+  }
+
+  // ---------------------------
+  // Data (equivalent to YAML)
+  // ---------------------------
+  const MATERIALS = Object.freeze({
+    skin:      { resist_cut: 80,  resist_pierce: 60,  resist_blunt: 50,  blunt_damping: 0.10, bleed_mod: 1.00, pain_mod: 1.30 },
+    fat:       { resist_cut: 50,  resist_pierce: 40,  resist_blunt: 30,  blunt_damping: 0.05, bleed_mod: 0.20, pain_mod: 0.50 },
+    muscle:    { resist_cut: 120, resist_pierce: 100, resist_blunt: 90,  blunt_damping: 0.10, bleed_mod: 1.20, pain_mod: 1.00 },
+    bone:      { resist_cut: 400, resist_pierce: 300, resist_blunt: 500, blunt_damping: 0.05, bleed_mod: 0.10, pain_mod: 0.80 },
+    cartilage: { resist_cut: 150, resist_pierce: 110, resist_blunt: 120, blunt_damping: 0.08, bleed_mod: 0.30, pain_mod: 0.80 },
+    linen:     { resist_cut: 180, resist_pierce: 160, resist_blunt: 70,  blunt_damping: 0.20, bleed_mod: 0.00, pain_mod: 0.00 },
+    mail:      { resist_cut: 600, resist_pierce: 250, resist_blunt: 120, blunt_damping: 0.10, bleed_mod: 0.00, pain_mod: 0.00 },
+    steel:     { resist_cut: 1200,resist_pierce: 1000,resist_blunt: 300, blunt_damping: 0.15, bleed_mod: 0.00, pain_mod: 0.00 }
+  });
+
+  const BODYPLAN_HUMANOID = Object.freeze({
+    id: 'humanoid',
+    nodes: [
+      { id: 'head', name: 'head', coverage: 10, flags:['vital'], tissue_layers: [
+        { id:'skin', material:'skin', thickness_mm:2 },
+        { id:'fat', material:'fat', thickness_mm:3 },
+        { id:'muscle', material:'muscle', thickness_mm:6 },
+        { id:'bone', material:'bone', thickness_mm:6 }
+      ]},
+      { id: 'neck', name: 'neck', coverage: 3, tissue_layers: [
+        { id:'skin', material:'skin', thickness_mm:1 },
+        { id:'muscle', material:'muscle', thickness_mm:6 },
+        { id:'cartilage', material:'cartilage', thickness_mm:4 }
+      ]},
+      { id: 'torso', name:'torso', coverage:25, flags:['core'], tissue_layers:[
+        { id:'skin', material:'skin', thickness_mm:2 },
+        { id:'fat', material:'fat', thickness_mm:8 },
+        { id:'muscle', material:'muscle', thickness_mm:20 },
+        { id:'bone', material:'bone', thickness_mm:10 }
+      ]},
+      { id:'upper_arm_L', name:'left upper arm', coverage:6, tissue_layers:[
+        {id:'skin',material:'skin',thickness_mm:2}, {id:'fat',material:'fat',thickness_mm:4}, {id:'muscle',material:'muscle',thickness_mm:12}, {id:'bone',material:'bone',thickness_mm:8}
+      ]},
+      { id:'forearm_L', name:'left forearm', coverage:5, tissue_layers:[
+        {id:'skin',material:'skin',thickness_mm:2}, {id:'fat',material:'fat',thickness_mm:3}, {id:'muscle',material:'muscle',thickness_mm:8}, {id:'bone',material:'bone',thickness_mm:6}
+      ]},
+      { id:'hand_L', name:'left hand', coverage:4, tissue_layers:[
+        {id:'skin',material:'skin',thickness_mm:2}, {id:'fat',material:'fat',thickness_mm:2}, {id:'muscle',material:'muscle',thickness_mm:5}, {id:'bone',material:'bone',thickness_mm:5}
+      ]},
+      { id:'upper_arm_R', name:'right upper arm', coverage:6, tissue_layers:[
+        {id:'skin',material:'skin',thickness_mm:2}, {id:'fat',material:'fat',thickness_mm:4}, {id:'muscle',material:'muscle',thickness_mm:12}, {id:'bone',material:'bone',thickness_mm:8}
+      ]},
+      { id:'forearm_R', name:'right forearm', coverage:5, tissue_layers:[
+        {id:'skin',material:'skin',thickness_mm:2}, {id:'fat',material:'fat',thickness_mm:3}, {id:'muscle',material:'muscle',thickness_mm:8}, {id:'bone',material:'bone',thickness_mm:6}
+      ]},
+      { id:'hand_R', name:'right hand', coverage:4, tissue_layers:[
+        {id:'skin',material:'skin',thickness_mm:2}, {id:'fat',material:'fat',thickness_mm:2}, {id:'muscle',material:'muscle',thickness_mm:5}, {id:'bone',material:'bone',thickness_mm:5}
+      ]},
+      { id:'upper_leg_L', name:'left thigh', coverage:8, tissue_layers:[
+        {id:'skin',material:'skin',thickness_mm:2}, {id:'fat',material:'fat',thickness_mm:6}, {id:'muscle',material:'muscle',thickness_mm:18}, {id:'bone',material:'bone',thickness_mm:10}
+      ]},
+      { id:'lower_leg_L', name:'left shin', coverage:6, tissue_layers:[
+        {id:'skin',material:'skin',thickness_mm:2}, {id:'fat',material:'fat',thickness_mm:3}, {id:'muscle',material:'muscle',thickness_mm:8}, {id:'bone',material:'bone',thickness_mm:8}
+      ]},
+      { id:'foot_L', name:'left foot', coverage:3, tissue_layers:[
+        {id:'skin',material:'skin',thickness_mm:2}, {id:'fat',material:'fat',thickness_mm:2}, {id:'muscle',material:'muscle',thickness_mm:5}, {id:'bone',material:'bone',thickness_mm:5}
+      ]},
+      { id:'upper_leg_R', name:'right thigh', coverage:8, tissue_layers:[
+        {id:'skin',material:'skin',thickness_mm:2}, {id:'fat',material:'fat',thickness_mm:6}, {id:'muscle',material:'muscle',thickness_mm:18}, {id:'bone',material:'bone',thickness_mm:10}
+      ]},
+      { id:'lower_leg_R', name:'right shin', coverage:6, tissue_layers:[
+        {id:'skin',material:'skin',thickness_mm:2}, {id:'fat',material:'fat',thickness_mm:3}, {id:'muscle',material:'muscle',thickness_mm:8}, {id:'bone',material:'bone',thickness_mm:8}
+      ]},
+      { id:'foot_R', name:'right foot', coverage:3, tissue_layers:[
+        {id:'skin',material:'skin',thickness_mm:2}, {id:'fat',material:'fat',thickness_mm:2}, {id:'muscle',material:'muscle',thickness_mm:5}, {id:'bone',material:'bone',thickness_mm:5}
+      ]}
+    ]
+  });
+
+  const WEAPONS = Object.freeze({
+    longsword: {
+      class: 'sword', mass_kg: 1.4, reach_m: 1.1, speed: 1.0,
+      contact_area_cm2: { slash: 1.0, stab: 0.5 }, modes: ['slash','stab']
+    },
+    mace: {
+      class: 'mace', mass_kg: 1.2, reach_m: 1.0, speed: 0.9,
+      contact_area_cm2: { blunt: 4.0 }, modes: ['blunt']
+    },
+    dagger: {
+      class: 'dagger', mass_kg: 0.4, reach_m: 0.5, speed: 1.2,
+      contact_area_cm2: { stab: 0.2 }, modes: ['stab']
+    }
+  });
+
+  const ARMOR = Object.freeze({
+    chain_shirt: {
+      covers: ['torso','upper_arm_L','upper_arm_R'],
+      layers: [ { name:'gambeson', material:'linen', thickness_mm:5 }, { name:'mail', material:'mail', thickness_mm:1 } ]
+    },
+    steel_helm: {
+      covers: ['head'],
+      layers: [ { name:'padding', material:'linen', thickness_mm:4 }, { name:'plate', material:'steel', thickness_mm:2 } ]
+    }
+  });
+
+  const ACTORS = Object.freeze({
+    dwarf_iron_sword: {
+      name: 'Domas', bodyplan: 'humanoid', attrs: { STR:14, DEX:11 },
+      skills: { strike:6, dodge:4, parry:3 }, weapon:'longsword', armor:['chain_shirt']
+    },
+    goblin_leather: {
+      name: 'Snang', bodyplan: 'humanoid', attrs: { STR:10, DEX:10 },
+      skills: { strike:3, dodge:3, parry:1 }, weapon:'dagger', armor:[]
+    },
+    dwarf_mace_helm: {
+      name: 'Urist', bodyplan: 'humanoid', attrs: { STR:16, DEX:10 },
+      skills: { strike:5, dodge:3, parry:4 }, weapon:'mace', armor:['chain_shirt','steel_helm']
+    }
+  });
+
+  const BODYPLANS = Object.freeze({ humanoid: BODYPLAN_HUMANOID });
+
+  // ---------------------------
+  // Helpers
+  // ---------------------------
+  function weightedChoice(rng, entries /* [ [key, weight], ... ] */) {
+    const total = entries.reduce((s,[,w]) => s + w, 0);
+    let pick = rng() * total;
+    for (const [k, w] of entries) { if ((pick -= w) <= 0) return k; }
+    return entries[entries.length - 1][0];
+  }
+
+  function armorStack(defender, partId) {
+    const out = [];
+    for (const key of defender.armor || []) {
+      const item = ARMOR[key];
+      if (!item) continue;
+      if (item.covers.includes(partId)) out.push(...item.layers);
+    }
+    return out;
+  }
+
+  function contactPressure(mode, weapon, STR) {
+    const area = weapon.contact_area_cm2[mode] ?? 1.0;
+    const momentum = (weapon.mass_kg * (1.0 + 0.04 * STR)) * weapon.speed; // toy model
+    return (momentum * 100.0) / Math.max(area, 0.05);
+  }
+
+  function layerThreshold(mat, mode, thickness_mm) {
+    const base = mode === 'slash' ? mat.resist_cut : mode === 'stab' ? mat.resist_pierce : mat.resist_blunt;
+    return base * Math.max(thickness_mm, 0.5);
+  }
+
+  function applyLayers({ mode, pressure, layers, isArmor }) {
+    // layers: [ { material, thickness_mm }, ... ]
+    let p = pressure;
+    const notes = [];
+    let depthLayers = 0; // tissue only
+    let bleed = 0, pain = 0;
+
+    for (const layer of layers) {
+      const m = MATERIALS[layer.material];
+      const thick = layer.thickness_mm;
+      const thr = layerThreshold(m, mode, thick);
+
+      if (mode === 'blunt') {
+        const dent = p < thr;
+        const absorbed = p * m.blunt_damping; // proportional damping
+        p = Math.max(0, p - absorbed);
+        notes.push((isArmor ? 'dents' : 'bruises') + ` (${layer.material})` + (dent ? ', no break' : ''));
+        if (!isArmor) pain += (p/100) * (1 + m.pain_mod);
+        continue;
+      }
+
+      if (p < thr) {
+        notes.push((isArmor ? 'deflects' : 'stops') + ` at ${layer.material}`);
+        p = 0; break;
+      }
+      // Penetration consumes energy
+      p -= thr * 0.7;
+      if (isArmor) {
+        notes.push(`cuts through ${layer.material}`);
+      } else {
+        notes.push(`penetrates ${layer.material}`);
+        depthLayers += 1;
+        bleed += (0.1 + thick/10) * (1 + m.bleed_mod);
+        pain  += (0.2 + thick/10) * (1 + m.pain_mod);
+      }
+      if (p <= 0) break;
+    }
+
+    return { remaining: p, notes, depthLayers, bleed, pain };
+  }
+
+  function opposed(rng, atk, dfn) {
+    const a = atk + seededInt(rng,1,6) + seededInt(rng,1,6);
+    const d = dfn + seededInt(rng,1,6) + seededInt(rng,1,6);
+    return a >= d;
+  }
+
+  function choosePart(rng, bodyplan) {
+    const table = bodyplan.nodes.map(p => [p.id, p.coverage]);
+    const id = weightedChoice(rng, table);
+    return bodyplan.nodes.find(p => p.id === id);
+  }
+
+  function buildActor(key) {
+    const raw = ACTORS[key];
+    const bp = BODYPLANS[raw.bodyplan];
+    return {
+      key, name: raw.name, bodyplan: bp, attrs: raw.attrs, skills: raw.skills,
+      weapon: WEAPONS[raw.weapon], armor: raw.armor || []
+    };
+  }
+
+  function resolveAttack({ rng, attacker, defender, mode }) {
+    const log = [];
+    const hit = opposed(rng,
+      (attacker.skills.strike||0) + (attacker.attrs.DEX||0),
+      Math.max(defender.skills.dodge||0, defender.skills.parry||0) + (defender.attrs.DEX||0)
+    );
+    if (!hit) return { hit:false, log:[`${attacker.name} swings and misses.`], wound:null };
+
+    const part = choosePart(rng, defender.bodyplan);
+    log.push(`${attacker.name} targets the ${defender.name}'s ${part.name}.`);
+
+    const pressure = contactPressure(mode, attacker.weapon, attacker.attrs.STR||10);
+
+    const armorLayers = armorStack(defender, part.id);
+    let p = pressure;
+    if (armorLayers.length) {
+      const r = applyLayers({ mode, pressure:p, layers:armorLayers, isArmor:true });
+      p = r.remaining; if (r.notes.length) log.push('Armor: ' + r.notes.join('; ') + '.');
+      if (p <= 0) { log.push('The armor absorbs the attack.'); return { hit:true, log, wound:null }; }
+    }
+
+    const tissueLayers = part.tissue_layers.map(tl => ({ material: tl.material, thickness_mm: tl.thickness_mm }));
+    const t = applyLayers({ mode, pressure:p, layers:tissueLayers, isArmor:false });
+    p = t.remaining; log.push('Flesh: ' + t.notes.join('; ') + '.');
+
+    const boneHit = part.tissue_layers.slice(0, t.depthLayers).some(tl => tl.material === 'bone');
+    let pain = t.pain, bleed = t.bleed;
+    if (boneHit && p > 200) { log.push('Bone fractures!'); pain += 1.5; }
+    if (p > 350 && (part.id === 'neck' || part.id === 'head') && (mode === 'slash' || mode === 'stab')) {
+      log.push('Critical trauma!'); pain += 3.0;
+    }
+
+    let wound = null;
+    if (t.depthLayers > 0 || pain > 0.1) {
+      wound = { part_id: part.id, depth_layers: t.depthLayers, bleed, pain, notes: t.notes };
+      log.push(`${defender.name} suffers a wound: depth ${t.depthLayers}, bleed ${bleed.toFixed(2)}, pain ${pain.toFixed(2)}.`);
+    } else {
+      log.push('It glances off causing little harm.');
+    }
+
+    return { hit:true, log, wound };
+  }
+
+  // ---------------------------
+  // UI wiring
+  // ---------------------------
+  const $ = sel => document.querySelector(sel);
+  function fillSelect(el, options) {
+    el.innerHTML = '';
+    for (const [value, label] of options) {
+      const opt = document.createElement('option');
+      opt.value = value; opt.textContent = label; el.appendChild(opt);
+    }
+  }
+
+  function runOnce() {
+    const attackerKey = $('#attacker').value;
+    const defenderKey = $('#defender').value;
+    const mode = $('#mode').value;
+    let seed = $('#seed').value.trim();
+    if (!seed) seed = '1337';
+    const numericSeed = Array.from(seed).reduce((acc,ch) => (acc * 131 + ch.charCodeAt(0)) >>> 0, 0x9e3779b9) >>> 0;
+
+    const rng = mulberry32(numericSeed);
+    const attacker = buildActor(attackerKey);
+    const defender = buildActor(defenderKey);
+
+    const { log } = resolveAttack({ rng, attacker, defender, mode });
+
+    const out = [
+      `Seed: ${seed} (${numericSeed})\nAttacker: ${attacker.name} [${attacker.key}] with ${Object.keys(WEAPONS).find(k=>WEAPONS[k]===attacker.weapon)}\nDefender: ${defender.name} [${defender.key}]\nMode: ${mode}\n`,
+      ...log
+    ].join('\n');
+
+    $('#out').textContent = out;
+  }
+
+  function runMany(n=10) {
+    const baseSeed = $('#seed').value.trim() || '1337';
+    const attackerKey = $('#attacker').value;
+    const defenderKey = $('#defender').value;
+    const mode = $('#mode').value;
+
+    const lines = [];
+    for (let i=0;i<n;i++) {
+      const seed = baseSeed + '-' + (i+1);
+      const numericSeed = Array.from(seed).reduce((acc,ch) => (acc * 131 + ch.charCodeAt(0)) >>> 0, 0x9e3779b9) >>> 0;
+      const rng = mulberry32(numericSeed);
+      const attacker = buildActor(attackerKey);
+      const defender = buildActor(defenderKey);
+      const { log } = resolveAttack({ rng, attacker, defender, mode });
+      lines.push(`[${seed}]`); lines.push(...log); lines.push('');
+    }
+    $('#out').textContent = lines.join('\n');
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    fillSelect($('#attacker'), Object.entries(ACTORS).map(([k,a]) => [k, `${a.name} — ${k}`]));
+    fillSelect($('#defender'), Object.entries(ACTORS).map(([k,a]) => [k, `${a.name} — ${k}`]));
+    $('#attacker').value = 'dwarf_iron_sword';
+    $('#defender').value = 'goblin_leather';
+    $('#mode').value = 'slash';
+
+    $('#run').addEventListener('click', runOnce);
+    $('#run10').addEventListener('click', () => runMany(10));
+
+    runOnce();
+  });
+  </script>
+</body>
+</html>
