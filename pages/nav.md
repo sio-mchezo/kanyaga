@@ -1,5 +1,6 @@
 <ul id="nav">
-    <li><a onclick="run('one')">ONE</a></li>
-    <li><a onclick="run('two')">TWO</a></li>
-    <li><a onclick="run('three')">THREE</a></li>
+    <li><a href="https://kanyaga.com/henry">
+        <img src="../../henry/thumb.png" alt="" />
+        <b>horny</b>
+    </a></li> 
 </ul>
