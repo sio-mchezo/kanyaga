@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="description" content="sukuma wiki" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>anti-safari</title>
+    <style>
+      @font-face {
+				font-family: Dreamer; 
+				src: url("../font/Dreamer.ttf") format("truetype");
+			}
+      body {
+        margin: 0;
+        background: #1a1a1b;
+        height: 100vh;
+        font-family: monospace;
+        color: #eee;
+        /* padding: 20px; */
+      }
+      #wrapper {
+        max-width: 500px;
+        margin: 20px auto;
+        /* background-color: #111; */
+        padding: 20px;
+      }
+
+      #content {
+        position: relative;
+        display: block;
+        min-height: 20px;
+        padding-bottom: 40px;
+      }
+      p {
+        display: block;
+      }
+      a {
+        color: #eee;
+        text-decoration: none;
+        cursor: pointer;
+      }
+      a:hover {
+        color: yellow;
+      }
+      #logo {
+        font-weight: lighter;
+        font-size: 14px;
+        margin-bottom: 20px;
+      }
+      button,
+      #logo {
+        border: none;
+        outline: none;
+        background-color: transparent;
+        color: orange;
+        font-family: monospace;
+        cursor: pointer;
+      }
+
+      button:hover {
+        color: red;
+      }
+      #logo {
+        color: #eee;
+      }
+      #nav {
+        padding: 0;
+        margin-bottom: 20px;
+        list-style-type: square;
+      }
+      #nav li {
+        margin-left: 20px;
+      }
+      #nav li:hover {
+        color: red;
+      }
+      #nav a {
+        display: block;
+        /* line-height: 2em; */
+      }
+      h1, h2, h3, h4 {
+        font-family: Dreamer; 
+        font-size: 90%;
+      }
+      #nav::after {
+        content: '';
+        display: block;
+        width: 40px;
+        height: 2px;
+        padding: 0;
+        margin: 10px 0;
+        background-color: red;
+      }    
+      #nav ul {
+        margin: 0;
+        padding: 0;
+      }
+      hr {
+        background-color: red;
+      }
+      </style>
+  </head>
+  <body>
+
+    <div id="wrapper">
+      <h2 id="logo">
+        <b>&because;</b>
+        <span onclick="txt = this.innerHTML; typeit()" id="demo">blog</span>
+      </h2>
+
+    <div id="nav">
+      <!-- <li><a href="#home" onclick="runnav('home')">home</a></li>
+      <li><a href="#about" onclick="runnav('ideas')">ideas</a></li> -->
+    </div>
+
+    <div id="content"></div>
+
+  </div>
+<!-- wrapper -->
+
+
+<script src="../js/marked.min.js"></script>
+    <script src="../js/zzfx.js"></script>
+
+    <script>
+      makenav();
+
+
+      var i = 0;
+      var txt = "antisafari.com";
+      var speed = 90;
+      var demo = document.getElementById("demo");
+
+      function typeit() {
+        demo.innerHTML = "";
+        i = 0;
+        setTimeout(function () {
+          typeWriter();
+        }, 160);
+      }
+
+      function typeWriter() {
+        if (i < txt.length) {
+          demo.innerHTML += txt.charAt(i);
+          i++;
+          setTimeout(typeWriter, speed);
+          clicksnd();
+        }
+      }
+
+      // audio
+      function clicksnd() {
+        zzfxV = 0.01;
+        zzfx(...[, 0, 440, , 0.1, , 1, 1.5, , , , , , 0.2, , 0.6, 0.01]);
+      }
+
+      // make nav
+      async function makenav() {
+        let file = await fetch("../pages/nav.md");
+        let text = await file.text();
+        document.getElementById("nav").innerHTML = marked.parse(text);
+
+      }
+
+      // click nav
+      document.getElementById("nav").addEventListener("click",function(e) {          
+          if(e.target && e.target.nodeName == "A") {
+              txt = e.target.innerHTML;
+              runnav(txt);
+          }
+      });
+
+      //
+      // var nav = document.getElementById("nav");
+
+      // run nav
+      async function runnav(here) {
+        let file = await fetch("../pages/" + here + ".md");
+        let text = await file.text();
+        var article = document.createElement("article");
+        article.innerHTML = marked.parse(text);
+        article.id = here;
+        content.innerHTML = "";
+        content.appendChild(article);
+        history.replaceState(undefined, undefined, "#" + here);
+        document.body.className = here;
+      }
+
+      // create html from md file
+      async function run(here) {
+        let file = await fetch("../pages/" + here + ".md");
+        let text = await file.text();
+        var article = document.createElement("article");
+        article.innerHTML = marked.parse(text);
+        article.id = here;
+        content.appendChild(article);
+        history.replaceState(undefined, undefined, "#" + here);
+        document.body.className = here;
+      }
+
+      // start
+      // load page from URL
+      if (window.location.hash) {
+        var hash = window.location.hash.substring(1);
+        console.log(hash + " : from url");
+        run(hash);
+        history.replaceState(undefined, undefined, "#" + hash);
+      } else {
+        run("home");
+      }
+    </script>
+  </body>
+</html>
