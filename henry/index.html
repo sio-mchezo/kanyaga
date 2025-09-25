@@ -1,0 +1,304 @@
+<!-- words
+henry
+solitude
+servitude
+worship 
+
+-->
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>henry</title>
+<style>
+	body {
+		font-family: Monospace;
+		 margin: 0; background-color:#000; 
+		 overscroll-behavior: none;
+		 }
+	canvas {
+		display: block; 
+		width: 100%; 
+		height: 100%; 
+		touch-action: none;
+	}
+	      #hud {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        text-align: center;
+      }
+      #hud #btn {
+        display: block;
+        width: 50px;
+        height: 50px;
+        margin: 10px auto;
+        outline: none;
+        border: none;
+        font-family: monospace;
+        color: white;
+        cursor: pointer;
+		transform: scale(0.8);
+      }
+	#hud #btn svg {	  }
+	#hud #btn {background-color:transparent; transition: 0.2s all ease-in-out;}
+	#hud #btn.on { transform: scale(1);}
+ 	#hud #btn.on svg path, #hud #btn:hover svg path { stroke:#ff0000; }
+	#hud #btn svg path { stroke:#000; }
+
+</style>
+</head>
+<body>
+	<div id="hud">
+      <button id="btn">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" preserveAspectRatio="none" viewBox="0 0 60 60">
+    <path id="a" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="7" d="M30.05 13v16.7"/>
+    <path id="b" fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="7" d="M41.6 16.8q.35.4.7.75 5.1 5.1 5.1 12.25t-5.1 12.25q-5.1 5-12.25 5t-12.3-5q-5.1-5.1-5.1-12.25t5.1-12.25q.4-.35.75-.75"/>
+</svg>
+
+	  </button>
+    </div>
+
+<script src="js/three.min.js"></script>
+<script src="js/OrbitControls.js"></script>
+
+<script>
+// click BTN
+document.getElementById("btn").addEventListener("click",bbclk, false );
+var blinking = false;
+var duration = 9;
+//
+function bbclk() {
+	if(blinking){return}
+	document.getElementById("btn").classList = 'on';
+	blinking = true;
+	new Audio('assets/vacuum.mp3').play()
+	facematerial.map = ooface;
+	facematerial.map.needsUpdate = true;
+	
+    setTimeout(function() {
+		facematerial.map = facetex;
+		facematerial.map.needsUpdate = true;
+		blinking = false;
+		document.getElementById("btn").classList = '';
+    }, duration*800);
+}
+
+	// 3D
+	const scene = new THREE.Scene();
+	const camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.5, 50 );
+
+	// render
+	const renderer = new THREE.WebGLRenderer({transparent:true, alpha:true,  antialias: true });
+	renderer.setSize( window.innerWidth, window.innerHeight );
+	document.body.appendChild( renderer.domElement );
+	renderer.shadowMap.enabled = true;
+	renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+	renderer.outputEncoding = THREE.sRGBEncoding;
+	renderer.physicallyCorrectLights = true; 
+
+	// camera
+	camera.position.set(4,6,14);
+	camera.lookAt(0,0,0);
+
+	// controls
+	const controls = new THREE.OrbitControls( camera, renderer.domElement );
+	controls.maxDistance = 25;
+	controls.minDistance = 7;
+	controls.maxPolarAngle = Math.PI * 0.48;
+	controls.enablePan = false;
+
+	// Ambient light
+	var ambientLight = new THREE.AmbientLight( 0xffffff, 2 );
+	scene.add( ambientLight );
+	
+	// directional light
+	const mainLight = new THREE.DirectionalLight( 0xffffff, 2 );
+	mainLight.position.set( 3, 17, 2 );
+	mainLight.castShadow = true;
+	
+	// Shadow properties
+	mainLight.shadow.mapSize.width = 512;
+	mainLight.shadow.mapSize.height = 512;
+	mainLight.shadow.camera.near = 0.5;
+	mainLight.shadow.camera.far = 50;
+	mainLight.shadow.camera.left = -30;
+	mainLight.shadow.camera.right = 30;
+	mainLight.shadow.camera.top = 30;
+	mainLight.shadow.camera.bottom = -30;
+	// mainLight.shadow.bias = -0.001;
+	scene.add( mainLight );
+	
+	// Fill light to reduce harsh shadows
+	const fillLight = new THREE.PointLight( 0xffffff, 0.6 );
+	fillLight.position.set( 1, 2, 2 );
+	scene.add( fillLight );
+	
+
+	// model
+	bg = new THREE.Group();
+	scene.add(bg);
+	vacuum = new THREE.Group();
+	bg.add(vacuum);
+
+
+	// loader
+	const loader = new THREE.BufferGeometryLoader();
+	
+	// materials
+	const blinktex = new THREE.TextureLoader().load( 'assets/henryF2.png' );
+	const facetex = new THREE.TextureLoader().load( 'assets/henryF.png' );
+	const ooface = new THREE.TextureLoader().load( 'assets/henryF3.png' );
+
+	fixtexture(blinktex)
+	fixtexture(facetex)
+	fixtexture(ooface)
+
+	    
+    const whitemat = new THREE.MeshLambertMaterial( { 
+        map: new THREE.TextureLoader().load( 'assets/white.png' ),
+    } );
+
+    const facematerial = new THREE.MeshLambertMaterial( { 
+        map: facetex,
+        transparent: true,
+    } );
+    
+	const hmaterial = new THREE.MeshStandardMaterial( { 
+        map: new THREE.TextureLoader().load( 'assets/henry2.png' ),
+		roughness: 0.4,
+		metalness: 0.1 
+	} );
+    
+    const wallmaterial = new THREE.MeshLambertMaterial( { 
+        map: new THREE.TextureLoader().load( 'assets/wall2.png' ),
+    } );
+
+    const txtboxmaterial = new THREE.MeshLambertMaterial( { 
+        map: new THREE.TextureLoader().load( 'assets/henrytxtbox.png' ),
+        transparent: true,
+        alphaTest:0.2
+    } );
+
+	// load models
+	loadobj(vacuum, 'assets/henry.json', hmaterial);
+	loadobj(bg, 'assets/bits.json', hmaterial);
+
+    loadobj(vacuum, 'assets/face.json', facematerial);
+    loadobj(bg, 'assets/wall.json', wallmaterial);
+    loadobj(bg, 'assets/knob.json', wallmaterial);
+    loadobj(vacuum, 'assets/txtbox.json', txtboxmaterial);
+    loadobj(bg, 'assets/cable.json', whitemat);
+
+    function loadobj(grp, obj, mat){
+        loader.load(
+            obj,
+            function ( geometry ) {
+                const object = new THREE.Mesh( geometry, mat );
+				fixtexture(object.material.map)
+ 				object.castShadow = true;
+				object.receiveShadow = true;
+                grp.add( object );
+            },
+            function ( xhr ) {
+                // console.log( (xhr.loaded / xhr.total * 100) + '% loaded' );
+            },
+            function ( err ) {
+                // console.log( 'An error happened' );
+            }
+        );
+    }
+
+
+	//
+	function fixtexture(tex){
+		tex.magFilter = THREE.NearestFilter;
+		tex.minFilter = THREE.NearestFilter;
+	}
+
+
+	// Floor/Carpet
+	var wgeometry = new THREE.PlaneBufferGeometry( 50, 50, 50, 50 );
+    // var wgeometry = new THREE.CircleGeometry( 15, 30, 30 );
+	var wmaterial = new THREE.MeshStandardMaterial({
+		map: new THREE.TextureLoader().load( 'assets/Carpet012_1K-JPG_Color.jpg' ),
+		normalMap :  new THREE.TextureLoader().load( 'assets/Carpet012_1K-JPG_NormalGL.jpg' ),	
+        roughness: 0.9,
+		metalness: 0.0,
+	});
+    wmaterial.map.wrapS = THREE.RepeatWrapping;
+    wmaterial.map.wrapT = THREE.RepeatWrapping;
+    wmaterial.map.repeat.set( 4, 4 );
+	var carpet = new THREE.Mesh(wgeometry, wmaterial);
+	carpet.receiveShadow = true;
+	carpet.rotation.set(-Math.PI * 0.5, 0, 0);
+	carpet.position.y = 0.05;
+	scene.add(carpet);
+
+    // vigniette
+	var vmaterial = new THREE.MeshBasicMaterial({
+		map: new THREE.TextureLoader().load( 'assets/3frame.png' ),
+        transparent: true,
+		});
+	var frame = new THREE.Mesh(wgeometry, vmaterial);
+    frame.material.map.magFilter = THREE.NearestFilter;
+    frame.material.map.minFilter = THREE.NearestFilter;
+	frame.rotation.set(-Math.PI * 0.5, 0, 0);
+	frame.position.y = 0.055;
+    frame.scale.set(1.2,1.2,1.2)
+	scene.add(frame);
+    //
+    var frame1 = frame.clone();
+    frame1.rotation.set(0,0,0);
+    frame1.position.set(0,3,-3.3);
+    scene.add(frame1);
+
+
+	// resize
+	window.addEventListener( 'resize', onWindowResize );
+	function onWindowResize() {
+	camera.aspect = window.innerWidth / window.innerHeight;
+	camera.updateProjectionMatrix();
+	renderer.setSize( window.innerWidth, window.innerHeight );
+	}
+
+	let blinkTimeout = null;
+    let num = 0;
+	
+	// loop
+	function animate() {
+		requestAnimationFrame( animate );
+		renderer.render( scene, camera );
+		// num++;
+        // camera.position.y += Math.cos(num*0.05)*0.001;
+		// blink
+		if ( blinking ) {
+			vacuum.position.y = Math.random()/50;
+			return}
+		if ( Math.random() > 0.995 ) { 
+			if(facematerial.map === blinktex) return;
+			
+			// Clear timeout
+			if(blinkTimeout) clearTimeout(blinkTimeout);
+			
+			facematerial.map = blinktex;
+			facematerial.map.needsUpdate = true;
+			
+			// Set timeout to return to normal face
+			blinkTimeout = setTimeout(function() {
+				facematerial.map = facetex;
+				facematerial.map.needsUpdate = true;
+			}, 300);
+		}
+	};
+
+	// start
+	animate();
+
+</script>
+<!-- <script src="js/btn.js"></script> -->
+
+</body>
+</html>
