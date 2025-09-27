@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta name="viewport" content="width=device-width, user-scalable=no">
+
+	<title>prefab</title>
+
+</head>
+<style>
+body {
+	width: auto!important;
+	background-color: #e3d2b7;
+	color: #444;
+	margin: 0; padding: 0;
+	overflow: hidden;
+	font-family: monospace;
+	user-select:none;
+}
+canvas {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+
+
+#infobox {
+	display: fixed;
+	background-color: rgba(255,255,255, 0.5);
+	position: absolute;
+	top: 0px; right: 0px;
+	height: 100%;
+	padding-top: 70px;
+	padding-right: 10px;
+	/*padding-bottom: 10px;*/
+	z-index: 1;
+	width: 200px;
+	transition: all 0.2s ease-in-out;
+	border-bottom-left-radius: 12px;
+	box-shadow:  0 0 5px rgba(0,0,0,0.2);
+	text-align: right;
+	line-height: 1em;
+}
+
+#infobox span {
+	display: inline-block;
+	text-align: right;
+}
+#infobox p {
+	margin: 0; padding: 0;
+	/*background-color: rgba(0,0,0,0.1);*/
+	/*line-height: 40px;*/
+}
+
+#infobox h2 {
+	display: block;
+	width: 100%;
+	text-align: left;
+	font-size: 1.1em;
+	border-top: rgba(0,0,0,0.1) 1px solid;
+	font-weight: lighter;
+	position: relative;
+}
+
+#infobox button {
+	display: inline;
+	width: 40px;
+	height: 40px;
+	line-height: 40px;
+	/*background-color: rgba(0,0,0,0.05);*/
+	outline: none;
+	border:none;
+	color: #000;
+	padding: 0;
+	margin: 0;
+	cursor: pointer;
+	/*padding: 0 12px;*/
+}
+
+#infobox h2 button {
+	padding: 0;
+	margin: 2px 0 0 2px;
+}
+
+#infobox h2 span {
+	display: inline;
+	float: right;
+	line-height: 40px;
+}
+
+
+
+#infobox button:hover {
+	color: #fff;
+	background-color: rgba(0,0,0,0.1);
+}
+
+
+#infobox button {
+	background-color: rgba(0,0,0,0.05);
+}
+
+span#exwallprice,
+span#inwallprice,
+span#floorprice {
+	display: block;
+	padding: 4px;
+}
+
+span#total {
+	display: inline-block;
+	padding: 12px;
+	margin-top: 8px;
+}
+
+#infobox.hide {transform: translateX(220px);}
+
+#infobox svg ,#infobtn svg {transform:scale(0.5); transition: all 0.2s ease-in-out;}
+
+#infobtn.on:hover svg {transform:scale(0.5) rotate(60deg);}
+
+#infobtn.on .hide {display: none;}
+#infobtn .hide {display: inline-block;}
+#infobtn #cog {display: none;}
+#infobtn.on #cog {display: inline-block;}
+
+#infobtn {
+	display: block;
+	width: 60px;
+	height: 60px;
+	position: fixed;
+	top: 0;
+	right: 0;	
+	display: inline-block;
+	transition: all 0.4s ease-in-out;
+	transform-origin: center center;
+	background: transparent;
+	outline: none;
+	border: none;
+	cursor: pointer;
+	z-index: 999;
+}
+
+#totalprice {
+	padding: 6px;
+	border-top: rgba(0,0,0,0.1) 1px solid;
+}
+
+#roofbutton:hover svg path {
+	stroke: #fff;
+}
+button#selectcol {
+	position: absolute;
+	display: block;
+	left: 0;
+	top: 42px;
+	width: 82px;
+}
+
+button#selectcol.hide {
+	display: none;
+}
+
+
+#thiscol {
+	display: inline-block;
+	width: 40px;
+	height: 40px;
+	float: left;
+	line-height: 35px;
+	background-color: red;
+	border-radius: 100%;
+	text-indent: -100em;	
+	border:#fff 1px solid;
+	box-shadow: 0 0 2px rgba(0,0,0,0.2);
+	transform: scale(0.5);
+}
+</style>
+<body>
+	<button id="infobtn">
+		<svg xmlns="http://www.w3.org/2000/svg" id="cog" viewBox="0 0 20 20" fill="currentColor">
+			<path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd" />
+		</svg>
+
+		<svg xmlns="http://www.w3.org/2000/svg" class="hide" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+		</svg>
+	</button>
+
+	<div id="infobox" class="">
+		<button id="reset" title="reset">
+			<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+			</svg>			
+		</button>
+
+		<button id="location" title="location">
+			<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+				<path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd" />
+			</svg>
+		</button>
+
+
+		<button id="roofbutton" class="on" 
+		title="roof on/off" onclick="roofbtn()">
+		<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+			<path stroke-linecap="round" stroke-linejoin="round" fill="none" stroke-width="2" 
+			stroke="rgba(0,0,0,0.2)"
+			d="M 20 9.7
+			L 20 20.7 4 20.7 4 9.7" />
+			<path stroke-linecap="round" stroke="#000000" stroke-width="2" stroke-linejoin="round" fill="none" d="
+			M 3 7
+			L 12 3 21 7"/>
+		</svg>
+	</button>
+
+
+	<h2>
+		<button id="selectcol" class="hide" onclick="setcol()"><span id="thiscol"></span>&gt;</button>
+		<button onclick="editmaterialExt(-1)">&lt;</button><button onclick="editmaterialExt(1)">&gt;</button> <span>Exterior</span></h2>
+		<span id="exwallinfo"></span>
+		<span id="exwallprice">0</span>
+		<h2><button onclick="editmaterialInt(-1)">&lt;</button><button onclick="editmaterialInt(1)">&gt;</button> <span>Interior</span></h2>
+		<span id="inwallinfo"></span>
+		<span id="inwallprice">0</span>
+		<h2><button onclick="editmaterialFlr(-1)">&lt;</button><button onclick="editmaterialFlr(1)">&gt;</button> <span>Floor</span></h2>
+		<span id="floorinfo"></span>
+		<span id="floorprice">0</span>
+		<!-- // total -->
+		<p id="totalprice">total : <span id="total">0</span></p>
+	</div>
+
+
+	<script src="js/three.min.js"></script>
+	<script src="js/OrbitControls.min.js"></script>
+	<script src="js/tree.js"></script>
+	<!-- <script src="js/1k.js"></script> -->
+
+	<script>
+// dom elements
+var infobox = document.getElementById("infobox");
+//
+document.getElementById("reset").addEventListener("click", homebtn, false );
+
+var infobtn = document.getElementById("infobtn");
+infobtn.addEventListener("click",showinfo, false );
+// toggle info/specs
+function showinfo() {
+	infobtn.classList.toggle('on');
+	if (infobtn.classList != "on") {
+		infobox.classList = "";
+	} else {
+		infobox.classList = 'hide';
+	}	
+}
+
+// -- extra --
+// 1. internal Wall structure - wood, mild steel, galvanized steel
+// 2. Additional deck area 
+
+// selector vars
+var iwallnum = exwallnum = floornum = 0;
+// an array of materials and descriptions
+// external walls array
+extfunctions = [
+{text:"PVC plastic", price: 2, foo: function() { console.log("PVC"); }},
+{text:"Fibre cement board", price: 3, foo: function() { console.log("fibreboard");}},
+{text:"Galvanized sheet", price: 4, foo: function() { console.log("GalvanizedSheet");}},
+];
+// internal walls array
+intfunctions = [
+{text:"Fibre cement board", price: 5, foo: function() { console.log("fibreboard"); }},
+{text:"MDF board", price: 6, foo: function() { console.log("MDF");}},
+{text:"Gypsum board", price: 7, foo: function() { console.log("Gypsum");}},
+];
+// flooring array
+flrfunctions = [
+{text:"T&G pine", price: 8, foo: function() { console.log("Pine T&G");}},
+{text:"T&G teak", price: 9, foo: function() { console.log("Teak T&G");}},
+{text:"Carpet", price: 2, foo: function() { console.log("carpet");}},
+];
+
+// external wall prev/next buttons
+function editmaterialExt(direction) {
+	exwallnum = exwallnum + direction;
+// bounds
+if (exwallnum < 0) {exwallnum = extfunctions.length-1;}
+if (exwallnum > extfunctions.length-1) {exwallnum = 0;}
+// call function
+// extfunctions[exwallnum]["foo"]();
+fillinfo()
+}	
+// internal wall prev/next buttons
+function editmaterialInt(direction) {
+	iwallnum = iwallnum + direction;
+// bounds
+if (iwallnum < 0) {iwallnum = intfunctions.length-1;}
+if (iwallnum > intfunctions.length-1) {iwallnum = 0;}
+// call function
+// intfunctions[iwallnum]["foo"]();
+fillinfo()
+}		
+// flooring prev/next buttons
+function editmaterialFlr(direction) {
+	floornum = floornum + direction;
+// bounds
+if (floornum < 0) {floornum = flrfunctions.length-1;}
+if (floornum > flrfunctions.length-1) {floornum = 0;}
+// call function
+// flrfunctions[floornum]["foo"]();
+fillinfo()
+}		
+
+
+// reset [home]
+function homebtn() {
+	iwallnum = exwallnum = floornum = 0;
+	fillinfo();
+	console.log('reset')
+}
+
+
+
+
+
+
+// toggle roof
+function roofbtn() {
+	
+	var roofbtn = document.getElementById("roofbutton")
+	roofbtn.classList.toggle('on');
+	roof = scene.getObjectByName( "roof" );
+
+	if ( roofbtn.classList == "on") {
+		roof.visible = false;
+	}	else {
+		roof.visible = true;
+	}	
+}
+
+
+
+
+// 3D stuff
+var scene = new THREE.Scene();
+var camera = new THREE.PerspectiveCamera( 35, window.innerWidth/window.innerHeight, 0.1, 1000 );
+
+var renderer = new THREE.WebGLRenderer({antialias: true, transparent:true, alpha:true});
+renderer.setSize( window.innerWidth, window.innerHeight );
+document.body.appendChild( renderer.domElement );
+
+// camera
+cmy = 30;
+camera.position.z = 20;
+camera.position.y = cmy;
+
+// controls
+controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.maxDistance = 50;
+controls.minDistance = 3;
+controls.enablePan = false;
+controls.maxPolarAngle = Math.PI * 0.51;
+
+
+// lights
+var light = new THREE.AmbientLight( 0x404040 );
+scene.add( light );
+
+var pointLight = new THREE.PointLight( 0xffffff, 1, 4 );
+pointLight.position.set( 0, 4, 0 );
+scene.add( pointLight );
+
+var pointclone1 = pointLight.clone();
+pointclone1.position.set(5,4,5);
+scene.add(pointclone1);
+
+var pointclone2 = pointLight.clone();
+pointclone2.position.set(-5,4,-5);
+scene.add(pointclone2);
+
+var pointclone3 = pointLight.clone();
+pointclone3.position.set( 5, 4, -5 );
+scene.add( pointclone3 );
+
+var pointclone4 = pointLight.clone();
+pointclone4.position.set( -5, 4, 5 );
+scene.add( pointclone4 );
+
+var hlight = new THREE.HemisphereLight( 0xbfac9b, 0xffffff, 0.8 );
+scene.add( hlight );
+
+// groups
+group = new THREE.Group();
+group.position.set(0,-1.9,0)
+scene.add( group );
+
+prefab1 = new THREE.Group();
+prefab1.position.set(0,0.9,0);
+group.add( prefab1 );
+
+
+// BG skybox
+geometry = new THREE.SphereGeometry(84, 10, 10, 0, 2*Math.PI, 0, Math.PI/2);
+
+material = new THREE.MeshBasicMaterial({
+// color:  0x33ff33,
+map:new THREE.TextureLoader().load( 'models/grad.png' ),
+transparent:true,
+opacity:0.7,
+side: THREE.BackSide
+});
+mesh = new THREE.Mesh(geometry, material);
+group.add(mesh);
+
+
+// create base plan ground level
+function createbase(thismaterial, posx){
+	geometry = new THREE.PlaneGeometry(12, 12);
+	mesh = new THREE.Mesh(geometry, thismaterial);
+	mesh.rotation.x = -Math.PI/2;
+	mesh.position.x = posx*1.01;
+	mesh.position.y = -0.01;
+	group.add(mesh);
+}
+
+// start loader
+var loader = new THREE.BufferGeometryLoader();
+
+// all materials in scene
+var materials = [
+new THREE.MeshBasicMaterial( {transparent:true, opacity:0.9  } ),//0
+new THREE.MeshStandardMaterial( {color:0xeeeeee, flatShading:true} ),//1
+new THREE.MeshStandardMaterial( {color:0xffffff} ),//2
+new THREE.MeshLambertMaterial( {color:0x333333, side:THREE.DoubleSide} ),//3
+new THREE.MeshPhongMaterial( {color:0xeeeeee,shininess:100, transparent:true, opacity:0.3, side:THREE.DoubleSide} ),//4
+new THREE.MeshStandardMaterial( {color:0x2f2f2f, roughness:0.7} ),//5
+new THREE.MeshLambertMaterial( {color:0x9e883b} ),//6
+new THREE.MeshLambertMaterial( {color:0xcccccc} ),//7
+new THREE.MeshLambertMaterial( {color:0xe8e3d3} ),//8
+new THREE.MeshStandardMaterial( {color:0xff0000, flatShading:true} ),//9
+new THREE.MeshStandardMaterial( {flatShading:true,map:new THREE.TextureLoader().load( 'models/finwalls.png' )} ),//10
+new THREE.MeshStandardMaterial( {flatShading:true, map:new THREE.TextureLoader().load( 'models/finwalls.png' ), 
+} ),//11
+new THREE.MeshStandardMaterial( {flatShading:true, map:new THREE.TextureLoader().load( 'models/pine.png' ), } ),//12
+new THREE.MeshStandardMaterial( {map:new THREE.TextureLoader().load( 'models/carpet.png' )} ),//13
+new THREE.MeshStandardMaterial( {flatShading:true, map:new THREE.TextureLoader().load( 'models/teak.png' )} ),//14
+new THREE.MeshStandardMaterial( {flatShading:true, map:new THREE.TextureLoader().load( 'models/pine.png' )} ),//15
+new THREE.MeshStandardMaterial( {flatShading:true, map:new THREE.TextureLoader().load( 'models/tiles.png' )} ),//16
+new THREE.MeshStandardMaterial( {map:new THREE.TextureLoader().load( 'models/t1.png' ), transparent:true, opacity:0.3} ),//17
+new THREE.MeshStandardMaterial( {flatShading:true, map:new THREE.TextureLoader().load( 'models/floortext2.png' ), transparent:true, opacity:0.4} ),//18
+new THREE.MeshStandardMaterial( {flatShading:true, color:0x2c2c2c, roughness:0.7} ),//19
+new THREE.MeshStandardMaterial( {flatShading:true, color:0x603112} ),//20
+]
+
+
+// load geometries calls
+function loadobjects(){
+// loadgeo(name, x,y,z, rotation, materials# )
+loadgeo('floor', 0,0.02,0, 0, materials[11]);
+loadgeo('floortext', 0,0.1,0, 0, materials[18]);
+loadgeo('externalwalls', 0,0,0, 0, materials[3]);
+loadgeo('internalwalls',0,0,0, 0, materials[1]);
+loadgeo('frames',0,0,0, 0, materials[2]);
+loadgeo('bati',0,0,0, 0, materials[3]);
+loadgeo('roof',0,0,0, 0, materials[3]);
+loadgeo('door',-0.173,0,-4.642, 0, materials[20]);
+loadgeo('door',2.041,0,-0.548, 0, materials[20]);
+loadgeo('door', 2.041,0,-3.006, 0, materials[20]);
+loadgeo('door', 0,0,0.227, Math.PI/2, materials[20]);
+loadgeo('door', 0.414,0,-1.104, Math.PI/2, materials[20]);
+loadgeo('door', 0.414,0,-3.771, Math.PI/2, materials[20]);
+loadgeo('dbldoor', 0,0,0.03, 0, materials[20]);
+loadgeo('glass', 0,0,0, 0, materials[4]);
+loadgeo('flashing', 0,0,0, 0, materials[5]);
+loadgeo('deck', 0,0,0, 0, materials[14]);
+loadgeo('furniture', 0,0,0, 0, materials[1]);
+loadgeo('1bedbase', 0,0.01,0, 0, materials[19]);	
+}
+
+
+// load function
+function loadgeo(model, x,y,z,r, thismaterial){
+	loader.load(
+		'models/'+model+'.json',
+		function ( geometry ) {
+			var object = new THREE.Mesh( geometry, thismaterial );
+			object.name = model;
+			prefab1.add( object );
+			object.position.set(x,y,z)
+			object.rotation.set(0,r,0)
+		},
+
+// callbacks
+function ( xhr ) {},
+function ( err ) {console.log( 'error' );}
+);
+}
+
+// generate tree
+gentree(19, 2, -9);
+gentree(-13, 2, -20);
+gentree(30, 2, 10);
+
+
+// make rocks
+for ( var i = 0; i < 19; i ++ ) {
+	var material = new THREE.MeshLambertMaterial( {color: 0x8d8484} );
+	var geometry = new THREE.SphereGeometry( 0.1, 2, 1, 0, 3 );
+	var mesh = new THREE.Mesh( geometry, material );
+	mesh.rotation.x = -Math.PI/2;
+	mesh.rotation.z = Math.PI*Math.random();
+
+	var sc = Math.random()*2;
+	mesh.scale.set(sc, sc, sc);
+	mesh.position.x = ( Math.random() - 0.5 ) * 22;
+	mesh.position.z = ( Math.random() - 0.5 ) * 22;
+
+// leave space in center
+if ( Math.abs( mesh.position.x ) < 8 && Math.abs( mesh.position.z ) < 8 ) continue;
+
+mesh.updateMatrix();
+mesh.matrixAutoUpdate = false;
+group.add( mesh );
+//
+shadowgeometry = new THREE.PlaneGeometry(sc/4, sc/4);
+shadow = new THREE.Mesh(shadowgeometry, new THREE.MeshBasicMaterial( { 
+	map:new THREE.TextureLoader().load( 'models/shadow.png' ),
+	transparent:true,
+	opacity:0.4
+} ));
+shadow.position.y = -0.01;
+mesh.add(shadow);
+} // end for loop
+
+
+// colour select
+function showcolselect() {
+	document.getElementById("selectcol").classList = '';
+}
+
+// set colours
+var colnum = 0;
+
+var colours = [
+{r:47, g:63, b:76},
+{r:101, g:57, b:48},
+{r:166, g:100, b:84},
+{r:78, g:93, b:104},
+{r:65, g:65, b:67},
+{r:24, g:96, b:201},
+];
+
+// set walls colour
+function setcol(){
+	colnum++;
+	if (colnum < 0) {colnum = colours.length-1;}
+	if (colnum > colours.length-1) {colnum = 0;}
+	// set dom
+	document.getElementById("thiscol").style.backgroundColor = 'rgba('+colours[colnum].r +', '+colours[colnum].g +', '+ colours[colnum].b + ', 1)';
+
+// set model
+var bati = scene.getObjectByName( 'bati' );
+setmodelcol(bati, 0);
+var flashing = scene.getObjectByName( 'flashing' );
+setmodelcol(flashing, -6);
+}
+
+
+// set col utility
+function setmodelcol(argument, darker) {
+	argument.material.color.r = (colours[colnum].r+darker)/255;
+	argument.material.color.g = (colours[colnum].g+darker)/255;
+	argument.material.color.b = (colours[colnum].b+darker)/255;
+	argument.material.needsUpdate = true;
+}
+
+
+
+
+// set model to info settings
+function setmodel() {
+	externalwalls = scene.getObjectByName( "externalwalls" );
+	bati = scene.getObjectByName( "bati" );
+	flashing = scene.getObjectByName( "flashing" );
+//
+if (exwallnum == 0) {
+	externalwalls.material = materials[3];
+	bati.visible = true;
+	flashing.visible = true;
+	document.getElementById("selectcol").classList = '';	
+}	
+//
+if ( exwallnum == 1 ) {
+	externalwalls.material = materials[6];
+	bati.visible = false;
+	flashing.visible = false;
+	document.getElementById("selectcol").classList = 'hide';
+}	
+//
+if ( exwallnum == 2 ) {
+	externalwalls.material = materials[3];
+	bati.visible = true;
+	flashing.visible = true;
+	document.getElementById("selectcol").classList = 'hide';
+}	
+//
+internalwalls = scene.getObjectByName( "internalwalls" );
+
+if ( iwallnum == 0 ) {
+	internalwalls.material = materials[1];
+}	
+if ( iwallnum == 1 ) {
+	internalwalls.material = materials[11];
+}	
+if ( iwallnum == 2 ) {
+	internalwalls.material = materials[8];
+}	
+//
+floor = scene.getObjectByName( "floor" );
+
+if ( floornum == 0 ) {
+	floor.material = materials[1];
+}	
+if ( floornum == 1 ) {
+	floor.material = materials[14];
+}		
+if ( floornum == 2 ) {
+	floor.material = materials[15];
+}	
+} // setmodel
+
+
+// fill info window
+function fillinfo() {
+// the important vars to save
+// console.log(exwallnum, iwallnum, floornum)
+
+// description
+document.getElementById("exwallinfo").innerHTML = extfunctions[exwallnum].text;
+document.getElementById("inwallinfo").innerHTML = intfunctions[iwallnum].text;
+document.getElementById("floorinfo").innerHTML = flrfunctions[floornum].text;
+// price
+document.getElementById("exwallprice").innerHTML = extfunctions[exwallnum].price;
+document.getElementById("inwallprice").innerHTML = intfunctions[iwallnum].price;
+document.getElementById("floorprice").innerHTML = flrfunctions[floornum].price;
+//	total
+// console.log(extfunctions[exwallnum].price)
+document.getElementById("total").innerHTML = extfunctions[exwallnum].price + intfunctions[iwallnum].price + flrfunctions[floornum].price;
+//
+setmodel();
+}
+
+// handle window resize
+window.addEventListener('resize', function(){
+	camera.aspect = window.innerWidth / window.innerHeight;
+	camera.updateProjectionMatrix();
+	renderer.setSize( window.innerWidth, window.innerHeight );
+}, false)
+
+
+// render loop
+var animate = function () {
+	requestAnimationFrame( animate );
+	renderer.render( scene, camera );
+};
+
+
+// load all 3D objects
+loadobjects();
+
+// << START
+
+
+setTimeout(function() {
+	createbase(materials[17], 0);
+	roof = scene.getObjectByName( "roof" );
+	roof.visible = false;
+	setcol();
+	fillinfo();
+	animate();
+}, 500);
+
+</script>
+</body>
+</html>
