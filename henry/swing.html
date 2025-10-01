@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Rope</title>
+    <title>FREE</title>
     <style>
       body {
         margin: 0;
@@ -39,26 +39,21 @@
     <script>
       // Scene setup
       const scene = new THREE.Scene();
-      const camera = new THREE.PerspectiveCamera(
-        75,
-        window.innerWidth / window.innerHeight,
-        0.1,
-        1000
-      );
+      const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
       const renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.setClearColor(0x000000);
       renderer.shadowMap.enabled = true;
       document.body.appendChild(renderer.domElement);
 
-      // Position camera
+      // Camera position
       camera.position.set(0, 4, 6);
       camera.lookAt(0, 1, 0);
 
-
       // Lighting
-      const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+      const ambientLight = new THREE.AmbientLight(0x404040, 1);
       scene.add(ambientLight);
+      
       const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
       directionalLight.position.set(10, 10, 5);
       directionalLight.castShadow = true;
@@ -73,69 +68,66 @@
       directionalLight.shadow.radius = 2;
       scene.add(directionalLight);
 
-     
+      // Floor/Carpet
+      const groundplane = new THREE.Group();
+      groundplane.position.y = -0.3;
+      scene.add(groundplane);
 
-	// Floor/Carpet
-  var groundplane = new THREE.Group();
-  groundplane.position.y = -0.3;
-  scene.add(groundplane);
-
-	var wgeometry = new THREE.PlaneBufferGeometry( 50, 50, 50, 50 );
-    // var wgeometry = new THREE.CircleGeometry( 15, 30, 30 );
-	var wmaterial = new THREE.MeshStandardMaterial({
-		map: new THREE.TextureLoader().load( 'assets/Carpet012_1K-JPG_Color.jpg' ),
-		normalMap :  new THREE.TextureLoader().load( 'assets/Carpet012_1K-JPG_NormalGL.jpg' ),	
+      const wgeometry = new THREE.PlaneBufferGeometry(50, 50, 50, 50);
+      const wmaterial = new THREE.MeshStandardMaterial({
+        map: new THREE.TextureLoader().load('assets/Carpet012_1K-JPG_Color.jpg'),
+        normalMap: new THREE.TextureLoader().load('assets/Carpet012_1K-JPG_NormalGL.jpg'),	
         roughness: 0.9,
-		metalness: 0.0,
-	});
-    wmaterial.map.wrapS = THREE.RepeatWrapping;
-    wmaterial.map.wrapT = THREE.RepeatWrapping;
-    wmaterial.map.repeat.set( 4, 4 );
-	var carpet = new THREE.Mesh(wgeometry, wmaterial);
-	carpet.receiveShadow = true;
-	carpet.rotation.set(-Math.PI * 0.5, 0, 0);
-	carpet.position.y = 0.05;
-	groundplane.add(carpet);
+        metalness: 0.0,
+      });
+      wmaterial.map.wrapS = THREE.RepeatWrapping;
+      wmaterial.map.wrapT = THREE.RepeatWrapping;
+      wmaterial.map.repeat.set(4, 4);
+      
+      const carpet = new THREE.Mesh(wgeometry, wmaterial);
+      carpet.receiveShadow = true;
+      carpet.rotation.set(-Math.PI * 0.5, 0, 0);
+      carpet.position.y = 0.05;
+      groundplane.add(carpet);
 
-    // vigniette
-	var vmaterial = new THREE.MeshBasicMaterial({
-		map: new THREE.TextureLoader().load( 'assets/3frame.png' ),
+      // Vignette frame
+      const vmaterial = new THREE.MeshBasicMaterial({
+        map: new THREE.TextureLoader().load('assets/3frame.png'),
         transparent: true,
-		});
-	var frame = new THREE.Mesh(wgeometry, vmaterial);
-    frame.material.map.magFilter = THREE.NearestFilter;
-    frame.material.map.minFilter = THREE.NearestFilter;
-	frame.rotation.set(-Math.PI * 0.5, 0, 0);
-	frame.position.y = 0.055;
-    frame.scale.set(1.2,1.2,1.2)
-	groundplane.add(frame);
+      });
+      const frame = new THREE.Mesh(wgeometry, vmaterial);
+      frame.material.map.magFilter = THREE.NearestFilter;
+      frame.material.map.minFilter = THREE.NearestFilter;
+      frame.rotation.set(-Math.PI * 0.5, 0, 0);
+      frame.position.y = 0.055;
+      frame.scale.set(1.2, 1.2, 1.2);
+      groundplane.add(frame);
 
-      // model
-      bg = new THREE.Group();
+      // Model groups
+      const bg = new THREE.Group();
       scene.add(bg);
 
-      vacuum = new THREE.Group();
+      const vacuum = new THREE.Group();
       vacuum.scale.set(0.2, 0.2, 0.2);
-      // vacuum.position.set(0,-10,0);
       bg.add(vacuum);
 
-      handle = new THREE.Group();
+      const handle = new THREE.Group();
       handle.scale.set(0.2, 0.2, 0.2);
-      // handle.position.set(-2,1.2,0);
       handle.rotation.set(Math.PI * 0.5, 0, 0);
       bg.add(handle);
 
-      // loader
+      // Loader
       const loader = new THREE.BufferGeometryLoader();
 
-      // materials
+      // Textures
       const blinktex = new THREE.TextureLoader().load("assets/henryF2.png");
       const facetex = new THREE.TextureLoader().load("assets/henryF.png");
       const ooface = new THREE.TextureLoader().load("assets/henryF3.png");
 
-      fixtexture(blinktex);
-      fixtexture(facetex);
-      fixtexture(ooface);
+      [blinktex, facetex, ooface].forEach(tex => {
+        tex.magFilter = THREE.NearestFilter;
+        tex.minFilter = THREE.NearestFilter;
+      });
 
       const facematerial = new THREE.MeshLambertMaterial({
         map: facetex,
@@ -154,41 +146,32 @@
         alphaTest: 0.2,
       });
 
-      // load models
+      // Load models
+      function loadobj(grp, obj, mat) {
+        loader.load(
+          obj,
+          (geometry) => {
+            const object = new THREE.Mesh(geometry, mat);
+            if (object.material.map) {
+              object.material.map.magFilter = THREE.NearestFilter;
+              object.material.map.minFilter = THREE.NearestFilter;
+            }
+            object.castShadow = true;
+            object.receiveShadow = true;
+            if (grp === vacuum) {
+              object.position.set(0, -1.2, 0);
+            }
+            grp.add(object);
+          }
+        );
+      }
+
       loadobj(vacuum, "assets/henry.json", hmaterial);
       loadobj(handle, "assets/handle.json", hmaterial);
       loadobj(vacuum, "assets/face.json", facematerial);
       loadobj(vacuum, "assets/txtbox.json", txtboxmaterial);
 
-      function loadobj(grp, obj, mat) {
-        loader.load(
-          obj,
-          function (geometry) {
-            const object = new THREE.Mesh(geometry, mat);
-            fixtexture(object.material.map);
-            object.castShadow = true;
-            object.receiveShadow = true;
-            if (grp == vacuum) {
-              object.position.set(0, -1.2, 0);
-            }
-            grp.add(object);
-          },
-          function (xhr) {
-            // console.log( (xhr.loaded / xhr.total * 100) + '% loaded' );
-          },
-          function (err) {
-            // console.log( 'An error happened' );
-          }
-        );
-      }
-
-      //
-      function fixtexture(tex) {
-        tex.magFilter = THREE.NearestFilter;
-        tex.minFilter = THREE.NearestFilter;
-      }
-
-      // Physics-based Rope Class with Ground Physics and Non-Stretch Constraint
+      // Rope physics
       class Rope {
         constructor(startPoint, endPoint, segments = 15, segmentLength = 0.5) {
           this.segments = segments;
@@ -197,27 +180,18 @@
           this.oldPoints = [];
           this.meshes = [];
           this.group = new THREE.Group();
-          this.groundLevel = 0; // Ground is at y=0
+          this.groundLevel = 0;
 
-          // Initialize points along the rope
+          // Initialize points
           for (let i = 0; i < segments; i++) {
             const t = i / (segments - 1);
-            const point = new THREE.Vector3().lerpVectors(
-              startPoint,
-              endPoint,
-              t
-            );
+            const point = new THREE.Vector3().lerpVectors(startPoint, endPoint, t);
             this.points.push(point.clone());
             this.oldPoints.push(point.clone());
 
-            // Create visual representation for each segment
+            // Visual segments
             if (i > 0) {
-              const geometry = new THREE.CylinderGeometry(
-                0.03,
-                0.03,
-                segmentLength,
-                8
-              );
+              const geometry = new THREE.CylinderGeometry(0.03, 0.03, segmentLength, 8);
               const material = new THREE.MeshStandardMaterial({
                 color: 0x111111,
                 roughness: 0.7,
@@ -225,13 +199,12 @@
               });
               const segment = new THREE.Mesh(geometry, material);
               segment.castShadow = true;
-
               this.meshes.push(segment);
               this.group.add(segment);
             }
           }
 
-          // Add a henry sphere at the end point only
+          // End handle
           const handleGeometry = new THREE.SphereGeometry(0.08, 16, 16);
           const handleMaterial = new THREE.MeshStandardMaterial({
             color: 0xff4444,
@@ -246,50 +219,33 @@
           this.updateVisuals();
         }
 
-        // Verlet integration update with ground physics and non-stretch constraint
-        update(
-          startPoint,
-          endPoint,
-          gravity = new THREE.Vector3(0, -0.001, 0)
-        ) {
-          // Fix start point (anchored)
+        update(startPoint, endPoint, gravity = new THREE.Vector3(0, -0.001, 0)) {
+          // Anchor points
           this.points[0].copy(startPoint);
-
-          // Only fix end point if not being dragged
           if (!isDragging) {
             this.points[this.points.length - 1].copy(endPoint);
           }
 
-          // Verlet integration for middle points
+          // Verlet integration
           for (let i = 1; i < this.points.length - 1; i++) {
-            const velocity = new THREE.Vector3().subVectors(
-              this.points[i],
-              this.oldPoints[i]
-            );
+            const velocity = new THREE.Vector3().subVectors(this.points[i], this.oldPoints[i]);
             this.oldPoints[i].copy(this.points[i]);
 
-            // Apply gravity
             velocity.add(gravity);
-
-            // Add damping
             velocity.multiplyScalar(0.99);
-
-            // Update position
             this.points[i].add(velocity);
 
-            // Ground collision - prevent points from going below ground
+            // Ground collision
             if (this.points[i].y < this.groundLevel) {
               this.points[i].y = this.groundLevel;
-
-              // Apply bounce/friction when hitting ground
               const groundNormal = new THREE.Vector3(0, 1, 0);
               const reflection = velocity.clone().reflect(groundNormal);
-              reflection.multiplyScalar(0.3); // Dampen bounce
+              reflection.multiplyScalar(0.3);
               this.oldPoints[i].sub(reflection);
             }
           }
 
-          // Apply non-stretch constraints with more iterations for rigidity
+          // Constraints
           for (let iteration = 0; iteration < 10; iteration++) {
             for (let i = 0; i < this.points.length - 1; i++) {
               const point1 = this.points[i];
@@ -298,20 +254,13 @@
               const distance = delta.length();
               const difference = (distance - this.segmentLength) / distance;
 
-              // Apply constraint with different handling for fixed vs free points
               if (i > 0 && !(i === this.points.length - 2 && isDragging)) {
-                // Move point1 (unless it's the fixed start point)
                 point1.add(delta.clone().multiplyScalar(0.5 * difference));
-
-                // Ensure point doesn't go below ground after constraint
                 point1.y = Math.max(point1.y, this.groundLevel);
               }
 
               if (i < this.points.length - 2 || !isDragging) {
-                // Move point2 (unless it's the dragged end point)
                 point2.sub(delta.clone().multiplyScalar(0.5 * difference));
-
-                // Ensure point doesn't go below ground after constraint
                 point2.y = Math.max(point2.y, this.groundLevel);
               }
             }
@@ -328,9 +277,7 @@
 
             const direction = new THREE.Vector3().subVectors(end, start);
             const length = direction.length();
-            const center = new THREE.Vector3()
-              .addVectors(start, end)
-              .multiplyScalar(0.5);
+            const center = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
 
             segment.position.copy(center);
             segment.scale.y = length / this.segmentLength;
@@ -338,42 +285,41 @@
             segment.rotateX(Math.PI / 2);
           }
 
-          // Update handle position
           this.handle.position.copy(this.points[this.points.length - 1]);
         }
       }
 
       // Create rope
       const rope = new Rope(
-        new THREE.Vector3(0, 2, 0), // Start point (fixed)
-        new THREE.Vector3(0, 0, 0), // End point (draggable)
+        new THREE.Vector3(0, 2, 0),
+        new THREE.Vector3(0, 0, 0),
         20,
         0.4
       );
       scene.add(rope.group);
 
-    
-      // Mouse interaction
+      // Pointer interaction
       const mouse = new THREE.Vector2();
       const raycaster = new THREE.Raycaster();
       let isDragging = false;
 
-      document.addEventListener("mousedown", (event) => {
+      // Pointer events
+      function onPointerDown(event) {
         mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
         mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
         raycaster.setFromCamera(mouse, camera);
 
-        // Check if clicking near the rope's end point (handle)
         const endPoint = rope.points[rope.points.length - 1];
         const distanceToEnd = raycaster.ray.distanceToPoint(endPoint);
 
         if (distanceToEnd < 0.5) {
           isDragging = true;
+          document.body.style.cursor = 'grabbing';
         }
-      });
+      }
 
-      document.addEventListener("mousemove", (event) => {
+      function onPointerMove(event) {
         if (!isDragging) return;
 
         mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
@@ -381,51 +327,45 @@
 
         raycaster.setFromCamera(mouse, camera);
 
-        // Find intersection with a plane at average height for natural dragging
-        const avgY =
-          rope.points.reduce((sum, point) => sum + point.y, 0) /
-          rope.points.length;
+        const avgY = rope.points.reduce((sum, point) => sum + point.y, 0) / rope.points.length;
         const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -avgY);
         const intersectionPoint = new THREE.Vector3();
         raycaster.ray.intersectPlane(plane, intersectionPoint);
 
-        // Update the end point position
         rope.points[rope.points.length - 1].copy(intersectionPoint);
+        rope.points[rope.points.length - 1].y = Math.max(rope.points[rope.points.length - 1].y, rope.groundLevel);
+      }
 
-        // Ensure it doesn't go below ground
-        rope.points[rope.points.length - 1].y = Math.max(
-          rope.points[rope.points.length - 1].y,
-          rope.groundLevel
-        );
-      });
-
-      document.addEventListener("mouseup", () => {
+      function onPointerUp() {
         isDragging = false;
-      });
+        document.body.style.cursor = 'default';
+      }
+
+      // Event listeners
+      renderer.domElement.addEventListener('pointerdown', onPointerDown);
+      renderer.domElement.addEventListener('pointermove', onPointerMove);
+      renderer.domElement.addEventListener('pointerup', onPointerUp);
 
       // Animation loop
+      let started = false;
+      
       function animate() {
         requestAnimationFrame(animate);
 
-        // Add some movement to the start point
         const time = Date.now() * 0.001;
 
         if (!started) {
           rope.points[0].x = Math.sin(time);
           rope.points[0].z = Math.cos(time);
-          // started = true;
         }
 
-        // Update rope physics
+        // Update physics
         rope.update(rope.points[0], rope.points[rope.points.length - 1]);
 
-        // position objects
-        handle.position.set(
-          rope.points[0].x,
-          rope.points[0].y,
-          rope.points[0].z
-        );
+        // Position objects
+        handle.position.set(rope.points[0].x, rope.points[0].y, rope.points[0].z);
         handle.lookAt(rope.points[2].x, rope.points[2].y, rope.points[2].z);
+        
         vacuum.position.set(
           rope.points[rope.points.length - 1].x,
           rope.points[rope.points.length - 1].y,
@@ -437,23 +377,17 @@
           rope.points[rope.points.length - 2].z
         );
 
-        // lerp
-        rope.points[rope.points.length - 1].x +=
-          (0.8 - rope.points[rope.points.length - 1].x) * 0.2;
-
-        // render
         renderer.render(scene, camera);
       }
 
-      // Handle window resize
+      // Window resize
       window.addEventListener("resize", () => {
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
       });
 
-      // Start animation
-      var started = false;
+      // Start
       animate();
     </script>
   </body>
