@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rope</title>
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: #222;
+        font-family: Arial, sans-serif;
+      }
+      canvas {
+        display: block;
+      }
+      #info {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        color: white;
+        background: rgba(0, 0, 0, 0.7);
+        padding: 15px;
+        border-radius: 10px;
+        max-width: 300px;
+      }
+      #info h1 {
+        margin: 0 0 10px 0;
+        color: #ffcc00;
+      }
+      #info p {
+        margin: 5px 0;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <script src="js/three.min.js"></script>
+    <script>
+      // Scene setup
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(
+        75,
+        window.innerWidth / window.innerHeight,
+        0.1,
+        1000
+      );
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setClearColor(0x000000);
+      renderer.shadowMap.enabled = true;
+      document.body.appendChild(renderer.domElement);
+
+      // Position camera
+      camera.position.set(0, 4, 6);
+      camera.lookAt(0, 1, 0);
+
+
+      // Lighting
+      const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+      scene.add(ambientLight);
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+      directionalLight.position.set(10, 10, 5);
+      directionalLight.castShadow = true;
+      directionalLight.shadow.mapSize.width = 512;
+      directionalLight.shadow.mapSize.height = 512;
+      directionalLight.shadow.camera.near = 0.5;
+      directionalLight.shadow.camera.far = 25;
+      directionalLight.shadow.camera.left = -10;
+      directionalLight.shadow.camera.right = 10;
+      directionalLight.shadow.camera.top = 10;
+      directionalLight.shadow.camera.bottom = -10;
+      directionalLight.shadow.radius = 2;
+      scene.add(directionalLight);
+
+     
+
+	// Floor/Carpet
+  var groundplane = new THREE.Group();
+  groundplane.position.y = -0.3;
+  scene.add(groundplane);
+
+	var wgeometry = new THREE.PlaneBufferGeometry( 50, 50, 50, 50 );
+    // var wgeometry = new THREE.CircleGeometry( 15, 30, 30 );
+	var wmaterial = new THREE.MeshStandardMaterial({
+		map: new THREE.TextureLoader().load( 'assets/Carpet012_1K-JPG_Color.jpg' ),
+		normalMap :  new THREE.TextureLoader().load( 'assets/Carpet012_1K-JPG_NormalGL.jpg' ),	
+        roughness: 0.9,
+		metalness: 0.0,
+	});
+    wmaterial.map.wrapS = THREE.RepeatWrapping;
+    wmaterial.map.wrapT = THREE.RepeatWrapping;
+    wmaterial.map.repeat.set( 4, 4 );
+	var carpet = new THREE.Mesh(wgeometry, wmaterial);
+	carpet.receiveShadow = true;
+	carpet.rotation.set(-Math.PI * 0.5, 0, 0);
+	carpet.position.y = 0.05;
+	groundplane.add(carpet);
+
+    // vigniette
+	var vmaterial = new THREE.MeshBasicMaterial({
+		map: new THREE.TextureLoader().load( 'assets/3frame.png' ),
+        transparent: true,
+		});
+	var frame = new THREE.Mesh(wgeometry, vmaterial);
+    frame.material.map.magFilter = THREE.NearestFilter;
+    frame.material.map.minFilter = THREE.NearestFilter;
+	frame.rotation.set(-Math.PI * 0.5, 0, 0);
+	frame.position.y = 0.055;
+    frame.scale.set(1.2,1.2,1.2)
+	groundplane.add(frame);
+
+      // model
+      bg = new THREE.Group();
+      scene.add(bg);
+
+      vacuum = new THREE.Group();
+      vacuum.scale.set(0.2, 0.2, 0.2);
+      // vacuum.position.set(0,-10,0);
+      bg.add(vacuum);
+
+      handle = new THREE.Group();
+      handle.scale.set(0.2, 0.2, 0.2);
+      // handle.position.set(-2,1.2,0);
+      handle.rotation.set(Math.PI * 0.5, 0, 0);
+      bg.add(handle);
+
+      // loader
+      const loader = new THREE.BufferGeometryLoader();
+
+      // materials
+      const blinktex = new THREE.TextureLoader().load("assets/henryF2.png");
+      const facetex = new THREE.TextureLoader().load("assets/henryF.png");
+      const ooface = new THREE.TextureLoader().load("assets/henryF3.png");
+
+      fixtexture(blinktex);
+      fixtexture(facetex);
+      fixtexture(ooface);
+
+      const facematerial = new THREE.MeshLambertMaterial({
+        map: facetex,
+        transparent: true,
+      });
+
+      const hmaterial = new THREE.MeshStandardMaterial({
+        map: new THREE.TextureLoader().load("assets/henry2.png"),
+        roughness: 0.4,
+        metalness: 0.1,
+      });
+
+      const txtboxmaterial = new THREE.MeshLambertMaterial({
+        map: new THREE.TextureLoader().load("assets/henrytxtbox.png"),
+        transparent: true,
+        alphaTest: 0.2,
+      });
+
+      // load models
+      loadobj(vacuum, "assets/henry.json", hmaterial);
+      loadobj(handle, "assets/handle.json", hmaterial);
+      loadobj(vacuum, "assets/face.json", facematerial);
+      loadobj(vacuum, "assets/txtbox.json", txtboxmaterial);
+
+      function loadobj(grp, obj, mat) {
+        loader.load(
+          obj,
+          function (geometry) {
+            const object = new THREE.Mesh(geometry, mat);
+            fixtexture(object.material.map);
+            object.castShadow = true;
+            object.receiveShadow = true;
+            if (grp == vacuum) {
+              object.position.set(0, -1.2, 0);
+            }
+            grp.add(object);
+          },
+          function (xhr) {
+            // console.log( (xhr.loaded / xhr.total * 100) + '% loaded' );
+          },
+          function (err) {
+            // console.log( 'An error happened' );
+          }
+        );
+      }
+
+      //
+      function fixtexture(tex) {
+        tex.magFilter = THREE.NearestFilter;
+        tex.minFilter = THREE.NearestFilter;
+      }
+
+      // Physics-based Rope Class with Ground Physics and Non-Stretch Constraint
+      class Rope {
+        constructor(startPoint, endPoint, segments = 15, segmentLength = 0.5) {
+          this.segments = segments;
+          this.segmentLength = segmentLength;
+          this.points = [];
+          this.oldPoints = [];
+          this.meshes = [];
+          this.group = new THREE.Group();
+          this.groundLevel = 0; // Ground is at y=0
+
+          // Initialize points along the rope
+          for (let i = 0; i < segments; i++) {
+            const t = i / (segments - 1);
+            const point = new THREE.Vector3().lerpVectors(
+              startPoint,
+              endPoint,
+              t
+            );
+            this.points.push(point.clone());
+            this.oldPoints.push(point.clone());
+
+            // Create visual representation for each segment
+            if (i > 0) {
+              const geometry = new THREE.CylinderGeometry(
+                0.03,
+                0.03,
+                segmentLength,
+                8
+              );
+              const material = new THREE.MeshStandardMaterial({
+                color: 0x111111,
+                roughness: 0.7,
+                metalness: 0.1,
+              });
+              const segment = new THREE.Mesh(geometry, material);
+              segment.castShadow = true;
+
+              this.meshes.push(segment);
+              this.group.add(segment);
+            }
+          }
+
+          // Add a henry sphere at the end point only
+          const handleGeometry = new THREE.SphereGeometry(0.08, 16, 16);
+          const handleMaterial = new THREE.MeshStandardMaterial({
+            color: 0xff4444,
+            roughness: 0.3,
+            metalness: 0.7,
+          });
+          this.handle = new THREE.Mesh(handleGeometry, handleMaterial);
+          this.handle.position.copy(this.points[this.points.length - 1]);
+          this.handle.castShadow = true;
+          this.group.add(this.handle);
+
+          this.updateVisuals();
+        }
+
+        // Verlet integration update with ground physics and non-stretch constraint
+        update(
+          startPoint,
+          endPoint,
+          gravity = new THREE.Vector3(0, -0.001, 0)
+        ) {
+          // Fix start point (anchored)
+          this.points[0].copy(startPoint);
+
+          // Only fix end point if not being dragged
+          if (!isDragging) {
+            this.points[this.points.length - 1].copy(endPoint);
+          }
+
+          // Verlet integration for middle points
+          for (let i = 1; i < this.points.length - 1; i++) {
+            const velocity = new THREE.Vector3().subVectors(
+              this.points[i],
+              this.oldPoints[i]
+            );
+            this.oldPoints[i].copy(this.points[i]);
+
+            // Apply gravity
+            velocity.add(gravity);
+
+            // Add damping
+            velocity.multiplyScalar(0.99);
+
+            // Update position
+            this.points[i].add(velocity);
+
+            // Ground collision - prevent points from going below ground
+            if (this.points[i].y < this.groundLevel) {
+              this.points[i].y = this.groundLevel;
+
+              // Apply bounce/friction when hitting ground
+              const groundNormal = new THREE.Vector3(0, 1, 0);
+              const reflection = velocity.clone().reflect(groundNormal);
+              reflection.multiplyScalar(0.3); // Dampen bounce
+              this.oldPoints[i].sub(reflection);
+            }
+          }
+
+          // Apply non-stretch constraints with more iterations for rigidity
+          for (let iteration = 0; iteration < 10; iteration++) {
+            for (let i = 0; i < this.points.length - 1; i++) {
+              const point1 = this.points[i];
+              const point2 = this.points[i + 1];
+              const delta = new THREE.Vector3().subVectors(point2, point1);
+              const distance = delta.length();
+              const difference = (distance - this.segmentLength) / distance;
+
+              // Apply constraint with different handling for fixed vs free points
+              if (i > 0 && !(i === this.points.length - 2 && isDragging)) {
+                // Move point1 (unless it's the fixed start point)
+                point1.add(delta.clone().multiplyScalar(0.5 * difference));
+
+                // Ensure point doesn't go below ground after constraint
+                point1.y = Math.max(point1.y, this.groundLevel);
+              }
+
+              if (i < this.points.length - 2 || !isDragging) {
+                // Move point2 (unless it's the dragged end point)
+                point2.sub(delta.clone().multiplyScalar(0.5 * difference));
+
+                // Ensure point doesn't go below ground after constraint
+                point2.y = Math.max(point2.y, this.groundLevel);
+              }
+            }
+          }
+
+          this.updateVisuals();
+        }
+
+        updateVisuals() {
+          for (let i = 0; i < this.meshes.length; i++) {
+            const start = this.points[i];
+            const end = this.points[i + 1];
+            const segment = this.meshes[i];
+
+            const direction = new THREE.Vector3().subVectors(end, start);
+            const length = direction.length();
+            const center = new THREE.Vector3()
+              .addVectors(start, end)
+              .multiplyScalar(0.5);
+
+            segment.position.copy(center);
+            segment.scale.y = length / this.segmentLength;
+            segment.lookAt(end);
+            segment.rotateX(Math.PI / 2);
+          }
+
+          // Update handle position
+          this.handle.position.copy(this.points[this.points.length - 1]);
+        }
+      }
+
+      // Create rope
+      const rope = new Rope(
+        new THREE.Vector3(0, 2, 0), // Start point (fixed)
+        new THREE.Vector3(0, 0, 0), // End point (draggable)
+        20,
+        0.4
+      );
+      scene.add(rope.group);
+
+    
+      // Mouse interaction
+      const mouse = new THREE.Vector2();
+      const raycaster = new THREE.Raycaster();
+      let isDragging = false;
+
+      document.addEventListener("mousedown", (event) => {
+        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, camera);
+
+        // Check if clicking near the rope's end point (handle)
+        const endPoint = rope.points[rope.points.length - 1];
+        const distanceToEnd = raycaster.ray.distanceToPoint(endPoint);
+
+        if (distanceToEnd < 0.5) {
+          isDragging = true;
+        }
+      });
+
+      document.addEventListener("mousemove", (event) => {
+        if (!isDragging) return;
+
+        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, camera);
+
+        // Find intersection with a plane at average height for natural dragging
+        const avgY =
+          rope.points.reduce((sum, point) => sum + point.y, 0) /
+          rope.points.length;
+        const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -avgY);
+        const intersectionPoint = new THREE.Vector3();
+        raycaster.ray.intersectPlane(plane, intersectionPoint);
+
+        // Update the end point position
+        rope.points[rope.points.length - 1].copy(intersectionPoint);
+
+        // Ensure it doesn't go below ground
+        rope.points[rope.points.length - 1].y = Math.max(
+          rope.points[rope.points.length - 1].y,
+          rope.groundLevel
+        );
+      });
+
+      document.addEventListener("mouseup", () => {
+        isDragging = false;
+      });
+
+      // Animation loop
+      function animate() {
+        requestAnimationFrame(animate);
+
+        // Add some movement to the start point
+        const time = Date.now() * 0.001;
+
+        if (!started) {
+          rope.points[0].x = Math.sin(time);
+          rope.points[0].z = Math.cos(time);
+          // started = true;
+        }
+
+        // Update rope physics
+        rope.update(rope.points[0], rope.points[rope.points.length - 1]);
+
+        // position objects
+        handle.position.set(
+          rope.points[0].x,
+          rope.points[0].y,
+          rope.points[0].z
+        );
+        handle.lookAt(rope.points[2].x, rope.points[2].y, rope.points[2].z);
+        vacuum.position.set(
+          rope.points[rope.points.length - 1].x,
+          rope.points[rope.points.length - 1].y,
+          rope.points[rope.points.length - 1].z
+        );
+        vacuum.lookAt(
+          rope.points[rope.points.length - 2].x,
+          rope.points[rope.points.length - 2].y,
+          rope.points[rope.points.length - 2].z
+        );
+
+        // lerp
+        rope.points[rope.points.length - 1].x +=
+          (0.8 - rope.points[rope.points.length - 1].x) * 0.2;
+
+        // render
+        renderer.render(scene, camera);
+      }
+
+      // Handle window resize
+      window.addEventListener("resize", () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+
+      // Start animation
+      var started = false;
+      animate();
+    </script>
+  </body>
+</html>
