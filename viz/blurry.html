@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, user-scalable=no">
+<title>fft</title>
+<style type="text/css">
+body {background: #330000;}
+body {transition: all 2s ease-in-out;}
+.overlay {display: block;
+width: 100%;
+height: 100%;
+background:radial-gradient(ellipse at center, transparent 0%,rgba(0,0,0,0.5) 90%);
+position: absolute;}
+.paused {background: #000;}
+body {margin:0; overflow: hidden; color: #fff; font-family: monospace;}
+audio {position: absolute; top: 0; right: 0; z-index: 333; margin: 1em; outline: none;}
+#perlin {background: red; position: absolute;
+right: 0; display: none;}
+  #hud button {
+    background: transparent;
+    color: #fff; border:none; outline: none;
+    cursor: pointer; display: block;
+    width: 40px; height: 40px;
+    opacity: 0.3;
+    transition: all 0.3s ease-in-out;
+    float: right;
+    z-index: 2; position: relative;
+  }
+  
+  .playing #hud button#playBtn,
+  .paused #hud button#pauseBtn {
+    display: none;
+  }
+
+  #hud button:hover {
+    opacity: 1;
+  }
+
+  #hud {
+    display: block;
+    margin: 0;
+    padding: 12px;
+    position: absolute;
+    z-index: 2;
+  }
+  #btntxt {width: 40px; text-align: center; line-height: 1.6em; 
+    opacity: 0.3; z-index: 1; position: relative;}
+  /*audio {display: none;}*/
+    #output {
+    font-size: 1.5em;
+    position: absolute;
+    bottom: 5px;
+    left: 0;
+    right:0;
+    text-align: center;
+    z-index: 99;
+    font-family: monospace;
+    color: #ccc;
+    text-indent: 12px;
+    padding: 5px;
+  }
+</style>
+</head>
+<body class="paused">
+<div class="overlay"></div>
+
+<div id="hud">
+    <button id="playBtn" type="button" onclick="playme()">
+      <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" preserveAspectRatio="none" viewBox="0 0 100 100">
+        <defs>
+          <path id="a" fill="#fff" d="M19.55 14.85v70.3L80.5 50 19.55 14.85Z"/></path>
+        </defs>
+        <use xlink:href="#a"/>
+      </svg>
+    </button>
+
+    <button id="pauseBtn" type="button" onclick="aud_fade_out()" >
+      <svg xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" viewBox="0 0 100 100">
+        <path fill="#fff" d="M39.4778 17.0371H21.0593v66h18.4185zm34.5349 0H55.594v66h18.4186z"/></path>
+      </svg>
+    </button>
+
+</div>
+<audio id="player" controls crossorigin="anonymous" onplay="playme()" onpause="aud_fade_out()">
+<source src="playful-nature.mp3">
+</audio>
+
+  <p id="output"></p>
+
+
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.100.0/build/three.min.js"></script>
+<script src="perlin.js"></script>
+
+
+<script>
+// lyrics
+var lyrics = [
+  { "start": "0","text": "#a10066" },
+  { "start": "5","text": "#a10000" },
+  { "start": "10","text": "#a10066" },
+  { "start": "15","text": "#a10000" },
+  { "start": "20","text": "#a10066" },
+  { "start": "25","text": "#a10000" },
+  { "start": "30","text": "#a10066" },
+  { "start": "35","text": "#a10000" },
+  { "start": "40","text": "#a10066" },
+  { "start": "45","text": "#a10000" },
+  { "start": "50","text": "#a10066" },
+  { "start": "55","text": "#a10000" },
+  { "start": "60","text": "#a10066" },
+  { "start": "65","text": "#a10000" },
+  { "start": "70","text": "#a10066" },
+  { "start": "75","text": "#a10000" },
+  { "start": "80","text": "#a10066" },
+  { "start": "85","text": "#a10000" },
+  { "start": "90","text": "#a10066" },
+  { "start": "95","text": "#a10000" },
+  { "start": "100","text": "#a10066" },
+  { "start": "105","text": "#a10000" },
+  { "start": "110","text": "#a10066" },
+  { "start": "115","text": "#a10000" },
+  { "start": "120","text": "#a10066" },
+  { "start": "125","text": "#a10000" },
+  { "start": "130","text": "#a10066" },
+  { "start": "135","text": "#a10000" },
+  { "start": "140","text": "#a10066" },
+  { "start": "145","text": "#a10000" },
+  { "start": "150","text": "#a10066" },
+  { "start": "155","text": "#000" },
+];
+// var text = 'null';
+
+
+// update time function
+player.addEventListener("timeupdate", function(){ 
+  speed = 0.01;
+  var duration = this.duration;
+  var currentTime = this.currentTime;
+  // var percentage = (currentTime / duration) * 100;
+  // playhead.style.width = percentage * 4 + "px";
+
+  // create text
+  lyrics.forEach(function(element, index){
+    if( Math.floor(currentTime) == element.start ){      
+      document.body.style.background = element.text;
+      output.innerHTML = Math.floor(currentTime);
+    }
+  });
+
+});
+
+
+// perlin col
+var perlin = document.createElement('canvas');
+ctx = perlin.getContext('2d');
+perlin.id = "perlin";
+document.body.appendChild(perlin);
+// size of textures
+perlin.width = 128;
+perlin.height = 128;
+
+var eqval = 0;
+var xamount = 0;
+var xtime = 0;
+var xspeed = 300;
+var fn = 'simplex'
+var image = ctx.createImageData(perlin.width, perlin.height);
+var data = image.data;
+
+// three.js stuff
+var scene = new THREE.Scene();
+var camera = new THREE.PerspectiveCamera( 75, window.innerWidth/window.innerHeight, 0.1, 1000 );
+
+var renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+renderer.setSize( window.innerWidth, window.innerHeight );
+document.body.appendChild( renderer.domElement );
+
+// camera
+camera.position.z = 200;
+camera.position.y = 0;
+
+// lights
+var light = new THREE.AmbientLight( 0xffffff );
+scene.add( light );
+
+
+// smokey plane
+var geometry = new THREE.PlaneBufferGeometry( 300, 300, 100, 100 );
+var material = new THREE.MeshStandardMaterial( {
+  map: new THREE.TextureLoader().load( 'sprite.png' ),
+  transparent:true,
+  opacity:0,
+  displacementMap: new THREE.CanvasTexture(perlin),
+  displacementScale: 12
+} );
+var bgscreen = new THREE.Mesh( geometry, material );
+bgscreen.rotation.x = -Math.PI/2;
+// bgscreen.rotation.y = Math.PI/2;
+bgscreen.position.z = 5;
+bgscreen.position.y = -20;
+bgscreen.material.blending = THREE.AdditiveBlending;
+scene.add( bgscreen );
+
+
+
+
+
+
+createBG()
+
+function createBG() {
+  var geometry = new THREE.PlaneBufferGeometry( 200, 200 );
+  var material = new THREE.MeshBasicMaterial( {
+    map: new THREE.TextureLoader().load( 'sprite.png' ),
+    transparent:true,
+    opacity:0,
+    // color:0xff0000,
+    depthWrite: false
+  } );
+  spot = new THREE.Mesh( geometry, material );
+  spot.material.blending = THREE.AdditiveBlending;
+  scene.add( spot );
+  
+  // bg perlin plane
+  var xgeometry = new THREE.PlaneBufferGeometry( 1200, 1200 );
+  var xmaterial = new THREE.MeshBasicMaterial( { 
+     transparent:true, 
+     opacity:0.2,
+     // color:0xff0000,
+    map:new THREE.CanvasTexture(perlin),
+  } );
+  perlinplane = new THREE.Mesh( xgeometry, xmaterial );
+  perlinplane.position.z = -100;
+  scene.add( perlinplane );
+}
+
+// play/pause
+var playing = false;
+var paused = true;
+var fadeTimer = false;
+
+
+function playme() {
+  if (document.body.classList == 'playing') {return}
+  
+  clearTimeout(fadeTimer);
+  var bgAudio = document.getElementById("player");
+  bgAudio.volume = 0;
+  bgAudio.play();
+  aud_fade_in();
+  document.body.classList = 'playing';
+
+  if (!built) {
+    audioContext= new audioCtx();
+    buildAudioGraph();
+  }
+
+  playing = true;
+  paused = false;
+}
+
+
+  var aud_fade_in = function() {
+    clearTimeout(fadeTimer);
+    var bgAudio = document.getElementById("player");
+    if (bgAudio.volume < 0.994) {
+      bgAudio.volume += 0.005;
+      fadeTimer = setTimeout(aud_fade_in,10);
+    } else {
+      bgAudio.volume = 1;
+    }
+  };
+    var aud_fade_out = function() {
+    clearTimeout(fadeTimer);
+    var bgAudio = document.getElementById("player");
+    if (bgAudio.volume > 0.005) {
+      bgAudio.volume -= 0.005;
+      fadeTimer = setTimeout(aud_fade_out,5);
+    } else {
+      bgAudio.volume = 0;
+      bgAudio.pause();
+    }
+    playing = false;
+    paused = true;
+    document.body.classList = 'paused';
+    document.body.style.background = 'black';
+  };
+
+
+var xnum = 0;
+var ynum = 0;
+var audioCtx = window.AudioContext || window.webkitAudioContext;
+var audioContext, canvasContext;
+
+var filters = [];
+
+var analyser;
+var dataArray, bufferLength;
+var masterGain, stereoPanner;
+var mediaElement = document.getElementById('player');
+var built = false;
+
+
+function buildAudioGraph() {
+    built = true;
+
+    sourceNode =   audioContext.createMediaElementSource(mediaElement);
+  
+  // Create an analyser node
+  analyser = audioContext.createAnalyser();
+  analyser.fftSize = 256;
+  bufferLength = analyser.frequencyBinCount;
+  dataArray = new Uint8Array(bufferLength);
+  
+    // Set filters
+    [60, 170].forEach(function(freq, i) {
+      var eq = audioContext.createBiquadFilter();
+      eq.frequency.value = freq;
+      eq.type = "peaking";
+      eq.gain.value = 0;
+      filters.push(eq);
+    });
+
+   // Connect filters
+   sourceNode.connect(filters[0]);
+
+   for(var i = 0; i < filters.length - 1; i++) {
+      filters[i].connect(filters[i+1]);
+    }
+  
+    // Master volume
+  masterGain = audioContext.createGain();
+  masterGain.value = 1;
+ 
+   // last filter
+   filters[filters.length - 1].connect(masterGain);
+  
+  // stereo balancing
+  stereoPanner = audioContext.createStereoPanner();
+  // master volume output to the panner
+  masterGain.connect(stereoPanner);
+  
+  // stereo panner to analyser
+  stereoPanner.connect(analyser);  
+  analyser.connect(audioContext.destination);
+}
+
+
+// resize
+window.addEventListener('resize', onWindowResize, false);
+
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+
+
+
+
+function animate() {
+  if (playing) {
+    // set analyzer
+    analyser.getByteFrequencyData(dataArray);
+    var nbFreq = dataArray.length;
+
+    // get/set amount
+  	xamount = 0.2*dataArray[Math.round((20 * nbFreq) / 256)];
+    xnum += (xamount - xnum)*0.05;
+    
+    // perlin
+    drawFrame();
+    
+  } 
+
+  if (paused) {
+    xnum += (0 - xnum)*0.02;
+  }
+
+  spot.material.opacity = (xnum/300);
+  spot.material.needsUpdate = true;
+  perlinplane.material.map.needsUpdate = true;
+  perlinplane.material.opacity = (xnum/100);
+  bgscreen.material.displacementScale = xnum*2;
+  bgscreen.material.opacity = perlinplane.material.opacity*2;
+  bgscreen.material.displacementMap.needsUpdate = true;
+  bgscreen.material.displacementScale.needsUpdate = true;
+
+  renderer.render( scene, camera );
+  requestAnimationFrame(animate);
+}
+
+
+
+function drawFrame() {
+xtime++;
+
+  var start = Date.now();
+
+  var cWidth = perlin.width;
+  var cHeight = perlin.height;
+
+  var max = -Infinity, min = Infinity;
+  var noisefn = fn = noise.simplex3;
+  // var noisefn = fn = 'simplex' ? noise.simplex3 : noise.perlin3;
+
+  for (var x = 0; x < cWidth; x++) {
+    for (var y = 0; y < cHeight; y++) {
+      var value = noisefn(x / 50, (xtime/xspeed)+y / 50, xtime/xspeed);
+
+      if (max < value) max = value;
+      if (min > value) min = value;
+
+      value = (1 + value) * 1.1 * 128;
+
+      var cell = (x + y * cWidth) * 4;
+      data[cell] = data[cell + 1] = data[cell + 2] = value;
+      data[cell + 3] = 255; // alpha.
+    }
+  }
+
+  var end = Date.now();
+
+  ctx.fillColor = 'black';
+  ctx.fillRect(0, 0, 100, 100);
+  ctx.putImageData(image, 0, 0);
+
+}
+
+
+
+
+
+// zoom
+// window.addEventListener( 'wheel', onMouseWheel, false );
+// function onMouseWheel( event ) {
+//     camera.position.z += event.deltaY * 0.005;
+// }
+
+
+// start
+animate()
+</script>
+
+</body>
+</html>
