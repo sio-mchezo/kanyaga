@@ -1,0 +1,44 @@
+body {
+    background-color: black;
+    color: white;
+    font-family: monospace;
+    margin: 20px;
+    line-height: 1.6;
+}
+
+.controls {
+    margin: 20px 0;
+}
+
+.dictionary-buttons {
+    margin-bottom: 15px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+button {
+    background-color: black;
+    color: white;
+    border: 1px solid white;
+    font-family: monospace;
+    padding: 10px;
+    margin: 5px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+button:hover {
+    background-color: #333;
+}
+
+button.active {
+    background-color: white;
+    color: black;
+}
+
+#output {
+    margin-top: 20px;
+    white-space: pre-wrap;
+    min-height: 200px;
+}

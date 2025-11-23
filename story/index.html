@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Story Generator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>Story Generator</h1>
+    
+    <div class="controls">
+        <div class="dictionary-buttons">
+            <button class="dict-btn active" data-dict="bedtime">Bedtime Stories</button>
+            <button class="dict-btn" data-dict="adventure">Adventure Stories</button>
+            <button class="dict-btn" data-dict="space">Space Stories</button>
+            <button class="dict-btn" data-dict="rosen">Michael Rosen</button>
+            <button class="dict-btn" data-dict="milligan">Spike Milligan</button>
+            <button class="dict-btn" data-dict="python">Monty Python</button>
+        </div>
+    </div>
+    
+    <div id="output">
+        <div id="story-content"></div>
+    </div>
+
+    <!-- Load dictionaries -->
+    <script src="dictionaries/bedtime.js"></script>
+    <script src="dictionaries/adventure.js"></script>
+    <script src="dictionaries/space.js"></script>
+    <script src="dictionaries/rosen.js"></script>
+    <script src="dictionaries/milligan.js"></script>
+    <script src="dictionaries/python.js"></script>
+    
+    <!-- Load core logic -->
+    <script src="js/story-generator.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
