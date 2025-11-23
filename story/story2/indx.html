@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Choose Your Own Adventure</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        #output {
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            min-height: 100px;
+        }
+        .buttons {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            background: #007cba;
+            color: white;
+            cursor: pointer;
+            flex: 1;
+        }
+        button:hover {
+            background: #005a87;
+        }
+        button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+        .story-selector {
+            margin-bottom: 20px;
+        }
+        .story-selector select {
+            padding: 8px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+    <div class="story-selector">
+        <label for="storyType">Choose Story Style:</label>
+        <select id="storyType" onchange="changeStoryStyle()">
+            <option value="fantasy">Fantasy Adventure</option>
+            <option value="scifi">Sci-Fi Mystery</option>
+            <option value="horror">Gothic Horror</option>
+            <option value="pirate">Pirate Adventure</option>
+        </select>
+    </div>
+    
+    <div id="output">Choose a story style and begin your adventure!</div>
+    
+    <div class="buttons">
+        <button id="btn1" onclick="makeChoice(0)">Choice 1</button>
+        <button id="btn2" onclick="makeChoice(1)">Choice 2</button>
+    </div>
+    
+    <script src="tracery.min.js"></script>
+    <script>
+        // Story database - easily add new story styles here
+        const storyStyles = {
+            fantasy: {
+                title: "Fantasy Adventure",
+                start: "beginning",
+                grammar: {
+                    beginning: ["You stand at the edge of an ancient forest. #choice#"],
+                    forest_entrance: ["The forest path splits in two directions. #choice#"],
+                    dark_path: ["You follow the dark path and encounter a sleeping dragon. #choice#"],
+                    sunny_path: ["The sunny path leads to a magical clearing. #choice#"],
+                    
+                    choice: ["What do you do?|Do you venture forth?|What path will you choose?"],
+                    
+                    // Actions that can be taken
+                    action: ["#approach#|#explore#|#flee#"],
+                    approach: ["cautiously approach", "bravely march toward", "sneak up on"],
+                    explore: ["search the area", "investigate the surroundings", "look for clues"],
+                    flee: ["run away", "retreat quickly", "make a hasty escape"]
+                },
+                scenes: {
+                    beginning: {
+                        text: "beginning",
+                        choices: [
+                            { text: "Enter the forest", next: "forest_entrance" },
+                            { text: "Turn back home", next: "game_over" }
+                        ]
+                    },
+                    forest_entrance: {
+                        text: "forest_entrance", 
+                        choices: [
+                            { text: "Take the dark, mysterious path", next: "dark_path" },
+                            { text: "Follow the sunny, flower-lined path", next: "sunny_path" }
+                        ]
+                    },
+                    dark_path: {
+                        text: "dark_path",
+                        choices: [
+                            { text: "Try to steal the dragon's treasure", next: "dragon_awake" },
+                            { text: "Quietly back away", next: "forest_entrance" }
+                        ]
+                    },
+                    sunny_path: {
+                        text: "sunny_path",
+                        choices: [
+                            { text: "Drink from the magical spring", next: "magic_transformation" },
+                            { text: "Continue through the clearing", next: "elf_village" }
+                        ]
+                    },
+                    game_over: {
+                        text: "You return home safely, but always wonder what adventures you missed.",
+                        choices: []
+                    }
+                }
+            },
+            
+            scifi: {
+                title: "Sci-Fi Mystery", 
+                start: "awakening",
+                grammar: {
+                    awakening: ["You awaken from cryo-sleep. The ship's alarms are blaring. #choice#"],
+                    bridge: ["You reach the bridge. The main screen shows an unknown planet. #choice#"],
+                    engineering: ["Engineering is filled with strange alien vines. #choice#"],
+                    
+                    choice: ["What is your command?|Your orders, Captain?|What do you investigate?"],
+                    action: ["#scan#|#repair#|#evacuate#"],
+                    scan: ["run diagnostics", "scan for lifeforms", "analyze the anomaly"],
+                    repair: ["attempt repairs", "restart systems", "bypass damaged circuits"),
+                    evacuate: ["head to escape pods", "prepare for evacuation", "secure the ship"]
+                },
+                scenes: {
+                    awakening: {
+                        text: "awakening",
+                        choices: [
+                            { text: "Go to the bridge", next: "bridge" },
+                            { text: "Check engineering", next: "engineering" }
+                        ]
+                    },
+                    bridge: {
+                        text: "bridge",
+                        choices: [
+                            { text: "Scan the planet", next: "planet_scan" },
+                            { text: "Attempt to wake the crew", next: "crew_awakening" }
+                        ]
+                    },
+                    engineering: {
+                        text: "engineering", 
+                        choices: [
+                            { text: "Clear the alien vines", next: "vines_cleared" },
+                            { text: "Retreat and seal the area", next: "bridge" }
+                        ]
+                    }
+                }
+            },
+            
+            horror: {
+                title: "Gothic Horror",
+                start: "arrival",
+                grammar: {
+                    arrival: ["You arrive at the old mansion on a stormy night. #choice#"],
+                    foyer: ["The grand foyer is dark and cold. A portrait's eyes seem to follow you. #choice#"],
+                    library: ["Dusty books line the walls. One book glows with eerie light. #choice#"],
+                    
+                    choice: ["What do you investigate?|Where do you go?|What catches your attention?"],
+                    action: ["#search#|#listen#|#flee#"],
+                    search: ["search the room", "examine carefully", "look for clues"],
+                    listen: ["listen intently", "stay perfectly quiet", "focus on the sounds"),
+                    flee: ["run for the exit", "retreat quickly", "make a hasty escape")
+                },
+                scenes: {
+                    arrival: {
+                        text: "arrival",
+                        choices: [
+                            { text: "Enter the mansion", next: "foyer" },
+                            { text: "Return to the carriage", next: "safe_return" }
+                        ]
+                    },
+                    foyer: {
+                        text: "foyer",
+                        choices: [
+                            { text: "Explore the library", next: "library" },
+                            { text: "Ascend the staircase", next: "upper_floor" }
+                        ]
+                    },
+                    library: {
+                        text: "library",
+                        choices: [
+                            { text: "Read the glowing book", next: "ancient_secrets" },
+                            { text: "Leave the library", next: "foyer" }
+                        ]
+                    },
+                    safe_return: {
+                        text: "You leave the mansion behind, forever wondering about its secrets.",
+                        choices: []
+                    }
+                }
+            },
+            
+            pirate: {
+                title: "Pirate Adventure",
+                start: "port",
+                grammar: {
+                    port: ["You stand in a bustling pirate port, gold in your pocket and adventure in your heart. #choice#"],
+                    tavern: ["The Salty Dog tavern is filled with rough sailors and whispered secrets. #choice#"],
+                    docks: ["Ships of all sizes bob in the harbor. One flies the Jolly Roger. #choice#"],
+                    
+                    choice: ["What's your move, matey?|Where to, Captain?|What adventure calls you?"],
+                    action: ["#sail#|#fight#|#drink#"],
+                    sail: ["set sail immediately", "chart a course", "weigh anchor"),
+                    fight: ["draw your cutlass", "challenge the first mate", "start a bar brawl"),
+                    drink: ["order some grog", "toast to adventure", "share a drink with sailors")
+                },
+                scenes: {
+                    port: {
+                        text: "port",
+                        choices: [
+                            { text: "Visit the tavern", next: "tavern" },
+                            { text: "Go to the docks", next: "docks" }
+                        ]
+                    },
+                    tavern: {
+                        text: "tavern", 
+                        choices: [
+                            { text: "Listen for rumors", next: "treasure_map" },
+                            { text: "Challenge someone to dice", next: "dice_game" }
+                        ]
+                    },
+                    docks: {
+                        text: "docks",
+                        choices: [
+                            { text: "Inspect the pirate ship", next: "ship_inspection" },
+                            { text: "Hire a crew", next: "crew_hire" }
+                        ]
+                    }
+                }
+            }
+        };
+
+        let currentStory = null;
+        let currentScene = null;
+        let currentGrammar = null;
+
+        function changeStoryStyle() {
+            const storyType = document.getElementById('storyType').value;
+            currentStory = storyStyles[storyType];
+            currentGrammar = tracery.createGrammar(currentStory.grammar);
+            startAdventure();
+        }
+
+        function startAdventure() {
+            currentScene = currentStory.start;
+            updateScene();
+        }
+
+        function updateScene() {
+            const sceneData = currentStory.scenes[currentScene];
+            
+            // Generate dynamic text using Tracery
+            let displayText = currentGrammar.flatten(`#${sceneData.text}#`);
+            
+            document.getElementById('output').innerHTML = `<strong>${displayText}</strong>`;
+            
+            // Update buttons
+            const btn1 = document.getElementById('btn1');
+            const btn2 = document.getElementById('btn2');
+            
+            if (sceneData.choices.length >= 1) {
+                btn1.textContent = sceneData.choices[0].text;
+                btn1.disabled = false;
+            } else {
+                btn1.textContent = "The End";
+                btn1.disabled = true;
+            }
+            
+            if (sceneData.choices.length >= 2) {
+                btn2.textContent = sceneData.choices[1].text;
+                btn2.disabled = false;
+            } else {
+                btn2.textContent = "Restart";
+                btn2.disabled = false;
+                btn2.onclick = () => startAdventure();
+                return;
+            }
+            
+            // Reset button handlers
+            btn1.onclick = () => makeChoice(0);
+            btn2.onclick = () => makeChoice(1);
+        }
+
+        function makeChoice(choiceIndex) {
+            const sceneData = currentStory.scenes[currentScene];
+            
+            if (sceneData.choices.length > choiceIndex) {
+                currentScene = sceneData.choices[choiceIndex].next;
+                updateScene();
+            }
+        }
+
+        // Initialize with first story
+        document.addEventListener('DOMContentLoaded', function() {
+            changeStoryStyle();
+        });
+    </script>
+</body>
+</html>
