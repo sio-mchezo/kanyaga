@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Choose Your Story Adventure</title>
+    <style>
+        body {
+            background-color: black;
+            color: white;
+            font-family: monospace;
+            margin: 20px;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 2px solid white;
+            padding-bottom: 10px;
+        }
+        
+        #story-content {
+            margin: 20px 0;
+            min-height: 200px;
+            padding: 20px;
+            border: 1px solid white;
+            background-color: #111;
+        }
+        
+        .choices {
+            margin: 20px 0;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+        }
+        
+        .choice-btn {
+            background-color: black;
+            color: white;
+            border: 2px solid white;
+            font-family: monospace;
+            padding: 15px 30px;
+            cursor: pointer;
+            transition: all 0.3s;
+            min-width: 100px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        
+        .choice-btn:hover {
+            background-color: #333;
+            transform: translateY(-2px);
+        }
+        
+        .yes-btn:hover {
+            border-color: #90EE90;
+            color: #90EE90;
+        }
+        
+        .no-btn:hover {
+            border-color: #FFB6C1;
+            color: #FFB6C1;
+        }
+        
+        .controls {
+            margin: 20px 0;
+            text-align: center;
+        }
+        
+        .main-btn {
+            background-color: black;
+            color: white;
+            border: 2px solid white;
+            font-family: monospace;
+            padding: 12px 24px;
+            margin: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        
+        .main-btn:hover {
+            background-color: white;
+            color: black;
+        }
+        
+        .story-part {
+            margin-bottom: 20px;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .name-input {
+            margin: 20px 0;
+            text-align: center;
+        }
+        
+        .name-input input {
+            background-color: black;
+            color: white;
+            border: 1px solid white;
+            font-family: monospace;
+            padding: 10px;
+            margin: 0 10px;
+            width: 200px;
+        }
+        
+        .name-input button {
+            background-color: black;
+            color: white;
+            border: 1px solid white;
+            font-family: monospace;
+            padding: 10px 20px;
+            cursor: pointer;
+        }
+        
+        .name-input button:hover {
+            background-color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Choose Your Story Adventure</h1>
+        
+        <div class="name-input" id="name-input-container">
+            <label for="player-name">Enter your name:</label>
+            <input type="text" id="player-name" placeholder="Your name here">
+            <button id="save-name">Start Adventure</button>
+        </div>
+        
+        <div class="controls">
+            <button id="start-btn" class="main-btn hidden">Start New Adventure</button>
+            <button id="restart-btn" class="main-btn hidden">Start Over</button>
+        </div>
+        
+        <div id="story-content">
+            <p>Enter your name above to begin your adventure!</p>
+        </div>
+        
+        <div id="choices-container" class="choices hidden">
+            <button id="yes-btn" class="choice-btn yes-btn">YES</button>
+            <button id="no-btn" class="choice-btn no-btn">NO</button>
+        </div>
+    </div>
+
+    <script src="story-engine.js"></script>
+    <script src="adventure-data.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
