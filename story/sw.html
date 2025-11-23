@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Kizazi cha Hadithi</title>
+    <style>
+        body { 
+            font-family: monospace; 
+            margin: 20px; 
+            background: #333;
+            color: #fff;
+        }
+        #story { 
+            padding: 10px;
+            margin-top: 20px;
+            border: 1px solid #666;
+            min-height: 100px;
+            white-space: pre-wrap;
+            line-height: 1.6;
+        }
+        .container { max-width: 800px; margin: 0 auto; }
+        input, button {
+            font-family: monospace;
+            padding: 8px;
+            margin: 5px;
+        }
+        button {
+            background: #555;
+            color: white;
+            border: 1px solid #777;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #666;
+        }
+        .input-group {
+            margin: 10px 0;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Kizazi cha Hadithi</h1>
+        
+        <div class="input-group">
+            <label for="player-name">Weka jina lako:</label>
+            <input type="text" id="player-name" placeholder="Jina lako">
+            <button onclick="saveName()">Hifadhi Jina</button>
+        </div>
+        
+        <button onclick="generateNewStory()">Tengeneza Hadithi Mpya!</button>
+        <div id="story"></div>
+    </div>
+
+    <script>
+// Simple Swahili words for kids
+const funnyWords = [
+    "mzaha", "furaha", "cheka", "dada", "kaka", "rafiki", "tumbo", "kichwa",
+    "miguu", "mikono", "jino", "macho", "masikio", "pua", "kinywa", "moyo",
+    "ngoma", "wimbo", "cheza", "ruka", "kimbia", "tembea", "lala", "amka",
+    "kula", "kunywa", "andika", "soma", "piga", "chukua", "weka", "ota"
+];
+
+const dictionary = {
+    "origin": [
+        "#openingLine# #plotChoice# Na unajua nini? #endingThought#"
+    ],
+
+    // Swahili opening lines
+    "openingLine": [
+        "Siku moja, na ilikuwa Jumanne nadhani,",
+        "Ilikuwa ni asubuhi ya aina ile,",
+        "Hutoweza kubisha kilichotokea -",
+        "Huko nilikuwa, nafanya kazi yangu,",
+        "Yote ilianza wakati,",
+        "Siku ile iliyohisi kama lazima iwe Jumamosi lakini ilikuwa Jumatano,",
+        "Ghafla, bila onyo lolote,",
+        "Katika kati ya alasiri iliyoonekana kama ya kawaida,",
+        "Unaamini?",
+        "Nilikuwa nimeketi tu, nikifikiria kuhusu #funnyWord#, wakati"
+    ],
+
+    // Swahili plot development
+    "plotChoice": [
+        "#characterIntro# #situation# Basi #kidName# anafanya nini? Sawa, #kidName# anaamua #action# ambayo inasababisha #consequence#",
+        "#characterIntro# #discovery# Na kisha #kidName# anafikiria '#internalThought#' na #actionSequence#",
+        "#situation# na #kidName# yuko huko akifikiria '#internalThought#' na kisha #actionSequence#",
+        "#characterIntro# anajikuta katika #funnyWord# kubwa ambapo #problem# na kisha #actionSequence#"
+    ],
+
+    // Swahili endings
+    "endingThought": [
+        "ilikuwa ni siku moja ya hizo huwezi kusahau!",
+        "wakati mwingine adventures bora ni zile huzipanga!",
+        "ndivyo inavyotokea wakati wewe ni wewe mwenyewe!",
+        "na kila mtu alicheka sana baadaye!",
+        "inaonyesha tu - huwezi kujua nini kinaweza kutokea!",
+        "na kumbukumbu yake bado inanifurahisha!",
+        "ilikuwa furaha tu, kwa njia nzuri!",
+        "na hiyo, rafiki yangu, ndio hadithi ya #funnyWord# kubwa!",
+        "ambayo inathibitisha kuwa #funnyWord# ni muhimu zaidi kuliko unavyofikiri!"
+    ],
+
+    // Character introductions
+    "characterIntro": [
+        "kuna mtu #adjective# anayeitwa #kidName#",
+        "rafiki yangu #kidName#, ambaye ni mtaalamu wa #funnyWord#,",
+        "mtoto #adjective# anayeitwa #kidName#",
+        "#kidName#, ambaye alikuwa akihisi #mood# sana",
+        "#kidName#, ambaye anajua kitu au mbili kuhusu #funnyWord#,"
+    ],
+
+    // Situations and discoveries
+    "situation": [
+        "anaona kuwa #everydayThing# anafanya kitu #unexpected#",
+        "anajikuta katika hali ambapo #problem#",
+        "anagundua kuwa #surpriseDiscovery#",
+        "anatambua kuwa #objects# wote wanafanya #groupBehavior#",
+        "anakuta #funnyWord# kubwa inayohusisha #peculiarThing#"
+    ],
+
+    "discovery": [
+        "anagundua kitu cha kushangaza: #amazingFind#",
+        "anagundua kuwa #secretFact#",
+        "anaona kitu cha kushangaza kuhusu #peculiarThing#",
+        "anatambua kuwa #funnyRealization#",
+        "anafunua siri ya #funnyWord#"
+    ],
+
+    // Actions and consequences
+    "action": [
+        "#movement# #direction# #location# wakati anafanya #simultaneousAction#",
+        "kujaribu #solution#",
+        "kufikiria kwa makini na kisha #cleverIdea#",
+        "kumwita #helper# na pamoja wanafanya #teamAction#",
+        "kuanza safari ya #funnyWord# ili kutatua fumbo"
+    ],
+
+    "actionSequence": [
+        "kabla huwezi kusema '#funnyWord#', #quickAction# hutokea",
+        "kwanza wanafanya #movement#, kisha #movement#, kisha #movement# #manner#",
+        "wanaanza #movement# na #movement# mpaka #achievement#",
+        "na kisha, katika wakati wa #funnyWord# safi, #quickAction# hutokea"
+    ],
+
+    "consequence": [
+        "na kisha ghafla #surpriseEvent#!",
+        "ambayo inasababisha #funnyResult#!",
+        "na kisha kila kitu kinakuwa #sillyAdjective#!",
+        "na hutoweza kuamini - #unexpectedTurn#!",
+        "ikileta #funnyWord# kubwa zaidi uliyowahi kuona!"
+    ],
+
+    // Internal thoughts in Swahili
+    "internalThought": [
+        "Haya, hii ni #funnyWord# kidogo",
+        "Sikuona #funnyWord# hii ikija",
+        "Hii inahitaji #funnyWord# ya makini",
+        "Bibi yangu angefanya nini katika hali hii ya #funnyWord#?",
+        "Hii inakuwa #funnyWord# ya kuvutia",
+        "Nafikiri nahitaji biskuti na #funnyWord# nzuri kuhusu hili",
+        "Haya, #funnyWord# kamwe!",
+        "Hii ni #funnyWord# halisi hakika!"
+    ],
+
+    // Simple Swahili vocabulary for kids
+    "adjective": ["mwenye furaha", "mwenye shauku", "mwenye busara", "mwenye ujasiri", "mwenye upendo", "mwenye hekima", "mwenye bidii", "mwenye uvumilivu"],
+    "mood": ["na furaha", "na huzuni", "na njaa", "na usingizi", "na shauku", "na wasiwasi", "na mshangao"],
+    "everydayThing": ["chai", "mkate", "kitabu", "penseli", "kikombe", "sahani", "uma", "kijiko", "dirisha", "mlango"],
+    "unexpected": ["anaimba", "anacheza", "anacheka", "anasema", "anasoma", "anaandika", "anaruka", "anatembea"],
+    "problem": ["biskuti zinapotea", "viatu havibanduki", "paka amevaa kofia", "maji yana ladha ya limau", "saa inakwenda nyuma"],
+    "surpriseDiscovery": [
+        "mboga zinafikiri kama watu", 
+        "ukimya una ladha", 
+        "vivuli ni mwanga likiwa likipumzika", 
+        "soksi zinaota ndoto",
+        "wanyama wanasema kwa siri"
+    ],
+    "objects": ["viti", "meza", "mto", "viatu", "vitabu", "sahani", "vijiko", "vikombe", "uma"],
+    "groupBehavior": ["wanafurahi", "wanacheza", "wanaimba", "wanasoma", "wanaandika", "wanaruka"],
+    "amazingFind": [
+        "njia yenye ufunguo wa fumbo", 
+        "ramani iliyopotea", 
+        "kibuyu kinachozungumza", 
+        "mlango kwenye mti mkuu",
+        "shimo la siri",
+        "kiti cha maajabu"
+    ],
+    "secretFact": [
+        "ndege wana siri", 
+        "mawingu ni kondoo wakipumzika", 
+        "vikombe vina hadithi", 
+        "viatu vinaweza kuruka",
+        "mti unaongoza njia",
+        "jua lana tabasamu"
+    ],
+    "peculiarThing": [
+        "jinsi vumbi linavyocheza", 
+        "maji yanavyojua visa", 
+        "kwa nini mkate huanguka upande wa siagi", 
+        "vivuli vinavyofanya",
+        "nyota zinavyong'aa",
+        "mwezi unavyobadilika"
+    ],
+    "funnyRealization": [
+        "sakafu ilikuwa dari", 
+        "jana ilikuwa kesho", 
+        "kushoto kulikuwa kulia", 
+        "ukimya ulikuwa kelele",
+        "juu ilikuwa chini",
+        "ndani ilikuwa nje"
+    ],
+    "movement": ["ruka", "kimbia", "tembea", "cheza", "imba", "andika", "soma", "piga", "chukua", "weka"],
+    "direction": ["kuzunguka", "kupita", "juu", "chini", "kupita", "ndani", "nje", "mbali", "karibu"],
+    "location": ["chumba", "bustani", "jikoni", "ngazi", "meza", "kiti", "nyumba", "dirishani", "mlangoni"],
+    "simultaneousAction": [
+        "akiimba wimbo", 
+        "akivaa viatu vya kushoto", 
+        "akibeba kitabu kichwani", 
+        "akicheza kama gari",
+        "akifanya #funnyWord#",
+        "akicheka sana"
+    ],
+    "solution": [
+        "tengeneza wimbo", 
+        "uliza samaki ushauri", 
+        "fanya #funnyWord#", 
+        "cheka sana na uone kinachotokea",
+        "fikiria kwa makini",
+        "tafuta msaada"
+    ],
+    "cleverIdea": [
+        "fanya kuwa mchezo", 
+        "fanya kama ni kawaida", 
+        "tengeneza hadithi", 
+        "jaribu kwa njia tofauti",
+        "fikiria kuhusu #funnyWord#",
+        "tumia akili yako"
+    ],
+    "helper": [
+        "dada yake", 
+        "kaka yake", 
+        "rafiki yake", 
+        "mwalimu wake",
+        "jirani yake",
+        "mtu wa barabara"
+    ],
+    "teamAction": [
+        "kufanya kazi pamoja", 
+        "kucheza pamoja", 
+        "kusoma pamoja", 
+        "kuimba pamoja",
+        "kufanya #funnyWord# pamoja",
+        "kutengeneza kitu pamoja"
+    ],
+    "manner": [
+        "kama jelly",
+        "kwa haraka",
+        "kwa polepole",
+        "kwa furaha",
+        "kwa ujasiri",
+        "kwa upendo"
+    ],
+    "achievement": [
+        "wanajua sauti ya ukimya", 
+        "wanatengeneza rangi mpya", 
+        "wanafundisha jiwe kuandika", 
+        "wanathibitisha kuwa jana ilikuwa kesho",
+        "wanafahamu #funnyWord#",
+        "wanafanikiwa kwa #funnyWord#"
+    ],
+    "surpriseEvent": [
+        "kondoo anapita", 
+        "polisi wanakuja", 
+        "jua linatabasamu", 
+        "chai inamalizika",
+        "mvua inanyesha pipi",
+        "ngoma zinacheza wenyewe"
+    ],
+    "funnyResult": [
+        "mvuto unakwenda", 
+        "wakati unarudi nyuma", 
+        "maneno yanakuwa picha", 
+        "watu wanaongea kwa wimbo",
+        "rangi zina sauti",
+        "ukimya unaonekana"
+    ],
+    "sillyAdjective": ["furaha", "shangwe", "mshangao", "cheko", "wimbo", "ngoma", "mzaha"],
+    "unexpectedTurn": [
+        "mfalme anakuja", 
+        "mvua inanyesha pipi", 
+        "watu wanaongea Kifaransa", 
+        "viti vinasema",
+        "mwezi unakuja karibu",
+        "saa zote zinaanza kuhesabu"
+    ],
+    "quickAction": [
+        "kila kitu kinageuka", 
+        "rangi zote zibadilishane", 
+        "wanyama wanavaa kofia", 
+        "mchana kuwa usiku",
+        "mvuto kupumzika",
+        "ukimya kuonekana"
+    ]
+};
+
+// Get a random funny word from our array
+function getRandomFunnyWord() {
+    return funnyWords[Math.floor(Math.random() * funnyWords.length)];
+}
+
+// Helper functions
+function getRandomWord(category) {
+    if (category === 'funnyWord') {
+        return getRandomFunnyWord();
+    }
+    
+    const words = dictionary[category];
+    if (words && Array.isArray(words)) {
+        const choice = words[Math.floor(Math.random() * words.length)];
+        return choice;
+    }
+    return `[${category}]`;
+}
+
+function expandSymbol(symbol, customVariables = {}) {
+    // Prevent infinite recursion and handle kidName specially
+    if (symbol === 'kidName') {
+        return customVariables['kidName'] || 'Rafiki';
+    }
+    
+    const options = dictionary[symbol];
+    if (!options) {
+        // If symbol doesn't exist, try to get a random word from it
+        return getRandomWord(symbol);
+    }
+    
+    const choice = options[Math.floor(Math.random() * options.length)];
+    
+    return choice.replace(/#(\w+)#/g, (match, symbol) => {
+        return expandSymbol(symbol, customVariables);
+    });
+}
+
+// Main story generator
+function generateKidsStory(playerName = "Rafiki") {
+    const customVariables = {
+        'kidName': playerName
+    };
+    
+    const story = expandSymbol('origin', customVariables);
+    
+    // Validate that we have a real story
+    if (story.includes('[') && story.includes(']')) {
+        // If story contains unresolved symbols, try one more time
+        return generateKidsStory(playerName);
+    }
+    
+    return story;
+}
+
+// LocalStorage functions
+function saveName() {
+    const nameInput = document.getElementById('player-name');
+    const name = nameInput.value.trim();
+    if (name) {
+        localStorage.setItem('playerName', name);
+        alert(`Jina limehifadhiwa: ${name}`);
+        generateNewStory();
+    } else {
+        alert('Tafadhali weka jina!');
+    }
+}
+
+function loadName() {
+    return localStorage.getItem('playerName') || 'Rafiki';
+}
+
+function generateNewStory() {
+    const playerName = loadName();
+    const story = generateKidsStory(playerName);
+    document.getElementById('story').textContent = story;
+}
+
+// Initialize on load
+window.onload = function() {
+    const savedName = loadName();
+    if (savedName !== 'Rafiki') {
+        document.getElementById('player-name').value = savedName;
+    }
+    generateNewStory();
+};
+    </script>
+</body>
+</html>
