@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Kids Story Generator</title>
+    <style>
+        body { 
+            font-family: monospace; 
+            margin: 20px; 
+            background: #333;
+            color: #fff;
+        }
+        #story { 
+            padding: 10px;
+            margin-top: 20px;
+            border: 1px solid #666;
+            min-height: 100px;
+            white-space: pre-wrap;
+            line-height: 1.6;
+        }
+        .container { max-width: 800px; margin: 0 auto; }
+        input, button {
+            font-family: monospace;
+            padding: 8px;
+            margin: 5px;
+        }
+        button {
+            background: #555;
+            color: white;
+            border: 1px solid #777;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="name-input">
+            <label for="player-name">Enter your name:</label>
+            <input type="text" id="player-name" placeholder="Your name">
+            <button onclick="saveName()">Save Name</button>
+        </div>
+        <button onclick="generateNewStory()">Create New Story!</button>
+        <div id="story"></div>
+    </div>
+
+    <script>
+const dictionary = {
+    "origin": [
+        "#openingLine# #plotChoice# And do you know what? #endingThought# THE END"
+    ],
+
+    // Michael Rosen style opening lines
+    "openingLine": [
+        "One day, and it was a Tuesday I think,",
+        "It was one of those mornings when,",
+        "You'll never guess what happened -",
+        "So there I was, just minding my own business,",
+        "It all started when,",
+        "On a day that felt like it should be Saturday but was actually Wednesday,",
+        "Suddenly, without any warning,",
+        "In the middle of what seemed like a perfectly normal afternoon,"
+    ],
+
+    // Michael Rosen style plot development
+    "plotChoice": [
+        "#characterIntro# #situation# So what does #kidName# do? Well, #kidName# decides to #action# which leads to #consequence#",
+        "#characterIntro# #discovery# And then #kidName# thinks '#internalThought#' and #actionSequence#",
+        "#situation# and #kidName# is there going '#internalThought#' and then #actionSequence#"
+    ],
+
+    // Michael Rosen style endings
+    "endingThought": [
+        "it was one of those days you just don't forget!",
+        "sometimes the best adventures are the ones you don't plan!",
+        "that's what happens when you're just being yourself!",
+        "and everyone had a good laugh about it afterwards!",
+        "it just goes to show - you never know what might happen!",
+        "and the memory of it still makes me smile!",
+        "it was all a bit bonkers, but in a good way!"
+    ],
+
+    // Character introductions
+    "characterIntro": [
+        "there's this #adjective# person called #kidName#",
+        "my friend #kidName#",
+        "this #adjective# kid named #kidName#",
+        "#kidName#, who was feeling particularly #mood#"
+    ],
+
+    // Situations and discoveries
+    "situation": [
+        "notices that the #everydayThing# is doing something #unexpected#",
+        "finds themselves in a situation where #problem#",
+        "discovers that #surpriseDiscovery#",
+        "realizes that all the #objects# are #groupBehavior#"
+    ],
+
+    "discovery": [
+        "discovers something amazing: #amazingFind#",
+        "finds out that #secretFact#",
+        "notices something peculiar about #peculiarThing#",
+        "realizes that #funnyRealization#"
+    ],
+
+    // Actions and consequences
+    "action": [
+        "#movement# #direction# the #location# while #simultaneousAction#",
+        "try to #solution#",
+        "have a good think about it and then #cleverIdea#",
+        "get #helper# involved and together they #teamAction#"
+    ],
+
+    "actionSequence": [
+        "before you can say '#sillyWord#', #quickAction# happens",
+        "first they #movement#, then they #movement#, then they #movement# #manner#",
+        "they start #movement# and #movement# until #achievement#"
+    ],
+
+    "consequence": [
+        "and then suddenly #surpriseEvent#!",
+        "which causes #funnyResult#!",
+        "and then everything goes a bit #sillyAdjective#!",
+        "and wouldn't you know it - #unexpectedTurn#!"
+    ],
+
+    // Internal thoughts in Michael Rosen style
+    "internalThought": [
+        "Well, that's a bit peculiar",
+        "I didn't see that coming",
+        "This calls for some serious thinking",
+        "What would my grandma do in this situation?",
+        "This is getting interesting",
+        "I think I need a biscuit and a good think about this",
+        "Well, I never!"
+    ],
+
+    // Word banks in Michael Rosen style
+    "adjective": ["curious", "bouncy", "wobbly", "squeaky", "fidgety", "noisy", "quiet", "peculiar", "magnificent"],
+    "mood": ["silly", "serious", "hungry", "sleepy", "bouncy", "curious", "philosophical"],
+    "everydayThing": ["teapot", "doormat", "lamppost", "kettle", "newspaper", "cabbage", "fridge", "sofa"],
+    "unexpected": ["singing opera", "doing the tango", "telling jokes", "floating in the air", "changing colors", "reciting poetry"],
+    "problem": ["the cookies keep disappearing", "their shoes won't stay tied", "the cat is wearing a hat", "the milk tastes like lemonade"],
+    "surpriseDiscovery": ["turnips have deeper thoughts than philosophers", "silence has a distinct flavor", "shadows are just light on holiday", "socks dream of greater things"],
+    "objects": ["chairs", "tables", "cushions", "shoes", "books", "plates", "spoons"],
+    "groupBehavior": ["having a party", "playing hide and seek", "forming a conga line", "debating the weather"],
+    "amazingFind": ["a pathway lined with glowing mushrooms", "a forgotten map etched on birch bark", "a talking firefly who knew many secrets", "a door in the base of an ancient tree"],
+    "secretFact": ["ducks are actually retired spies", "clouds are sheep on extended vacation", "teacups hold universal secrets", "doormats are failed flying carpets"],
+    "peculiarThing": ["the way the dust motes dance in sunlight", "how puddles always know the best jokes", "why toast always lands butter-side down", "what shadows do when no one's looking"],
+    "funnyRealization": ["the floor was actually the ceiling all along", "yesterday was actually tomorrow", "left was right and right was left", "quiet was loud and loud was quiet"],
+    "movement": ["jump", "skip", "hop", "run", "crawl", "dance", "wiggle", "bounce", "twirl"],
+    "direction": ["around", "through", "over", "under", "across", "into", "upside down"],
+    "location": ["room", "garden", "kitchen", "stairs", "table", "chair", "whole house"],
+    "simultaneousAction": ["singing a nonsense song", "wearing socks on their ears", "balancing a book on their head", "pretending to be a steam train"],
+    "solution": ["make up a silly song about it", "ask the goldfish for advice", "do a little dance", "have a good laugh and see what happens"],
+    "cleverIdea": ["turn the whole thing into a game", "pretend it's completely normal", "make up a story about it", "see if it works better backwards"],
+    "helper": ["their little sister", "the friendly postman", "next door's dog", "a passing butterfly"],
+    "teamAction": ["have a brainstorming session", "make up a secret handshake", "form a detective agency", "start a fan club"],
+    "sillyWord": ["banana", "pickle", "noodle", "giggle", "wobble", "sproing"],
+    "quickAction": ["everything turns upside down", "all the colors swap places", "animals start wearing hats", "the day becomes night"],
+    "manner": [
+        "like a wibbly-wobbly jelly",
+        "as fast as a speeding rocket",
+        "like a floppy spaghetti",
+        "as quiet as a sleeping mouse",
+        "like a bouncing ball"
+    ],
+    "achievement": ["they've memorized the sound of silence", "they've invented a new color", "they've taught a rock to appreciate poetry", "they've proved that yesterday is actually tomorrow"],
+    "surpriseEvent": ["a herd of wild kangaroos passes through", "the police arrive to arrest everyone for being too silly", "God appears and says it's all a bit much", "they run out of tea and have to go to the shops"],
+    "funnyResult": ["gravity stops working properly", "time starts going backwards", "all the words turn into pictures", "people start speaking in rhyme"],
+    "sillyAdjective": ["wobbly", "squishy", "bouncy", "fizzy", "wiggly", "floppy", "absolutely bonkers"],
+    "unexpectedTurn": ["the Queen turns up for tea", "it starts raining chocolate buttons", "everyone suddenly speaks French", "the furniture starts telling jokes"]
+};
+
+// Helper functions
+function getRandomWord(category) {
+    const words = dictionary[category];
+    if (words && Array.isArray(words)) {
+        return words[Math.floor(Math.random() * words.length)];
+    }
+    return `[${category}]`;
+}
+
+function expandSymbol(symbol, customVariables = {}) {
+    // Prevent infinite recursion and handle kidName specially
+    if (symbol === 'kidName') {
+        return customVariables['kidName'] || 'Friend';
+    }
+    
+    const options = dictionary[symbol];
+    if (!options) {
+        // If symbol doesn't exist, try to get a random word from it
+        return getRandomWord(symbol);
+    }
+    
+    const choice = options[Math.floor(Math.random() * options.length)];
+    
+    return choice.replace(/#(\w+)#/g, (match, symbol) => {
+        return expandSymbol(symbol, customVariables);
+    });
+}
+
+// Main story generator
+function generateKidsStory(playerName = "Friend") {
+    const customVariables = {
+        'kidName': playerName
+    };
+    
+    const story = expandSymbol('origin', customVariables);
+    
+    // Validate that we have a real story
+    if (story.includes('[') && story.includes(']')) {
+        // If story contains unresolved symbols, try one more time
+        return generateKidsStory(playerName);
+    }
+    
+    return story;
+}
+
+// LocalStorage functions
+function saveName() {
+    const nameInput = document.getElementById('player-name');
+    const name = nameInput.value.trim();
+    if (name) {
+        localStorage.setItem('playerName', name);
+        // alert(`Name saved: ${name}`);
+        generateNewStory();
+    } else {
+        alert('Please enter a name!');
+    }
+}
+
+function loadName() {
+    return localStorage.getItem('playerName') || 'Friend';
+}
+
+function generateNewStory() {
+    const playerName = loadName();
+    const story = generateKidsStory(playerName);
+    document.getElementById('story').textContent = story;
+}
+
+// Initialize on load
+window.onload = function() {
+    const savedName = loadName();
+    if (savedName !== 'Friend') {
+        document.getElementById('player-name').value = savedName;
+    }
+    generateNewStory();
+};
+    </script>
+</body>
+</html>
