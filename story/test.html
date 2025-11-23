@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Story Generator</title>
+    <style>
+        body {background: #222; color: #fff; font-family: monospace; margin: 20px; }
+        button { padding: 10px; margin: 5px; }
+        #story { margin: 20px 0; padding: 15px;}
+    </style>
+</head>
+<body>
+    <button onclick="generateNewStory()">Make New Story</button>
+    <div id="story"></div>
+
+    <script>
+        // Include the rosen-child.js dictionary here
+        const rosenChildDictionary = {
+    "origin": [
+        "#opening# #characterIntro# #situation# #action# #result# #ending#"
+    ],
+    
+    "opening": [
+        "One sunny day,",
+        "One morning,",
+        "One afternoon,",
+        "One happy day,",
+        "Once upon a time,"
+    ],
+    
+    "characterIntro": [
+        "a little #animal# named #name#",
+        "a young #animal# called #name#",
+        "#name# the #size# #animal#",
+        "#name#, who was a very #adjective# #animal#"
+    ],
+    
+    "situation": [
+        "was feeling very #feeling#.",
+        "wanted to #simpleAction#.",
+        "discovered something #discovery#.",
+        "found a #object# that was #objectState#.",
+        "noticed that the #weather# was making everything #weatherEffect#."
+    ],
+    
+    "action": [
+        "So #name# decided to #solution#.",
+        "#name# thought and thought, then had a #idea#!",
+        "#name# asked #friend# to help #simpleAction#.",
+        "#name# started to #movement# #direction# the #place#."
+    ],
+    
+    "result": [
+        "And do you know what happened? #positiveOutcome#!",
+        "Suddenly, #funnyEvent#!",
+        "Then something amazing happened - #magicEvent#!",
+        "Before you could say '#sillyWord#', #quickChange#!"
+    ],
+    
+    "ending": [
+        "And everyone was #endingFeeling#!",
+        "And they all lived #endingState# ever after.",
+        "What a #superlative# day!",
+        "#name# learned that #simpleLesson#."
+    ],
+    
+    // Random word arrays - these will be randomly selected
+    "animal": ["rabbit", "bear", "mouse", "squirrel", "hedgehog", "owl", "fox", "deer", "badger", "frog"],
+    "name": ["Pip", "Willow", "Buddy", "Sparkle", "Twinkle", "Bounce", "Wiggle", "Sunny", "Happy", "Buzzy"],
+    "size": ["small", "tiny", "little", "young", "baby", "mini"],
+    "adjective": ["happy", "curious", "brave", "kind", "funny", "clever", "friendly", "playful"],
+    "feeling": ["hungry", "sleepy", "excited", "curious", "happy", "silly", "bouncy", "adventurous"],
+    "simpleAction": ["find a friend", "have an adventure", "play a game", "find something yummy", "explore somewhere new"],
+    "discovery": ["funny", "shiny", "magical", "colorful", "bouncy", "singing", "dancing"],
+    "object": ["rock", "leaf", "flower", "acorn", "feather", "shell", "pinecone"],
+    "objectState": ["sparkling", "glowing", "singing", "dancing", "floating", "changing colors"],
+    "weather": ["sun", "rain", "wind", "snow", "rainbow"],
+    "weatherEffect": ["sparkly", "bouncy", "musical", "dancing", "floating"],
+    "solution": ["try something new", "ask for help", "use imagination", "sing a happy song", "share with friends"],
+    "idea": ["wonderful idea", "clever plan", "funny thought", "happy solution", "magic trick"],
+    "friend": ["best friend", "brother", "sister", "cousin", "classmate", "neighbor"],
+    "movement": ["hop", "skip", "jump", "dance", "wiggle", "bounce", "twirl"],
+    "direction": ["around", "through", "over", "under", "across"],
+    "place": ["garden", "forest", "meadow", "park", "playground", "backyard"],
+    "positiveOutcome": ["everyone started laughing", "they found the best snack ever", "they made a new friend", "the sun came out and smiled"],
+    "funnyEvent": ["all the flowers started singing", "the clouds turned into candy", "butterflies started telling jokes", "the trees began to dance"],
+    "magicEvent": ["a rainbow appeared just for them", "everything turned their favorite color", "they could understand what animals were saying", "they found a door to a magical world"],
+    "sillyWord": ["banana", "pickle", "noodle", "giggle", "wobble", "sproing"],
+    "quickChange": ["everything turned upside down", "all the colors swapped places", "animals started wearing hats", "the day became night"],
+    "endingFeeling": ["happy and giggly", "full of joy", "excited for tomorrow", "proud and smiling"],
+    "endingState": ["happily", "joyfully", "playfully", "magically"],
+    "superlative": ["wonderful", "amazing", "fantastic", "marvelous", "splendid"],
+    "simpleLesson": ["sharing makes everyone happy", "kindness is the best magic", "friends make everything better", "laughter is contagious"]
+};
+        function getRandomWord(category) {
+            const words = rosenChildDictionary[category];
+            return words ? words[Math.floor(Math.random() * words.length)] : `[${category}]`;
+        }
+
+        function expandSymbol(symbol, customVariables = {}) {
+            const options = rosenChildDictionary[symbol];
+            if (!options) {
+                if (rosenChildDictionary[symbol]) {
+                    return getRandomWord(symbol);
+                }
+                return customVariables[symbol] || `[${symbol}]`;
+            }
+            
+            const choice = options[Math.floor(Math.random() * options.length)];
+            return choice.replace(/#(\w+)#/g, (match, symbol) => {
+                return expandSymbol(symbol, customVariables);
+            });
+        }
+
+        function generateChildStory(playerName = "Friend") {
+            const customVariables = {
+                'name': playerName,
+                'friend': getRandomWord('name')
+            };
+            return expandSymbol('origin', customVariables);
+        }
+
+        function generateNewStory() {
+            const story = generateChildStory("Alex");
+            document.getElementById('story').textContent = story;
+        }
+
+        // Generate first story on load
+        generateNewStory();
+    </script>
+</body>
+</html>
