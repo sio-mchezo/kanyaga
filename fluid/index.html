@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/html" style="background-color: #222;">
+   <head>
+      <meta http-equiv="Content-Type" content="text/html; charset=windows-1252">
+      <title>v2</title>
+      <style>
+         * {
+         user-select: none;
+         }
+         html, body {
+         overflow: hidden;
+         }
+         body {
+         margin: 0;
+         position: fixed;
+         width: 100%;
+         height: 100%;
+         background: #111;
+         }
+         canvas {
+         position: absolute;
+         top: 0; left: 0;
+         width: 100%;
+         height: 100%;
+         }
+         canvas#cnv {
+         z-index: 1;
+         }
+         #hud {
+            position: absolute; z-index: 2;
+            top:0; left: 0;
+            padding: 10px;
+         }
+         button {
+            background: transparent; color: red;
+            font-family: monospace; outline: none;
+            border: none; cursor: pointer;
+         }
+         #pausebtn, #playbtn {display: block; margin: 4px;
+            font-size: 2em;}
+
+        #timer {
+            height: auto; 
+            width: auto;
+            margin: 0;
+            padding: 5px;
+            display: inline;
+            position: absolute;
+            top:0;
+            right: 0;
+            color: #fff;
+            font-family: monospace;
+            z-index: 999;
+        }      
+    </style>
+   </head>
+   <body style="overflow: hidden;">
+    <!-- <div id="timer">time : <span id="time">0</span></div> -->
+
+        <div id="hud">
+              <button onclick="playme();" id="playbtn">play</button>
+              <button onclick="pauseme();" id="pausebtn" style="display: none;">pause</button>    
+        </div>
+
+      <canvas id="cnv"></canvas>
+      <script type="text/javascript">
+         var started = false;
+         let startTime = 0;         
+         window.viz = false;
+         window.thistime = 0;
+        var playbtn = document.getElementById('playbtn');
+        var pausebtn = document.getElementById('pausebtn');
+
+         function pauseme() {
+             stopSound(context);
+             viz = false;
+             pausebtn.style.display = 'none';
+             playbtn.style.display = 'block';
+         }
+         
+         function playme() {
+            if (viz) {return}
+            pausebtn.style.display = 'block';    
+            playbtn.style.display = 'none';
+
+             viz = true;
+             context = new AudioContext();
+             javascriptNode;
+             var audioBuffer;
+             var sourceNode;
+             var analyser;
+             started = true;
+
+         // load the sound
+             setupAudioNodes();
+             loadSound("wet.mp3");
+             render();
+         }
+         
+         
+         
+         var viz = false;
+         var context;
+         var javascriptNode;
+         if (! window.AudioContext) {
+             if (! window.webkitAudioContext) {
+                 alert('no audiocontext found');
+             }
+             window.AudioContext = window.webkitAudioContext;
+         }
+         
+         
+         
+         function setupAudioNodes() {
+         // setup a javascript node
+             javascriptNode = context.createScriptProcessor(2048, 1, 1);
+         // connect to destination, else it isn't called
+             javascriptNode.connect(context.destination);
+         
+         
+         // setup analyzer
+             analyser = context.createAnalyser();
+             analyser.smoothingTimeConstant = 0.3;
+             analyser.fftSize = 512;
+         
+         // create a buffer source node
+             sourceNode = context.createBufferSource();
+             sourceNode.connect(analyser);
+             analyser.connect(javascriptNode);
+         
+             sourceNode.connect(context.destination);
+         }
+         
+         // load the specified sound
+         function loadSound(url) {
+             var request = new XMLHttpRequest();
+             request.open('GET', url, true);
+             request.responseType = 'arraybuffer';
+         
+         // When loaded decode the data
+             request.onload = function() {
+         
+         // decode the data
+                 context.decodeAudioData(request.response, function(buffer) {
+         // when the audio is decoded play the sound
+                     playSound(buffer);
+                 }, onError);
+             }
+             request.send();
+         }
+         
+         
+         function stopSound(buffer) {
+             sourceNode.stop(0);
+         }
+         
+         function playSound(buffer) {
+             sourceNode.buffer = buffer;
+             sourceNode.start(0);
+         }
+         
+         // log error
+         function onError(e) {
+             console.log(e);
+         }
+         
+      </script>
+      <script src="viz.js"></script>
+   </body>
+</html>
