@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Three.js Tree Generator Demo (r170)</title>
+  <link rel="stylesheet" href="style.css">
+
+  <!-- Import Map for Three.js r170 -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+
+<body>
+  <div id="statsOverlay">Polygons: 0</div>
+
+  <div id="leftnav">
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="structure">🌳</button>
+      <button class="tab-btn" data-tab="appearance">🎨</button>
+      <button class="tab-btn" data-tab="general">⚙️</button>
+    </div>
+
+    <div class="tab-content active" data-tab="structure">
+      <h2>Structure</h2>
+
+      <div class="control">
+        <label>Branch Depth <span class="tooltip-icon" data-tooltip="Maximum number of branch generations. Higher values create more detailed trees with smaller branches.">?</span></label>
+        <div class="input-group">
+          <input type="range" id="branchDepth" min="3" max="10" step="1" value="6">
+          <button class="lock-btn" data-locked="false">🔓</button>
+        </div>
+      </div>
+
+      <div class="control">
+        <label>Branch Length <span class="tooltip-icon" data-tooltip="Length of the first branch segment. Affects overall tree height and branch proportions.">?</span></label>
+        <div class="input-group">
+          <input type="range" id="branchLength" min="0.5" max="2" step="0.05" value="1.4">
+          <button class="lock-btn" data-locked="false">🔓</button>
+        </div>
+      </div>
+
+      <div class="control">
+        <label>Branching Factor <span class="tooltip-icon" data-tooltip="Average number of side branches created at each node. Higher values make bushier trees.">?</span></label>
+        <div class="input-group">
+          <input type="range" id="branchingFactor" min="1" max="4" step="0.1" value="2">
+          <button class="lock-btn" data-locked="false">🔓</button>
+        </div>
+      </div>
+
+      <div class="control">
+        <label>Fork Probability <span class="tooltip-icon" data-tooltip="Chance (0-1) that a branch will split and create side branches. Lower values create sparser trees.">?</span></label>
+        <div class="input-group">
+          <input type="range" id="forkProbability" min="0" max="1" step="0.05" value="0.6">
+          <button class="lock-btn" data-locked="false">🔓</button>
+        </div>
+      </div>
+
+      <div class="control">
+        <label>Taper <span class="tooltip-icon" data-tooltip="How quickly branches get thinner from base to tip. Lower values create more dramatic tapering.">?</span></label>
+        <div class="input-group">
+          <input type="range" id="taper" min="0.5" max="0.95" step="0.01" value="0.75">
+          <button class="lock-btn" data-locked="false">🔓</button>
+        </div>
+      </div>
+
+      <h3 class="subsection">Leaves</h3>
+
+      <div class="control">
+        <label>Leaf Geometry <span class="tooltip-icon" data-tooltip="Shape of the leaf geometry">?</span></label>
+        <select id="leafGeometry">
+          <option value="icosahedron">Icosahedron</option>
+          <option value="sphere">Sphere</option>
+          <option value="box">Box</option>
+          <option value="cone">Cone</option>
+          <option value="tetrahedron">Tetrahedron</option>
+          <option value="octahedron">Octahedron</option>
+          <option value="dodecahedron">Dodecahedron</option>
+        </select>
+      </div>
+
+      <div id="leafGeometryParams"></div>
+
+      <div class="control">
+        <label>Leaf Side <span class="tooltip-icon" data-tooltip="Which side of the leaf geometry to render">?</span></label>
+        <select id="leafSide">
+          <option value="DoubleSide">Double Side</option>
+          <option value="FrontSide">Front Side</option>
+          <option value="BackSide">Back Side</option>
+        </select>
+      </div>
+
+      <div class="control">
+        <label>
+          <input type="checkbox" id="leafCutBottom">
+          Cut Bottom Half <span class="tooltip-icon" data-tooltip="Remove the bottom half of leaf geometry for a more natural look">?</span>
+        </label>
+      </div>
+
+      <div class="control">
+        <label>
+          <input type="checkbox" id="leafNoRotation">
+          No Rotation <span class="tooltip-icon" data-tooltip="Disable random rotation of leaf instances">?</span>
+        </label>
+      </div>
+
+      <div class="control">
+        <label>Leaf Count <span class="tooltip-icon" data-tooltip="Number of leaves per terminal node">?</span></label>
+        <div class="input-group">
+          <input type="range" id="leavesPerNode" min="0" max="10" step="1" value="3">
+          <span class="value-display">3</span>
+        </div>
+      </div>
+
+      <div class="control">
+        <label>Leaf Scale Min <span class="tooltip-icon" data-tooltip="Minimum size of leaves">?</span></label>
+        <div class="input-group">
+          <input type="range" id="leafScaleMin" min="0.1" max="5" step="0.1" value="2">
+          <span class="value-display">2.0</span>
+        </div>
+      </div>
+
+      <div class="control">
+        <label>Leaf Scale Max <span class="tooltip-icon" data-tooltip="Maximum size of leaves">?</span></label>
+        <div class="input-group">
+          <input type="range" id="leafScaleMax" min="0.1" max="5" step="0.1" value="4">
+          <span class="value-display">4.0</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" data-tab="appearance">
+      <h2>Appearance</h2>
+
+      <div class="control">
+        <label>Branch Color <span class="tooltip-icon" data-tooltip="Base color of the tree branches">?</span></label>
+        <input type="color" id="branchColor" value="#4e3b2c">
+      </div>
+
+      <div class="control">
+        <label>Leaf Color <span class="tooltip-icon" data-tooltip="Base color of the leaves">?</span></label>
+        <input type="color" id="leafColor" value="#2e8b57">
+      </div>
+
+      <div class="control">
+        <label>Rock Count <span class="tooltip-icon" data-tooltip="Number of rocks around the tree base">?</span></label>
+        <div class="input-group">
+          <input type="range" id="rockCount" min="0" max="50" step="1" value="12">
+          <span class="value-display">12</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" data-tab="general">
+      <h2>General</h2>
+
+      <div class="control">
+        <label>Seed <span class="tooltip-icon" data-tooltip="Random seed number for generating the tree. Same seed produces the same tree.">?</span></label>
+        <div class="input-group">
+          <input type="number" id="seed" value="42">
+          <button class="lock-btn" data-locked="false">🔓</button>
+        </div>
+      </div>
+
+      <button id="randomizeBtn">🎲 Randomize</button>
+      <button id="regenerateBtn">🌱 Regenerate</button>
+
+      <button id="debugModeBtn" data-debug="false">🐛 Debug Mode: OFF</button>
+    </div>
+  </div>
+
+  <div id="rightnav">
+    <h2>Branch Angles <span class="tooltip-icon" data-tooltip="Min and max curve angles (in radians) for each branch depth level. Lower values = straighter, higher values = more curved.">?</span></h2>
+
+    <div class="angle-grid">
+      <div class="angle-header">D</div>
+      <div class="angle-header">X Min</div>
+      <div class="angle-header">X Max</div>
+      <div class="angle-header">Y Min</div>
+      <div class="angle-header">Y Max</div>
+      <div class="angle-header">Z Min</div>
+      <div class="angle-header">Z Max</div>
+      <div class="angle-header">🔒</div>
+
+      <div class="angle-row">
+        <label>0</label>
+        <input type="number" class="angle-x-min" data-depth="0" value="0.2" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-x-max" data-depth="0" value="0.4" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-y-min" data-depth="0" value="0.2" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-y-max" data-depth="0" value="0.4" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-z-min" data-depth="0" value="0.2" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-z-max" data-depth="0" value="0.4" step="0.1" min="-3" max="3">
+        <button class="angle-lock-btn" data-depth="0" data-locked="false">🔓</button>
+      </div>
+
+      <div class="angle-row">
+        <label>1</label>
+        <input type="number" class="angle-x-min" data-depth="1" value="0.3" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-x-max" data-depth="1" value="0.6" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-y-min" data-depth="1" value="0.3" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-y-max" data-depth="1" value="0.6" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-z-min" data-depth="1" value="0.3" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-z-max" data-depth="1" value="0.6" step="0.1" min="-3" max="3">
+        <button class="angle-lock-btn" data-depth="1" data-locked="false">🔓</button>
+      </div>
+
+      <div class="angle-row">
+        <label>2</label>
+        <input type="number" class="angle-x-min" data-depth="2" value="0.4" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-x-max" data-depth="2" value="0.8" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-y-min" data-depth="2" value="0.4" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-y-max" data-depth="2" value="0.8" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-z-min" data-depth="2" value="0.4" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-z-max" data-depth="2" value="0.8" step="0.1" min="-3" max="3">
+        <button class="angle-lock-btn" data-depth="2" data-locked="false">🔓</button>
+      </div>
+
+      <div class="angle-row">
+        <label>3</label>
+        <input type="number" class="angle-x-min" data-depth="3" value="0.5" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-x-max" data-depth="3" value="1.0" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-y-min" data-depth="3" value="0.5" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-y-max" data-depth="3" value="1.0" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-z-min" data-depth="3" value="0.5" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-z-max" data-depth="3" value="1.0" step="0.1" min="-3" max="3">
+        <button class="angle-lock-btn" data-depth="3" data-locked="false">🔓</button>
+      </div>
+
+      <div class="angle-row">
+        <label>4</label>
+        <input type="number" class="angle-x-min" data-depth="4" value="0.6" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-x-max" data-depth="4" value="1.2" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-y-min" data-depth="4" value="0.6" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-y-max" data-depth="4" value="1.2" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-z-min" data-depth="4" value="0.6" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-z-max" data-depth="4" value="1.2" step="0.1" min="-3" max="3">
+        <button class="angle-lock-btn" data-depth="4" data-locked="false">🔓</button>
+      </div>
+
+      <div class="angle-row">
+        <label>5+</label>
+        <input type="number" class="angle-x-min" data-depth="5" value="0.7" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-x-max" data-depth="5" value="1.4" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-y-min" data-depth="5" value="0.7" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-y-max" data-depth="5" value="1.4" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-z-min" data-depth="5" value="0.7" step="0.1" min="-3" max="3">
+        <input type="number" class="angle-z-max" data-depth="5" value="1.4" step="0.1" min="-3" max="3">
+        <button class="angle-lock-btn" data-depth="5" data-locked="false">🔓</button>
+      </div>
+    </div>
+
+    <button id="randomizeAnglesBtn">🎲 Randomize Angles</button>
+
+    <div id="branchDistribution">
+      <h3>Branch Distribution <span class="tooltip-icon" data-tooltip="Shows the angular distribution of branches sprouting from the trunk (Y-axis rotation).">?</span></h3>
+      <canvas id="polarCanvas" width="180" height="180"></canvas>
+
+      <div class="branch-controls">
+        <div class="control">
+          <label>Branch Start Height <span class="tooltip-icon" data-tooltip="Minimum height along trunk where branches start (0=base, 1=top)">?</span></label>
+          <input type="range" id="branchStartHeight" min="0" max="1" step="0.05" value="0.3">
+          <span class="value-display">0.30</span>
+        </div>
+
+        <div class="control">
+          <label>Branch End Height <span class="tooltip-icon" data-tooltip="Maximum height along trunk where branches end (0=base, 1=top)">?</span></label>
+          <input type="range" id="branchEndHeight" min="0" max="1" step="0.05" value="1.0">
+          <span class="value-display">1.00</span>
+        </div>
+
+        <div class="control">
+          <label>Branch Spacing Randomness <span class="tooltip-icon" data-tooltip="How randomly spaced branches are along the trunk (0=uniform, 1=very random)">?</span></label>
+          <input type="range" id="branchSpacingRandom" min="0" max="1" step="0.05" value="0.7">
+          <span class="value-display">0.70</span>
+        </div>
+
+        <div class="control">
+          <label>Azimuth Randomness <span class="tooltip-icon" data-tooltip="How random the angular spread is (0=evenly spaced, 1=random)">?</span></label>
+          <input type="range" id="azimuthRandomness" min="0" max="1" step="0.05" value="0.5">
+          <span class="value-display">0.50</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+    import { TreeGenerator } from './TreeGenerator.js';
+
+    // === Three.js setup ===
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x111111);
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(5, 3, 6);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.target.set(0, 1.5, 0);
+
+    const ambient = new THREE.AmbientLight(0xffffff, 0.8);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    dirLight.position.set(5, 10, 5);
+    dirLight.castShadow = true;
+
+    // Configure shadow map settings to prevent banding/striping artifacts
+    dirLight.shadow.mapSize.width = 4096;
+    dirLight.shadow.mapSize.height = 4096;
+    dirLight.shadow.camera.near = 0.5;
+    dirLight.shadow.camera.far = 50;
+    dirLight.shadow.camera.left = -15;
+    dirLight.shadow.camera.right = 15;
+    dirLight.shadow.camera.top = 15;
+    dirLight.shadow.camera.bottom = -15;
+    dirLight.shadow.bias = -0.00005;
+    dirLight.shadow.normalBias = 0.02;
+
+    scene.add(ambient, dirLight);
+
+    const groundGeo = new THREE.PlaneGeometry(30, 30);
+    const groundMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -1.8; // Match groundY from tree parameters
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // === Tree setup ===
+    let tree;
+    let debugMode = false;
+
+    function makeTree() {
+      if (tree) tree.clear();
+      tree = new TreeGenerator(scene, getParams());
+      tree.generate(0, 0, 0);
+      updatePolarPlot();
+      updateStats();
+    }
+
+    function updateStats() {
+      let totalPolygons = 0;
+
+      // Count tree mesh polygons
+      if (tree.treeMesh && tree.treeMesh.geometry) {
+        const index = tree.treeMesh.geometry.index;
+        if (index) {
+          totalPolygons += index.count / 3;
+        } else {
+          totalPolygons += tree.treeMesh.geometry.attributes.position.count / 3;
+        }
+      }
+
+      // Count leaf mesh polygons (instanced)
+      if (tree.leafMesh && tree.leafMesh.geometry) {
+        const leafGeo = tree.leafMesh.geometry;
+        const leafPolyCount = leafGeo.index ? leafGeo.index.count / 3 : leafGeo.attributes.position.count / 3;
+        totalPolygons += leafPolyCount * tree.leafMesh.count;
+      }
+
+      // Count rock mesh polygons (instanced)
+      if (tree.rocksMesh && tree.rocksMesh.geometry) {
+        const rockGeo = tree.rocksMesh.geometry;
+        const rockPolyCount = rockGeo.index ? rockGeo.index.count / 3 : rockGeo.attributes.position.count / 3;
+        totalPolygons += rockPolyCount * tree.rocksMesh.count;
+      }
+
+      document.getElementById('statsOverlay').textContent = `Polygons: ${Math.floor(totalPolygons).toLocaleString()}`;
+    }
+
+    // === Polar plot ===
+    function updatePolarPlot() {
+      if (!tree) return;
+
+      const canvas = document.getElementById('polarCanvas');
+      const ctx = canvas.getContext('2d');
+      const width = canvas.width;
+      const height = canvas.height;
+      const centerX = width / 2;
+      const centerY = height / 2;
+      const radius = Math.min(width, height) / 2 - 30; // More padding for labels
+
+      // Clear canvas
+      ctx.clearRect(0, 0, width, height);
+
+      // Draw background circle
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Draw axis lines (N, E, S, W)
+      ctx.strokeStyle = '#444';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 4; i++) {
+        const angle = (i * Math.PI) / 2;
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY);
+        ctx.lineTo(
+          centerX + radius * Math.cos(angle - Math.PI / 2),
+          centerY + radius * Math.sin(angle - Math.PI / 2)
+        );
+        ctx.stroke();
+      }
+
+      // Draw labels
+      ctx.fillStyle = '#66ff99';
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      // Top (0° / +Z axis)
+      ctx.fillText('0°', centerX, centerY - radius - 12);
+
+      // Right (90° / +X axis)
+      ctx.textAlign = 'left';
+      ctx.fillText('90°', centerX + radius + 8, centerY);
+
+      // Bottom (180° / -Z axis)
+      ctx.textAlign = 'center';
+      ctx.fillText('180°', centerX, centerY + radius + 12);
+
+      // Left (270° / -X axis)
+      ctx.textAlign = 'right';
+      ctx.fillText('270°', centerX - radius - 8, centerY);
+
+      // Get branch angles and plot them
+      const angles = tree.getBranchAngles();
+
+      if (angles.length > 0) {
+        // Create histogram bins (36 bins = 10° each)
+        const binCount = 36;
+        const bins = new Array(binCount).fill(0);
+
+        angles.forEach(angle => {
+          // Normalize angle to 0-2π
+          let normalizedAngle = ((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+          const binIndex = Math.floor((normalizedAngle / (Math.PI * 2)) * binCount) % binCount;
+          bins[binIndex]++;
+        });
+
+        // Find max count for scaling
+        const maxCount = Math.max(...bins, 1);
+
+        // Draw bars
+        bins.forEach((count, i) => {
+          const angle = (i / binCount) * Math.PI * 2;
+          const barLength = (count / maxCount) * (radius * 0.8);
+
+          ctx.beginPath();
+          ctx.moveTo(centerX, centerY);
+          ctx.lineTo(
+            centerX + barLength * Math.cos(angle - Math.PI / 2),
+            centerY + barLength * Math.sin(angle - Math.PI / 2)
+          );
+          ctx.strokeStyle = '#66ff99';
+          ctx.lineWidth = 3;
+          ctx.stroke();
+        });
+
+        // Draw count in top-left corner
+        ctx.fillStyle = '#aaa';
+        ctx.font = '12px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillText(`${angles.length} branches`, 10, 10);
+      } else {
+        ctx.fillStyle = '#666';
+        ctx.font = '12px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillText('No branches', 10, 10);
+      }
+    }
+
+    // === Parameter reading ===
+    function getParams() {
+      // Read branch angles from the grid (6 values per depth: xMin, xMax, yMin, yMax, zMin, zMax)
+      const branchAnglesPerDepth = [];
+      for (let depth = 0; depth <= 5; depth++) {
+        const xMin = document.querySelector(`.angle-x-min[data-depth="${depth}"]`);
+        const xMax = document.querySelector(`.angle-x-max[data-depth="${depth}"]`);
+        const yMin = document.querySelector(`.angle-y-min[data-depth="${depth}"]`);
+        const yMax = document.querySelector(`.angle-y-max[data-depth="${depth}"]`);
+        const zMin = document.querySelector(`.angle-z-min[data-depth="${depth}"]`);
+        const zMax = document.querySelector(`.angle-z-max[data-depth="${depth}"]`);
+        branchAnglesPerDepth.push([
+          parseFloat(xMin.value),
+          parseFloat(xMax.value),
+          parseFloat(yMin.value),
+          parseFloat(yMax.value),
+          parseFloat(zMin.value),
+          parseFloat(zMax.value)
+        ]);
+      }
+
+      return {
+        seed: parseInt(document.querySelector('#seed').value),
+        branchDepth: parseInt(document.querySelector('#branchDepth').value),
+        branchLength: parseFloat(document.querySelector('#branchLength').value),
+        branchingFactor: parseFloat(document.querySelector('#branchingFactor').value),
+        forkProbability: parseFloat(document.querySelector('#forkProbability').value),
+        taper: parseFloat(document.querySelector('#taper').value),
+        tropism: new THREE.Vector3(0, -0.15, 0),
+        branchColor: parseInt(document.querySelector('#branchColor').value.replace('#', '0x')),
+        leafColor: parseInt(document.querySelector('#leafColor').value.replace('#', '0x')),
+        leafGeometry: document.querySelector('#leafGeometry').value,
+        leafGeometryParams: getLeafGeometryParams(),
+        leafSide: document.querySelector('#leafSide').value,
+        leafCutBottom: document.querySelector('#leafCutBottom').checked,
+        leafNoRotation: document.querySelector('#leafNoRotation').checked,
+        leavesPerNode: parseInt(document.querySelector('#leavesPerNode').value),
+        leafScale: [
+          parseFloat(document.querySelector('#leafScaleMin').value),
+          parseFloat(document.querySelector('#leafScaleMax').value)
+        ],
+        rockCount: parseInt(document.querySelector('#rockCount').value),
+        groundY: -1.8,
+        branchAnglesPerDepth,
+        branchStartHeight: parseFloat(document.querySelector('#branchStartHeight').value),
+        branchEndHeight: parseFloat(document.querySelector('#branchEndHeight').value),
+        branchSpacingRandom: parseFloat(document.querySelector('#branchSpacingRandom').value),
+        azimuthRandomness: parseFloat(document.querySelector('#azimuthRandomness').value),
+        debugMode: debugMode
+      };
+    }
+
+    // === Leaf geometry parameter controls ===
+    function getLeafGeometryParams() {
+      const params = {};
+      const paramInputs = document.querySelectorAll('#leafGeometryParams input[type="range"]');
+      paramInputs.forEach(input => {
+        params[input.dataset.paramName] = parseInt(input.value);
+      });
+      return params;
+    }
+
+    const leafGeometryParams = {
+      icosahedron: [
+        { name: 'detail', label: 'Detail', min: 0, max: 3, step: 1, value: 0, tooltip: 'Subdivision detail level' }
+      ],
+      sphere: [
+        { name: 'widthSegments', label: 'Width Segments', min: 3, max: 32, step: 1, value: 8, tooltip: 'Number of horizontal segments' },
+        { name: 'heightSegments', label: 'Height Segments', min: 2, max: 32, step: 1, value: 6, tooltip: 'Number of vertical segments' }
+      ],
+      box: [
+        { name: 'widthSegments', label: 'Width Segments', min: 1, max: 10, step: 1, value: 1, tooltip: 'Number of segments along width' },
+        { name: 'heightSegments', label: 'Height Segments', min: 1, max: 10, step: 1, value: 1, tooltip: 'Number of segments along height' },
+        { name: 'depthSegments', label: 'Depth Segments', min: 1, max: 10, step: 1, value: 1, tooltip: 'Number of segments along depth' }
+      ],
+      cone: [
+        { name: 'radialSegments', label: 'Radial Segments', min: 3, max: 32, step: 1, value: 6, tooltip: 'Number of segments around the cone' },
+        { name: 'heightSegments', label: 'Height Segments', min: 1, max: 32, step: 1, value: 1, tooltip: 'Number of segments along height' }
+      ],
+      tetrahedron: [
+        { name: 'detail', label: 'Detail', min: 0, max: 3, step: 1, value: 0, tooltip: 'Subdivision detail level' }
+      ],
+      octahedron: [
+        { name: 'detail', label: 'Detail', min: 0, max: 3, step: 1, value: 0, tooltip: 'Subdivision detail level' }
+      ],
+      dodecahedron: [
+        { name: 'detail', label: 'Detail', min: 0, max: 3, step: 1, value: 0, tooltip: 'Subdivision detail level' }
+      ]
+    };
+
+    function updateLeafGeometryParams() {
+      const geometryType = document.querySelector('#leafGeometry').value;
+      const paramsContainer = document.querySelector('#leafGeometryParams');
+      const params = leafGeometryParams[geometryType];
+
+      // Clear existing params
+      paramsContainer.innerHTML = '';
+
+      // Add new params
+      params.forEach(param => {
+        const controlDiv = document.createElement('div');
+        controlDiv.className = 'control';
+
+        const label = document.createElement('label');
+        label.innerHTML = `${param.label} <span class="tooltip-icon" data-tooltip="${param.tooltip}">?</span>`;
+
+        const inputGroup = document.createElement('div');
+        inputGroup.className = 'input-group';
+
+        const input = document.createElement('input');
+        input.type = 'range';
+        input.id = `leafGeomParam_${param.name}`;
+        input.min = param.min;
+        input.max = param.max;
+        input.step = param.step;
+        input.value = param.value;
+        input.dataset.paramName = param.name;
+
+        const valueDisplay = document.createElement('span');
+        valueDisplay.className = 'value-display';
+        valueDisplay.textContent = param.value;
+
+        input.addEventListener('input', () => {
+          valueDisplay.textContent = input.value;
+          makeTree();
+        });
+
+        inputGroup.appendChild(input);
+        inputGroup.appendChild(valueDisplay);
+        controlDiv.appendChild(label);
+        controlDiv.appendChild(inputGroup);
+        paramsContainer.appendChild(controlDiv);
+      });
+    }
+
+    // Initialize leaf geometry params
+    updateLeafGeometryParams();
+
+    // Update params when geometry changes
+    document.querySelector('#leafGeometry').addEventListener('change', () => {
+      updateLeafGeometryParams();
+      makeTree();
+    });
+
+    // Update tree when leaf side changes
+    document.querySelector('#leafSide').addEventListener('change', () => {
+      makeTree();
+    });
+
+    // Update tree when cut bottom checkbox changes
+    document.querySelector('#leafCutBottom').addEventListener('change', () => {
+      makeTree();
+    });
+
+    // Update tree when no rotation checkbox changes
+    document.querySelector('#leafNoRotation').addEventListener('change', () => {
+      makeTree();
+    });
+
+    // === Tab switching logic ===
+    const tabButtons = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+
+    tabButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const targetTab = btn.dataset.tab;
+
+        // Remove active class from all buttons and contents
+        tabButtons.forEach(b => b.classList.remove('active'));
+        tabContents.forEach(c => c.classList.remove('active'));
+
+        // Add active class to clicked button and corresponding content
+        btn.classList.add('active');
+        document.querySelector(`.tab-content[data-tab="${targetTab}"]`).classList.add('active');
+      });
+    });
+
+    // === UI logic ===
+    const allInputs = document.querySelectorAll('#leftnav input');
+    const angleInputs = document.querySelectorAll('#rightnav input[type="number"]');
+    const branchControlInputs = document.querySelectorAll('.branch-controls input[type="range"]');
+    const lockButtons = document.querySelectorAll('.lock-btn');
+    const angleLockButtons = document.querySelectorAll('.angle-lock-btn');
+
+    // Update value displays for controls with value displays
+    function updateValueDisplay(input) {
+      const valueDisplay = input.nextElementSibling;
+      if (valueDisplay && valueDisplay.classList.contains('value-display')) {
+        const val = parseFloat(input.value);
+        // Show whole numbers for integer inputs, 1 decimal for others
+        if (input.step === "1") {
+          valueDisplay.textContent = Math.round(val).toString();
+        } else {
+          valueDisplay.textContent = val.toFixed(1);
+        }
+      }
+    }
+
+    // Initialize value displays for all range inputs with value displays
+    const allRangeInputs = document.querySelectorAll('input[type="range"]');
+    allRangeInputs.forEach(input => {
+      if (input.nextElementSibling && input.nextElementSibling.classList.contains('value-display')) {
+        updateValueDisplay(input);
+      }
+    });
+
+    // Add live regeneration on input change (left nav)
+    allInputs.forEach(input => {
+      input.addEventListener('input', () => {
+        // Update value display if present
+        if (input.type === 'range') {
+          updateValueDisplay(input);
+        }
+        makeTree();
+      });
+    });
+
+    // Add live regeneration on angle input change (right nav)
+    angleInputs.forEach(input => {
+      input.addEventListener('input', () => {
+        enforceMinMax(input);
+        makeTree();
+      });
+    });
+
+    // Add live regeneration on branch control input change
+    branchControlInputs.forEach(input => {
+      input.addEventListener('input', () => {
+        updateValueDisplay(input);
+        makeTree();
+      });
+    });
+
+    // Enforce min <= max constraint for angle inputs
+    function enforceMinMax(changedInput) {
+      const depth = changedInput.dataset.depth;
+      const classes = changedInput.className.split(' ')[0]; // e.g., 'angle-x-min'
+
+      // Determine if this is a min or max input and which axis
+      const isMin = classes.includes('-min');
+      const axis = classes.split('-')[1]; // 'x', 'y', or 'z'
+
+      const minInput = document.querySelector(`.angle-${axis}-min[data-depth="${depth}"]`);
+      const maxInput = document.querySelector(`.angle-${axis}-max[data-depth="${depth}"]`);
+
+      const minVal = parseFloat(minInput.value);
+      const maxVal = parseFloat(maxInput.value);
+
+      // If min > max, adjust the other value
+      if (minVal > maxVal) {
+        if (isMin) {
+          // User changed min, adjust max to match
+          maxInput.value = minVal;
+        } else {
+          // User changed max, adjust min to match
+          minInput.value = maxVal;
+        }
+      }
+    }
+
+    // Angle lock button logic
+    angleLockButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const locked = btn.dataset.locked === 'true';
+        btn.dataset.locked = (!locked).toString();
+        btn.textContent = locked ? '🔓' : '🔒';
+      });
+    });
+
+    function randomizeUnlocked() {
+      allInputs.forEach((input) => {
+        const lockBtn = input.parentElement.querySelector('.lock-btn');
+        if (lockBtn?.dataset.locked === 'true') return; // skip locked
+
+        if (input.type === 'number') {
+          input.value = Math.floor(Math.random() * 10000);
+        } else if (input.type === 'range') {
+          const min = parseFloat(input.min);
+          const max = parseFloat(input.max);
+          const step = parseFloat(input.step);
+          const val = Math.round((min + Math.random() * (max - min)) / step) * step;
+          input.value = val;
+        }
+      });
+    }
+
+    // Lock button logic
+    lockButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const locked = btn.dataset.locked === 'true';
+        btn.dataset.locked = (!locked).toString();
+        btn.textContent = locked ? '🔓' : '🔒';
+      });
+    });
+
+    // Randomize angles function
+    function randomizeAngles() {
+      for (let depth = 0; depth <= 5; depth++) {
+        const lockBtn = document.querySelector(`.angle-lock-btn[data-depth="${depth}"]`);
+        if (lockBtn?.dataset.locked === 'true') continue; // skip locked rows
+
+        const xMin = document.querySelector(`.angle-x-min[data-depth="${depth}"]`);
+        const xMax = document.querySelector(`.angle-x-max[data-depth="${depth}"]`);
+        const yMin = document.querySelector(`.angle-y-min[data-depth="${depth}"]`);
+        const yMax = document.querySelector(`.angle-y-max[data-depth="${depth}"]`);
+        const zMin = document.querySelector(`.angle-z-min[data-depth="${depth}"]`);
+        const zMax = document.querySelector(`.angle-z-max[data-depth="${depth}"]`);
+
+        // Random values between -3 and 3, rounded to 0.1
+        const randVal = () => Math.round((Math.random() * 6 - 3) * 10) / 10;
+
+        const xMinVal = randVal();
+        const xMaxVal = Math.max(xMinVal, randVal());
+        const yMinVal = randVal();
+        const yMaxVal = Math.max(yMinVal, randVal());
+        const zMinVal = randVal();
+        const zMaxVal = Math.max(zMinVal, randVal());
+
+        xMin.value = xMinVal;
+        xMax.value = xMaxVal;
+        yMin.value = yMinVal;
+        yMax.value = yMaxVal;
+        zMin.value = zMinVal;
+        zMax.value = zMaxVal;
+      }
+    }
+
+    // Buttons
+    document.querySelector('#randomizeBtn').addEventListener('click', () => {
+      randomizeUnlocked();
+      makeTree();
+    });
+
+    document.querySelector('#regenerateBtn').addEventListener('click', makeTree);
+
+    document.querySelector('#randomizeAnglesBtn').addEventListener('click', () => {
+      randomizeAngles();
+      makeTree();
+    });
+
+    // Debug mode toggle
+    document.querySelector('#debugModeBtn').addEventListener('click', () => {
+      const btn = document.querySelector('#debugModeBtn');
+      debugMode = !debugMode;
+      btn.dataset.debug = debugMode.toString();
+      document.body.dataset.debug = debugMode.toString();
+      btn.textContent = debugMode ? '🐛 Debug Mode: ON' : '🐛 Debug Mode: OFF';
+      makeTree();
+    });
+
+    // === Animation loop ===
+    makeTree();
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+
+</body>
+
+</html>
