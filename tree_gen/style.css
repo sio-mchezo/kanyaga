@@ -1,0 +1,521 @@
+body {
+  margin: 0;
+  overflow: hidden;
+  font-family: "Inter", sans-serif;
+}
+
+/* === Stats Overlay === */
+#statsOverlay {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: #66ff99;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  z-index: 1000;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(102, 255, 153, 0.3);
+}
+
+/* Hide scrollbars but keep scrolling functionality */
+* {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+*::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+canvas {
+  display: block;
+}
+
+/* === Left Navigation === */
+#leftnav {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 240px;
+  height: 100vh;
+  background: rgba(20, 20, 20, 0.95);
+  color: #eee;
+  padding: 0;
+  box-sizing: border-box;
+  box-shadow: 4px 0 12px rgba(0,0,0,0.4);
+  backdrop-filter: blur(8px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.tab-bar {
+  display: flex;
+  background: rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 12px;
+  background: transparent;
+  border: none;
+  color: #888;
+  font-size: 1.5rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-bottom: 2px solid transparent;
+}
+
+.tab-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #aaa;
+}
+
+.tab-btn.active {
+  color: #66ff99;
+  background: rgba(102, 255, 153, 0.1);
+  border-bottom-color: #66ff99;
+}
+
+.tab-content {
+  display: none;
+  padding: 12px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.tab-content.active {
+  display: block;
+}
+
+.tab-content h2 {
+  text-align: center;
+  font-weight: 600;
+  font-size: 1.1rem;
+  margin-top: 0;
+  margin-bottom: 12px;
+  color: #8aff9c;
+}
+
+.subsection {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #66ff99;
+  margin-top: 16px;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(102, 255, 153, 0.2);
+}
+
+.control {
+  margin-bottom: 10px;
+}
+
+label {
+  display: block;
+  font-size: 0.9rem;
+  color: #ccc;
+  margin-bottom: 4px;
+  position: relative;
+}
+
+input[type="color"] {
+  width: 100%;
+  height: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  padding: 2px;
+}
+
+input[type="color"]:hover {
+  border-color: #66ff99;
+}
+
+select {
+  width: 100%;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: #eee;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+select:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: #66ff99;
+}
+
+select:focus {
+  outline: none;
+  border-color: #66ff99;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+select option {
+  background: #1a1a1a;
+  color: #eee;
+  padding: 8px;
+}
+
+.value-display {
+  display: inline-block;
+  min-width: 30px;
+  text-align: right;
+  font-size: 0.85rem;
+  color: #66ff99;
+  margin-left: 8px;
+  font-weight: 600;
+}
+
+.tooltip-icon {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  line-height: 14px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.15);
+  color: #aaa;
+  border-radius: 50%;
+  font-size: 0.7rem;
+  font-weight: bold;
+  cursor: help;
+  margin-left: 4px;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.tooltip-icon:hover {
+  background: #66ff99;
+  color: #111;
+}
+
+.tooltip-icon::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(0, 0, 0, 0.95);
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: normal;
+  white-space: normal;
+  width: 200px;
+  line-height: 1.4;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.tooltip-icon:hover::after {
+  opacity: 1;
+}
+
+/* Tooltips in right nav should appear on the left */
+#rightnav .tooltip-icon::after {
+  left: auto;
+  right: 20px;
+}
+
+.input-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.input-group input[type=range],
+.input-group input[type=number] {
+  flex: 1;
+  accent-color: #66ff99;
+}
+
+.lock-btn {
+  background: rgba(255,255,255,0.1);
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  color: #fff;
+  padding: 4px 6px;
+  transition: background 0.2s;
+}
+.lock-btn[data-locked="true"] {
+  background: #66ff99;
+  color: #111;
+}
+
+button#randomizeBtn,
+button#regenerateBtn {
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: 0.2s;
+}
+button#randomizeBtn {
+  background: #66ff99;
+  color: #111;
+}
+button#randomizeBtn:hover {
+  background: #77ffaa;
+}
+button#regenerateBtn {
+  background: #333;
+  color: #eee;
+}
+button#regenerateBtn:hover {
+  background: #444;
+}
+
+button#debugModeBtn {
+  width: 100%;
+  margin-top: 12px;
+  padding: 6px;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: 0.2s;
+  background: #333;
+  color: #eee;
+  border: 2px solid #555;
+}
+
+button#debugModeBtn:hover {
+  background: #444;
+  border-color: #666;
+}
+
+button#debugModeBtn[data-debug="true"] {
+  background: #ff6b6b;
+  color: #fff;
+  border-color: #ff6b6b;
+}
+
+button#debugModeBtn[data-debug="true"]:hover {
+  background: #ff5252;
+  border-color: #ff5252;
+}
+
+/* === Right Navigation === */
+#rightnav {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 400px;
+  height: 100vh;
+  background: rgba(20, 20, 20, 0.95);
+  color: #eee;
+  padding: 12px;
+  box-sizing: border-box;
+  box-shadow: -4px 0 12px rgba(0,0,0,0.4);
+  backdrop-filter: blur(8px);
+  overflow-y: auto;
+}
+
+#rightnav h2 {
+  text-align: center;
+  font-weight: 600;
+  font-size: 1.1rem;
+  margin-top: 0;
+  color: #8aff9c;
+  margin-bottom: 12px;
+}
+
+.angle-grid {
+  display: grid;
+  grid-template-columns: 28px repeat(6, 1fr) 28px;
+  gap: 3px;
+  align-items: center;
+  font-size: 0.75rem;
+}
+
+.angle-header {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #66ff99;
+  text-align: center;
+  padding: 2px;
+}
+
+.angle-row {
+  display: contents;
+}
+
+.angle-row label {
+  font-size: 0.9rem;
+  color: #ccc;
+  text-align: center;
+  margin: 0;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background 0.3s, color 0.3s;
+}
+
+/* Debug mode color indicators for depth labels */
+body[data-debug="true"] .angle-row label {
+  font-weight: 600;
+}
+
+body[data-debug="true"] .angle-row:nth-child(4) label { /* Depth 0 */
+  background: #ff0000;
+  color: #fff;
+}
+
+body[data-debug="true"] .angle-row:nth-child(5) label { /* Depth 1 */
+  background: #ff8800;
+  color: #fff;
+}
+
+body[data-debug="true"] .angle-row:nth-child(6) label { /* Depth 2 */
+  background: #ffff00;
+  color: #000;
+}
+
+body[data-debug="true"] .angle-row:nth-child(7) label { /* Depth 3 */
+  background: #00ff00;
+  color: #000;
+}
+
+body[data-debug="true"] .angle-row:nth-child(8) label { /* Depth 4 */
+  background: #0088ff;
+  color: #fff;
+}
+
+body[data-debug="true"] .angle-row:nth-child(9) label { /* Depth 5+ */
+  background: #8800ff;
+  color: #fff;
+}
+
+.angle-row input[type="number"] {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  padding: 3px 2px;
+  color: #fff;
+  font-size: 0.7rem;
+  text-align: center;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.angle-row input[type="number"]:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(102, 255, 153, 0.3);
+}
+
+.angle-row input[type="number"]:focus {
+  outline: none;
+  border-color: #66ff99;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.angle-lock-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 3px;
+  font-size: 0.7rem;
+  cursor: pointer;
+  color: #fff;
+  padding: 3px;
+  transition: background 0.2s;
+  width: 100%;
+}
+
+.angle-lock-btn[data-locked="true"] {
+  background: #66ff99;
+  color: #111;
+}
+
+#randomizeAnglesBtn {
+  width: 100%;
+  margin-top: 12px;
+  padding: 8px;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: 0.2s;
+  background: #66ff99;
+  color: #111;
+}
+
+#randomizeAnglesBtn:hover {
+  background: #77ffaa;
+}
+
+/* === Branch Distribution Widget === */
+#branchDistribution {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#branchDistribution h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #8aff9c;
+  margin: 0 0 8px 0;
+  text-align: center;
+}
+
+#polarCanvas {
+  display: block;
+  width: 180px;
+  height: 180px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  margin: 0 auto 10px auto;
+}
+
+.branch-controls {
+  margin-top: 8px;
+}
+
+.branch-controls .control {
+  margin-bottom: 8px;
+}
+
+.branch-controls label {
+  font-size: 0.8rem;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.branch-controls input[type="range"] {
+  width: calc(100% - 50px);
+  accent-color: #66ff99;
+}
+
+.value-display {
+  display: inline-block;
+  width: 40px;
+  text-align: right;
+  font-size: 0.8rem;
+  color: #66ff99;
+  margin-left: 8px;
+}
