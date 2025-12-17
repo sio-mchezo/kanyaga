@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+  <meta charset="UTF-8">
+  <title>shabubu</title>
+  <style>
+    body {
+      user-select: none;
+      padding: 0;
+      margin: 0;
+      background: #000;
+      overflow: hidden;
+      height: 100vh;
+      position: relative;
+    }
+    
+    #shabubuBtn {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      padding: 15px 25px;
+      font-family: monospace;
+      cursor: pointer;
+      background: #ff00ff;
+      color: white;
+      border: none;
+      text-transform: uppercase;
+      font-size: 1.5em;
+      z-index: 100;
+      border-radius: 5px;
+    }
+    
+    
+    #joystickContainer {
+      visibility: hidden;
+    }
+    
+    #loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: white;
+      z-index: 1000;
+      font-family: monospace;
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.9.0/nipplejs.min.js"></script>
+  <script src="js/three.min.js"></script>
+  <script src='js/inflate.min.js'></script>
+  <script src='js/FBXLoader.js'></script>
+  <script src='js/ZzFX.js'></script>
+  
+  <script type="module">
+    'use strict';
+
+    // Configuration constants
+    const CONFIG = {
+      ANIMATIONS: {
+        T_POSE: 0,
+        SIT: 1,
+        IDLE: 2,
+        WALK: 3,
+        RUN: 4 
+      },
+      SPEEDS: {
+        IDLE: 0,
+        WALK: 1.7,
+        RUN: 2.5
+      },
+      AUTO_SIT_TIME: 1.0 // seconds
+    };
+
+    // Lip sync mapping
+    const phonemeMap = {
+      silence: "0",
+      " ": "0",
+      ".": "0",
+      ",": "0",
+      a: "3",
+      A: "3",
+      i: "5",
+      I: "5",
+      y: "5",
+      e: "5",
+      E: "5",
+      o: "7",
+      O: "7",
+      u: "7",
+      U: "7",
+      w: "7",
+      q: "7",
+      m: "8",
+      M: "8",
+      b: "8",
+      B: "8",
+      p: "8",
+      f: "9",
+      F: "9",
+      v: "9",
+      V: "9",
+      l: "6",
+      L: "6",
+      n: "5",
+      N: "5",
+      d: "5",
+      D: "5",
+      t: "4",
+      T: "4",
+      s: "5",
+      S: "5",
+      z: "5",
+      Z: "5",
+      c: "5",
+      C: "5",
+      g: "3",
+      G: "3",
+      k: "3",
+      K: "3",
+      h: "5",
+      H: "5",
+      r: "7",
+      R: "7",
+      default: "0"
+    };
+
+    // Sound effects
+    function stepSFX() {
+      zzfx(...[.1, .1, 400, .01, .02, .06, , .7, , -5, , .01, , , 3, , .04, .24, .01, .1]);
+    }
+
+    // SIMPLE Environment Class
+    class Environment {
+      constructor(scene, camera, renderer, characterObject) {
+        this.scene = scene;
+        this.camera = camera;
+        this.renderer = renderer;
+        this.characterObject = characterObject;
+        
+        // Movement state
+        this.worldX = 0;
+        this.worldZ = 0;
+        this.velocity = { x: 0, z: 0 };
+        this.isMoving = false;
+        this.rotation = 0;
+        this.force = 0;
+        this.currentSpeed = CONFIG.SPEEDS.WALK; // Default to walk speed
+        
+        // Ground
+        this.ground = null;
+        this.groundTexture = null;
+        
+        // Joystick
+        this.joystick = null;
+        this.joystickContainer = null;
+        
+        // World group (everything except character)
+        this.worldGroup = new THREE.Group();
+        this.scene.add(this.worldGroup);
+        
+        // Character should be slightly above ground
+        if (this.characterObject) {
+          this.characterObject.position.y = 0;
+        }
+        
+        this.init();
+      }
+      
+      init() {
+        this.setupGround();
+        this.setupJoystick();
+        console.log("Environment initialized");
+      }
+      
+      setupGround() {
+        // Create large ground plane with carpet texture
+        const geometry = new THREE.PlaneGeometry(200, 200, 1, 1);
+        
+        // Load carpet texture
+        const textureLoader = new THREE.TextureLoader();
+        this.groundTexture = textureLoader.load('3d/carpet.jpg');
+        this.groundTexture.wrapS = THREE.RepeatWrapping;
+        this.groundTexture.wrapT = THREE.RepeatWrapping;
+        this.groundTexture.repeat.set(20, 20); // Tile the texture
+        
+        const groundMaterial = new THREE.MeshLambertMaterial({
+          map: this.groundTexture
+        });
+        
+        this.ground = new THREE.Mesh(geometry, groundMaterial);
+        this.ground.rotation.x = -Math.PI / 2;
+        this.ground.position.y = -0.01;
+        this.ground.receiveShadow = true;
+        
+        // Add ground to world group
+        this.worldGroup.add(this.ground);
+
+        // cubr
+        const cgeometry = new THREE.BoxGeometry( 1, 1, 1 );
+        const cmaterial = new THREE.MeshBasicMaterial( { color: 0x00ff00 } );
+        const cube = new THREE.Mesh( cgeometry, cmaterial );
+        cube.position.x = 2;
+        this.worldGroup.add( cube );
+      }
+      
+      setupJoystick() {
+        // Create joystick container
+        this.joystickContainer = document.createElement('div');
+        this.joystickContainer.id = 'joystickContainer';
+        document.body.appendChild(this.joystickContainer);
+        
+        // Create joystick
+        if (typeof nipplejs !== 'undefined') {
+          this.joystick = nipplejs.create({
+            dataOnly: true,
+          });
+          
+          // Joystick events
+          this.joystick.on('move', (evt, data) => {
+            if (!data.force || data.force < 0.1) return;
+            this.force = data.force;
+
+            const angle = data.angle.radian;
+            const force = Math.min(data.force, 1.5);
+            
+            // Set velocity based on joystick and current speed
+            this.velocity.x = -Math.cos(angle) * force * this.currentSpeed;
+            this.velocity.z = Math.sin(angle) * force * this.currentSpeed;
+            
+            // Calculate rotation
+            this.rotation = Math.atan2(-this.velocity.z, this.velocity.x) - Math.PI / 2;
+            
+            this.isMoving = true;
+          });
+          
+          this.joystick.on('end', () => {
+            this.velocity.x = 0;
+            this.velocity.z = 0;
+            this.isMoving = false;
+          });
+        }
+      }
+      
+      // Set current speed based on animation state
+      setSpeedForState(state) {
+        switch(state) {
+          case 'walk':
+            this.currentSpeed = CONFIG.SPEEDS.WALK;
+            break;
+          case 'run':
+            this.currentSpeed = CONFIG.SPEEDS.RUN;
+            break;
+          default:
+            this.currentSpeed = CONFIG.SPEEDS.WALK;
+        }
+      }
+      
+      limitVelocity(vx, vz, maxSpeed) {
+        const hyp = Math.hypot(vx, vz);
+        if (hyp === 0) return { vx: 0, vz: 0 };
+        const limitedSpeed = Math.min(hyp, maxSpeed);
+        const ratio = limitedSpeed / hyp;
+        return {
+          vx: ratio * vx,
+          vz: ratio * vz
+        };
+      }
+      
+      update(delta) {
+        // Only update world position if we're actually moving AND in walk/run state
+        if (this.isMoving && this.force > 0.2) {
+          // Apply speed limit based on current speed
+          const maxSpeed = this.currentSpeed; // Allow some headroom
+          const limited = this.limitVelocity(this.velocity.x, this.velocity.z, maxSpeed);
+          this.velocity.x = limited.vx;
+          this.velocity.z = limited.vz;
+          
+          // Update world position
+          this.worldX += this.velocity.x * delta;
+          this.worldZ += this.velocity.z * delta;
+          
+          // Move the entire world group (ground moves under character)
+          this.worldGroup.position.x = this.worldX;
+          this.worldGroup.position.z = this.worldZ;
+          
+          // Rotate character to face movement direction
+          if (this.characterObject) {
+            this.characterObject.rotation.y = this.rotation;
+          }
+          
+          // Calculate speed
+          const speed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z);
+          
+          return {
+            isMoving: true,
+            speed: speed,
+            position: { x: this.worldX, z: this.worldZ }
+          };
+        }
+        
+        return {
+          isMoving: false,
+          speed: 0,
+          position: { x: this.worldX, z: this.worldZ }
+        };
+      }
+      
+      dispose() {
+        if (this.joystick) {
+          this.joystick.destroy();
+        }
+        
+        if (this.joystickContainer && this.joystickContainer.parentNode) {
+          this.joystickContainer.parentNode.removeChild(this.joystickContainer);
+        }
+      }
+    }
+
+    // Face Manager Class
+    class FaceManager {
+      constructor() {
+        this.textures = {};
+        this.currentFace = "0";
+        this.isReady = false;
+        this.textureLoader = new THREE.TextureLoader();
+        this.faces = [
+          { n: "0", col: "3d/sm-face.png", bump: "3d/sm-facebmp.png" },
+          { n: "1", col: "3d/sm-face.png", bump: "3d/sm-facebmp.png" },
+          { n: "2", col: "3d/sm-faceblink.png", bump: "3d/sm-facebmp.png" },
+          { n: "3", col: "3d/sm-face-A.png", bump: "3d/sm-facebmp-A.png" },
+          { n: "4", col: "3d/sm-face-aaa.png", bump: "3d/sm-facebmp-aaa.png" },
+          { n: "5", col: "3d/sm-face-E.png", bump: "3d/sm-facebmp-E.png" },
+          { n: "6", col: "3d/sm-face-L.png", bump: "3d/sm-facebmp-L.png" },
+          { n: "7", col: "3d/sm-face-oo.png", bump: "3d/sm-facebmp-oo.png" },
+          { n: "8", col: "3d/sm-face-M.png", bump: "3d/sm-facebmp-M.png" },
+          { n: "9", col: "3d/sm-face-F.png", bump: "3d/sm-facebmp-F.png" }
+        ];
+      }
+
+      async init() {
+        await this.preloadTextures();
+        this.isReady = true;
+        if (document.getElementById("loading")) {
+          document.getElementById("loading").style.display = "none";
+        }
+      }
+
+      async preloadTextures() {
+        const loadPromises = this.faces.map(async (face) => {
+          const [col, bump] = await Promise.all([
+            this.loadTexture(face.col),
+            this.loadTexture(face.bump)
+          ]);
+          this.texfix(col);
+          this.texfix(bump);
+          return { n: face.n, col, bump };
+        });
+
+        const loaded = await Promise.all(loadPromises);
+        loaded.forEach((texture) => {
+          this.textures[texture.n] = texture;
+        });
+      }
+
+      loadTexture(url) {
+        return new Promise((resolve, reject) => {
+          this.textureLoader.load(url, resolve, undefined, reject);
+        });
+      }
+
+      texfix(texture) {
+        texture.magFilter = texture.minFilter = THREE.NearestFilter;
+      }
+
+      setFace(faceIndex) {
+        if (!this.isReady || !window.headMaterial) return;
+
+        const face = this.textures[faceIndex];
+        if (face && this.currentFace !== faceIndex) {
+          window.headMaterial.map = face.col;
+          window.headMaterial.displacementMap = face.bump;
+          window.headMaterial.needsUpdate = true;
+          this.currentFace = faceIndex;
+        }
+      }
+    }
+
+    // Footstep Manager Class
+    class FootstepManager {
+      constructor(animationMixer) {
+        this.mixer = animationMixer;
+        this.currentState = '';
+        this.stepSounds = {
+          walk: stepSFX,
+          run: stepSFX
+        };
+        
+        this.lastAnimationTime = 0;
+        this.stepCounter = 0;
+        this.stepPatterns = {
+          walk: { intervals: [0.4, 0.9], threshold: 0.1, lastPlayed: {} },
+          run: { intervals: [0.4, 0.9], threshold: 0.1, lastPlayed: {} }
+        };
+      }
+      
+      setState(state, animationAction) {
+        this.currentState = state;
+        
+        if (this.stepPatterns[state]) {
+          Object.keys(this.stepPatterns[state].lastPlayed).forEach(key => {
+            this.stepPatterns[state].lastPlayed[key] = false;
+          });
+        }
+      }
+      
+      update(delta, animationAction) {
+        if (!animationAction || !this.stepPatterns[this.currentState]) return;
+        
+        const currentTime = animationAction.time;
+        const clipDuration = animationAction.getClip().duration;
+        const normalizedTime = (currentTime % clipDuration) / clipDuration;
+        
+        this.playStepFromAnimation(normalizedTime);
+        this.lastAnimationTime = currentTime;
+      }
+      
+      playStepFromAnimation(normalizedTime) {
+        const pattern = this.stepPatterns[this.currentState];
+        if (!pattern) return;
+        
+        for (const interval of pattern.intervals) {
+          const lowerBound = interval - pattern.threshold;
+          const upperBound = interval + pattern.threshold;
+          
+          if (normalizedTime >= lowerBound && normalizedTime <= upperBound) {
+            if (!pattern.lastPlayed[interval]) {
+              this.playStep();
+              pattern.lastPlayed[interval] = true;
+            }
+          } else {
+            pattern.lastPlayed[interval] = false;
+          }
+        }
+      }
+      
+      playStep() {
+        if (this.stepSounds[this.currentState]) {
+          this.stepSounds[this.currentState]();
+          this.stepCounter++;
+        }
+      }
+    }
+
+    // Application main class
+    class Shabooboo {
+      constructor() {
+        this.state = 'sit';
+        this.environment = null;
+        this.scene = null;
+        this.camera = null;
+        this.renderer = null;
+        this.clock = null;
+        this.mixer = null;
+        this.actions = [];
+        this.currentAction = null;
+        this.num = 0;
+        this.earGroup = null;
+        this.ear1 = null;
+        this.ear2 = null;
+        this.characterObject = null;
+        
+        // Inactivity timer for auto-sit
+        this.inactivityTimer = 0;
+        this.lastMovementTime = 0;
+        
+        // Speech synthesis
+        this.synth = window.speechSynthesis;
+        this.isSpeaking = false;
+        this.speechTimeout = null;
+        
+        // Bone references
+        this.bones = {
+          head: null
+        };
+        
+        // Texture cache
+        this.textures = {};
+        
+        // Face manager
+        this.faceManager = new FaceManager();
+        
+        // Footstep manager
+        this.footstepManager = null;
+        
+        this.init();
+      }
+      
+      init() {
+        this.setupScene();
+        this.setupCamera();
+        this.setupRenderer();
+        this.setupLights();
+        this.setupUI();
+        this.loadCharacter();
+        this.setupEventListeners();
+        this.startAnimationLoop();
+      }
+      
+      setupScene() {
+        this.scene = new THREE.Scene();
+        this.clock = new THREE.Clock();
+      }
+      
+      setupCamera() {
+        this.camera = new THREE.PerspectiveCamera(
+          70,
+          window.innerWidth / window.innerHeight,
+          0.1,
+          1000
+        );
+        // Camera is at character's position + offset
+        this.camera.position.set(0, 0.7, 5);
+        this.scene.add(this.camera);
+      }
+      
+      setupRenderer() {
+        this.renderer = new THREE.WebGLRenderer({
+          alpha: true,
+          antialias: true
+        });
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.shadowMap.enabled = true;
+        document.body.appendChild(this.renderer.domElement);
+      }
+      
+      setupLights() {
+        // Ambient light
+        const ambient = new THREE.AmbientLight(0xcccccc, 0.8);
+        this.scene.add(ambient);
+        
+        // Point light - follows character
+        const light1 = new THREE.PointLight(0xffefef, 0.9);
+        light1.position.set(0, 2, 0);
+        this.scene.add(light1);
+        
+        // Directional shadow light
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+        dirLight.position.set(-3, 15, -8);
+        dirLight.castShadow = true;
+        dirLight.shadow.camera.top = 40;
+        dirLight.shadow.camera.bottom = -40;
+        dirLight.shadow.camera.left = -40;
+        dirLight.shadow.camera.right = 40;
+        dirLight.shadow.camera.near = 0.1;
+        dirLight.shadow.camera.far = 200;
+        dirLight.shadow.radius = 16;
+        this.scene.add(dirLight);
+      }
+      
+      setupUI() {
+        // Add loading indicator
+        const loading = document.createElement('div');
+        loading.id = 'loading';
+        loading.textContent = 'Loading...';
+        document.body.appendChild(loading);
+        
+        // Add single shabubu button
+        const shabubuBtn = document.createElement('button');
+        shabubuBtn.id = 'shabubuBtn';
+        shabubuBtn.textContent = 'SHABUBU';
+        shabubuBtn.addEventListener('click', () => this.speakContent('shabubu'));
+        shabubuBtn.addEventListener('touchend', (e) => {
+          e.preventDefault();
+          this.speakContent('shabubu');
+        });
+        document.body.appendChild(shabubuBtn);
+      }
+      
+      getTexture(path) {
+        if (!this.textures[path]) {
+          const texture = new THREE.TextureLoader().load(path);
+          texture.magFilter = THREE.NearestFilter;
+          texture.minFilter = THREE.NearestFilter;
+          this.textures[path] = texture;
+        }
+        return this.textures[path];
+      }
+      
+      loadCharacter() {
+        const loader = new THREE.FBXLoader();
+        
+        loader.load('3d/tpose.fbx', (object) => {
+          this.characterObject = object;
+          this.mixer = new THREE.AnimationMixer(object);
+          this.cacheBoneReferences(object);
+          
+          // Store T-pose action
+          const tPoseAction = this.mixer.clipAction(object.animations[0]);
+          this.actions[CONFIG.ANIMATIONS.T_POSE] = tPoseAction;
+          
+          // Load other animations
+          this.loadSittingPose();
+        }, undefined, (error) => {
+          console.error('Error loading character:', error);
+        });
+      }
+      
+      cacheBoneReferences(object) {
+        this.bones.head = object.getObjectByName('mixamorigHead');
+      }
+      
+      loadSittingPose() {
+        const loader = new THREE.FBXLoader();
+        loader.load('3d/sit.fbx', (object) => {
+          const sitAction = this.mixer.clipAction(object.animations[0]);
+          this.actions[CONFIG.ANIMATIONS.SIT] = sitAction;
+          this.loadOtherAnimations();
+        });
+      }
+      
+      loadOtherAnimations() {
+        const animFiles = [
+          { file: 'idle.fbx', index: CONFIG.ANIMATIONS.IDLE },
+          { file: 'walk.fbx', index: CONFIG.ANIMATIONS.WALK },
+          { file: 'run.fbx', index: CONFIG.ANIMATIONS.RUN }
+        ];
+        
+        const loader = new THREE.FBXLoader();
+        let loadedCount = 0;
+        
+        animFiles.forEach(({ file, index }) => {
+          loader.load(`3d/${file}`, (object) => {
+            const action = this.mixer.clipAction(object.animations[0]);
+            this.actions[index] = action;
+            loadedCount++;
+            
+            if (loadedCount === animFiles.length) {
+              this.finalizeCharacterSetup();
+            }
+          }, undefined, (error) => {
+            console.error(`Error loading ${file}:`, error);
+            loadedCount++;
+            
+            if (loadedCount === animFiles.length) {
+              this.finalizeCharacterSetup();
+            }
+          });
+        });
+      }
+      
+      finalizeCharacterSetup() {
+        this.setupMaterials();
+        this.scene.add(this.characterObject);
+        this.setupCharacterParts();
+        
+        // Initialize face manager
+        this.faceManager.init();
+        
+        // Initialize footstep manager
+        this.footstepManager = new FootstepManager(this.mixer);
+        
+        // Initialize environment - THIS WILL CREATE THE GROUND
+        this.environment = new Environment(
+          this.scene,
+          this.camera,
+          this.renderer,
+          this.characterObject
+        );
+        
+        // Start with the sitting pose
+        this.playAction(CONFIG.ANIMATIONS.SIT);
+      }
+      
+      setupMaterials() {
+        if (!this.characterObject) return;
+        
+        const bodyTexture = this.getTexture('3d/shabody.png');
+        
+        this.characterObject.traverse(child => {
+          if (child.isMesh && child.material) {
+            child.material.shininess = 0;
+            child.material.map = bodyTexture;
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+      }
+      
+      setupCharacterParts() {
+        if (!this.bones.head) return;
+        
+        // Head sphere
+        const sphereGeometry = new THREE.SphereGeometry(0.7, 40, 40);
+        const sphereMaterial = new THREE.MeshStandardMaterial({
+          metalness: 0.01,
+          roughness: 3,
+          map: this.getTexture('3d/sm-face.png'),
+          displacementMap: this.getTexture('3d/sm-facebmp.png'),
+          roughnessMap: this.getTexture('3d/sm-facerough.png'),
+          displacementScale: -0.4
+        });
+        
+        const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+        sphere.scale.set(0.7, 0.7, 0.8);
+        sphere.rotation.y = -Math.PI / 2;
+        sphere.position.set(0, 0.3, 0.1);
+        this.bones.head.add(sphere);
+        
+        // Store head material globally for face manager
+        window.headMaterial = sphereMaterial;
+        
+        // Ears
+        this.setupEars();
+      }
+      
+      setupEars() {
+        this.earGroup = new THREE.Group();
+        this.earGroup.rotation.y = Math.PI * 2;
+        this.bones.head.add(this.earGroup);
+        
+        const earGeometry = new THREE.SphereGeometry(0.15, 30, 30);
+        const earMaterial = new THREE.MeshStandardMaterial({
+          metalness: 0.01,
+          roughness: 3,
+          map: this.getTexture('3d/eartex.png'),
+          displacementMap: this.getTexture('3d/bmp.png'),
+          displacementScale: -0.1
+        });
+        
+        const createEar = (xPos, rotationY) => {
+          const earGroup = new THREE.Group();
+          earGroup.position.set(xPos, 0.6, 0);
+          earGroup.rotation.set(Math.PI, -Math.PI / 2, 0);
+          earGroup.scale.set(0.6, 1.5, 1);
+          
+          const earMesh = new THREE.Mesh(earGeometry, earMaterial);
+          earMesh.position.set(0, 0.1, 0);
+          earMesh.scale.y = 1.2;
+          earMesh.rotation.y = rotationY;
+          earGroup.add(earMesh);
+          
+          return earGroup;
+        };
+        
+        this.ear1 = createEar(-0.2, 0.3);
+        this.ear2 = createEar(0.2, -0.3);
+        this.earGroup.add(this.ear1);
+        this.earGroup.add(this.ear2);
+      }
+      
+      playAction(index) {
+        if (!this.actions[index] || this.actions[index] === this.currentAction) {
+          return;
+        }
+        
+        const newAction = this.actions[index];
+        
+        if (this.currentAction) {
+          this.currentAction.fadeOut(0.2);
+        }
+        
+        newAction.reset();
+        newAction.setEffectiveWeight(1);
+        newAction.fadeIn(0.2);
+        newAction.play();
+        
+        this.currentAction = newAction;
+        this.mixer.update(0);
+        
+        // Update footstep manager with new state
+        let stateName = '';
+        switch(index) {
+          case CONFIG.ANIMATIONS.WALK:
+            stateName = 'walk';
+            break;
+          case CONFIG.ANIMATIONS.RUN:
+            stateName = 'run';
+            break;
+          default:
+            stateName = '';
+        }
+        
+        if (this.footstepManager) {
+          this.footstepManager.setState(stateName, newAction);
+        }
+      }
+      
+      blink() {
+        this.faceManager.setFace("2");
+        setTimeout(() => {
+          if (!this.isSpeaking) {
+            this.faceManager.setFace("1");
+          }
+        }, Math.random() * 200);
+      }
+      
+      speakContent(text) {
+        if (!this.faceManager.isReady || this.isSpeaking) return;
+        
+        this.isSpeaking = true;
+        
+        // Start mouth animation
+        this.mouthshape(text);
+        
+        // Create speech synthesis
+        const utterThis = new SpeechSynthesisUtterance(text);
+        utterThis.pitch = 1.2;
+        utterThis.rate = 0.85;
+
+        // Use Tessa voice if available
+        const voices = speechSynthesis.getVoices();
+        const tessaVoice = voices.find(voice => voice.name === "Tessa");
+        if (tessaVoice) {
+          utterThis.voice = tessaVoice;
+        }
+
+        utterThis.volume = 0.5;
+
+        // Speak
+        this.synth.speak(utterThis);
+        
+        // Reset when done
+        utterThis.onend = () => {
+          this.isSpeaking = false;
+          clearTimeout(this.speechTimeout);
+          this.faceManager.setFace("1");
+          this.blink();
+        };
+        
+        utterThis.onerror = () => {
+          this.isSpeaking = false;
+          clearTimeout(this.speechTimeout);
+          this.faceManager.setFace("1");
+        };
+      }
+      
+      mouthshape(text) {
+        for (let i = 0, len = text.length; i < len; i++) {
+          setTimeout(
+            ((i) => {
+              return () => {
+                this.lipsync(text[i]);
+              };
+            })(i),
+            70 * i
+          );
+        }
+        
+        this.speechTimeout = setTimeout(() => {
+          if (this.isSpeaking) {
+            this.faceManager.setFace("1");
+          }
+        }, 70 * text.length + 50);
+      }
+      
+      lipsync(character) {
+        const faceIndex = phonemeMap[character] || phonemeMap.default;
+        this.faceManager.setFace(faceIndex);
+      }
+      
+      update(delta) {
+  this.num++;
+  
+  // Update environment
+  if (this.environment) {
+    const envState = this.environment.update(delta);
+    
+    // Check if we're moving based on environment state AND joystick force
+    const isActuallyMoving = envState.isMoving && this.environment.force > 0.2;
+    
+    // Track movement for inactivity timer
+    if (isActuallyMoving) {
+      this.lastMovementTime = 0; // Reset inactivity timer
+      this.inactivityTimer = 0;
+      
+      // force
+      const joystickForce = this.environment.force;
+      
+      if (joystickForce > 1.0) {
+        // High force = run
+        if (this.state !== 'run') {
+          this.state = 'run';
+          this.environment.setSpeedForState('run');
+          this.playAction(CONFIG.ANIMATIONS.RUN);
+        }
+      } else if (joystickForce > 0.2) {
+        // Some force = walk
+        if (this.state !== 'walk') {
+          this.state = 'walk';
+          this.environment.setSpeedForState('walk');
+          this.playAction(CONFIG.ANIMATIONS.WALK);
+        }
+      }
+    } else {
+      // Not moving, increment inactivity timer
+      this.lastMovementTime += delta;
+      this.inactivityTimer += delta;
+      
+      // Auto-sit after inactivity (but only if not already sitting)
+      if (this.inactivityTimer >= CONFIG.AUTO_SIT_TIME && this.state !== 'sit') {
+        this.state = 'sit';
+        this.playAction(CONFIG.ANIMATIONS.SIT);
+        this.inactivityTimer = 0; // Reset timer
+      } else if (!envState.isMoving && this.state !== 'idle' && this.state !== 'sit') {
+        // If not moving and not sitting, switch to idle (immediately)
+        this.state = 'idle';
+        this.playAction(CONFIG.ANIMATIONS.IDLE);
+      }
+    }
+  }
+
+  if (this.mixer) {
+    this.mixer.update(delta);
+    
+    // Update footstep manager if we're walking or running
+    if (this.footstepManager && (this.state === 'walk' || this.state === 'run')) {
+      this.footstepManager.update(delta, this.currentAction);
+    }
+    
+    // Update ears based on movement
+    if (this.ear1 && this.ear2) {
+      let rotation;
+      
+      if (this.isSpeaking) {
+        rotation = Math.sin(this.num / 10) / 10;
+      } else if (this.state === 'walk') {
+        rotation = Math.sin(this.num / 10) / 10;
+      } else if (this.state === 'run') {
+        rotation = Math.sin(this.num / 5) / 5;
+      } else {
+        rotation = Math.sin(this.num / 20) / 20;
+      }
+      
+      this.ear1.rotation.x += (rotation - this.ear1.rotation.x) * 0.3;
+      this.ear2.rotation.x += (Math.cos(this.num / (this.state === 'run' ? 5 : 10)) / 10 - this.ear2.rotation.x) * 0.3;
+    }
+  }
+  
+  // Random blinking when not speaking
+  if (!this.isSpeaking && Math.random() > 0.99 && this.faceManager.isReady) {
+    this.blink();
+  }
+  
+  // Camera stays focused on character (who is at 0,0,0)
+  this.camera.lookAt(0, 0.9, 0);
+  
+  // Render
+  this.renderer.render(this.scene, this.camera);
+}
+      
+      startAnimationLoop() {
+        const animate = (time) => {
+          requestAnimationFrame(animate);
+          const delta = this.clock.getDelta();
+          this.update(delta);
+        };
+        
+        animate();
+      }
+      
+      setupEventListeners() {
+        window.addEventListener('resize', () => {
+          this.camera.aspect = window.innerWidth / window.innerHeight;
+          this.camera.updateProjectionMatrix();
+          this.renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+      }
+      
+      cleanup() {
+        if (this.environment) {
+          this.environment.dispose();
+        }
+      }
+    }
+    
+    // Initialize the application when the page loads
+    window.addEventListener('DOMContentLoaded', () => {
+      new Shabooboo();
+    });
+  </script>
+</body>
+</html>
