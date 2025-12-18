@@ -26,7 +26,7 @@
       color: white;
       border: none;
       text-transform: uppercase;
-      font-size: 1.5em;
+/*      font-size: 1.5em;*/
       z-index: 100;
       border-radius: 5px;
     }
@@ -52,7 +52,6 @@
       left: -1000px;
       width: 256px;
       height: 256px;
-      transform: scale(0.5);
     }
     
     .debug #colCanvas, 
@@ -100,7 +99,7 @@
   <script src="js/three.min.js"></script>
   <script src='js/inflate.min.js'></script>
   <script src='js/FBXLoader.js'></script>
-  <script src='js/zzfx.js'></script>
+  <script src='js/ZzFX.js'></script>
   
   <script type="module">
     'use strict';
@@ -120,8 +119,8 @@
         RUN: 2.5
       },
       AUTO_SIT_TIME: 1.0, // seconds
-      GROUND_SIZE: 128, // Ground plane size (200x200)
-      COLLISION_THRESHOLD: 128 // Pixel value threshold for collision (0-255)
+      GROUND_SIZE: 64, // Ground plane size (200x200)
+      COLLISION_THRESHOLD: 1 // Pixel value threshold for collision (0-255)
     };
 
     // Lip sync mapping
@@ -233,9 +232,6 @@ class Environment {
     this.imgBase = new Image();
     this.imgTex = new Image();
     
-    // Obstacles array
-    this.obstacles = [];
-    
     // Joystick
     this.joystick = null;
     this.joystickContainer = null;
@@ -261,7 +257,7 @@ class Environment {
     this.setupGround();
     this.setupHitPlane();
     this.setupJoystick();
-    console.log("Environment initialized with canvas collision");
+    // console.log("Environment initialized with canvas collision");
   }
   
   async setupCollisionCanvases() {
@@ -306,10 +302,7 @@ class Environment {
     // Initialize hit canvas with white (walkable) background
     this.hitCtx.fillStyle = '#ffffff';
     this.hitCtx.fillRect(0, 0, canvasSize, canvasSize);
-    
-    // Initialize color canvas with ground color
-    this.colCtx.fillStyle = '#e60087';
-    this.colCtx.fillRect(0, 0, canvasSize, canvasSize);
+
     
     // Initialize hitImageData with white image data
     this.hitImageData = this.hitCtx.getImageData(0, 0, canvasSize, canvasSize);
@@ -332,7 +325,7 @@ class Environment {
           // Draw image at exact size
           this.hitCtx.drawImage(this.imgBase, 0, 0, canvasSize, canvasSize);
           this.hitCtx.restore();
-          console.log('Loaded hit canvas PNG (256x256)');
+          // console.log('Loaded hit canvas PNG (256x256)');
           
           // Update hitImageData after image loads
           this.hitImageData = this.hitCtx.getImageData(0, 0, canvasSize, canvasSize);
@@ -340,7 +333,7 @@ class Environment {
         loadImg(this.imgTex, '3d/lvl-colour.png', () => {
           this.colCtx.imageSmoothingEnabled = false;
           this.colCtx.drawImage(this.imgTex, 0, 0, canvasSize, canvasSize);
-          console.log('Loaded color canvas PNG (256x256)');
+          // console.log('Loaded color canvas PNG (256x256)');
         })
       ]);
     } catch (err) {
@@ -353,7 +346,7 @@ class Environment {
     const geometry = new THREE.PlaneGeometry(CONFIG.GROUND_SIZE, CONFIG.GROUND_SIZE, 256, 256);
     
     // Load ground texture
-    const heightscale = 4;
+    const heightscale = 2;
     const textureLoader = new THREE.TextureLoader();
     this.groundTexture = textureLoader.load('3d/lvl-colour.png');
     this.groundTexture.magFilter = this.groundTexture.minFilter = THREE.NearestFilter;
@@ -535,14 +528,7 @@ class Environment {
     const red = this.hitImageData.data[index];
     
     // If pixel is black (0) or dark (below threshold), it's a collision
-    const collision = red < CONFIG.COLLISION_THRESHOLD;
-    
-    // Visual feedback on colCanvas
-    if (collision) {
-      this.colCtx.fillStyle = '#ffffff';
-      this.colCtx.fillRect(canvasX - 1, canvasZ - 1, 3, 3);
-    }
-    
+    const collision = red < CONFIG.COLLISION_THRESHOLD;    
     return collision;
   }
   
@@ -862,8 +848,8 @@ class Environment {
   dirLight.shadow.camera.far = 200;
   
   // Shadow map resolution - higher = better quality but slower
-  dirLight.shadow.mapSize.width = 2048;
-  dirLight.shadow.mapSize.height = 2048;
+  dirLight.shadow.mapSize.width = 1024;
+  dirLight.shadow.mapSize.height = 1024;
   
   // Shadow properties
   // dirLight.shadow.radius = 3; // Soft shadow blur
