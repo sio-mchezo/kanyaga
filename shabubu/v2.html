@@ -35,17 +35,8 @@
     }
     
     #bumpcanvas,
-    #hitcanvas { display:none;
-/*      position: absolute;
-      top: -100px;
-      left: -100px;
-      width: 512px;
-      height: 512px;
-      background: #222;
-      transform: scale(0.5);*/
-    }
-    #hitcanvas {
-      top: 160px;
+    #hitcanvas { 
+      display: none;
     }
     
     #hud {
@@ -60,21 +51,19 @@
       font-size: 12px;
       border-radius: 5px;
     }
-
   </style>
 
   <canvas id="bumpcanvas" width="512" height="512"></canvas>
   <canvas id="hitcanvas" width="512" height="512"></canvas>
 
-
   <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.9.0/nipplejs.min.js"></script>
   <script src="js/three.min.js"></script>
   <script src='js/inflate.min.js'></script>
   <script src='js/FBXLoader.js'></script>
-  <script src='js/zzfx.js'></script>
+  <script src='js/ZzFX.js'></script>
   
   <script>
-    // globals
+    // Canvas setup
     const CANVAS_SIZE = 512;
     const HALF_CANVAS = CANVAS_SIZE / 2;
     const levelSize = 64;
@@ -93,10 +82,10 @@
     hitCtx.fillStyle = "#e60087";
     hitCtx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
 
-    // offscreen canvas
+    // Load level images
     var images = [
-      {"src":"3d/lvl-bump.png"},  // set on floor
-      {"src":"3d/lvl-hit.png"}    // collision
+      {"src":"3d/lvl-bump.png"},
+      {"src":"3d/lvl-hit.png"}
     ];
 
     const imageArray = [];
@@ -133,13 +122,13 @@
         RUN: 2.5
       },
       AUTO_SIT_TIME: 1.0,
-      GROUND_Y_POSITION: -0.01, // Ground plane Y position
-      DISPLACEMENT_SCALE: 4, // Must match groundMaterial displacementScale
-      DISPLACEMENT_BIAS: -3, // Must match groundMaterial displacementBias
-      HEIGHT_OFFSET: 0.5 // Base height offset for character
+      GROUND_Y_POSITION: -0.01,
+      DISPLACEMENT_SCALE: 4,
+      DISPLACEMENT_BIAS: -3,
+      HEIGHT_OFFSET: 0.5
     };
 
-    // Lip sync mapping
+    // Phoneme mapping
     const phonemeMap = {
       silence: "0",
       " ": "0",
@@ -192,12 +181,12 @@
       default: "0"
     };
 
-    // Sound effects
+    // Sound effect
     function stepSFX() {
       zzfx(...[.1, .1, 400, .01, .02, .06, , .7, , -5, , .01, , , 3, , .04, .24, .01, .1]);
     }
 
-    // SIMPLE Environment Class
+    // Environment manager
     class Environment {
       constructor(scene, camera, renderer, characterObject) {
         this.scene = scene;
@@ -205,41 +194,33 @@
         this.renderer = renderer;
         this.characterObject = characterObject;
         
-        // Movement state - using the Flatland approach
         this.allowMove = true;
         this.moving = false;
         this.maxSpeed = PLAYER_MAX_SPEED;
-        this.posX = 0;  // Cursor position (like Flatland)
+        this.posX = 0;
         this.posZ = 0;
         this.vx = 0;
         this.vz = 0;
-        this.lastPixel = 0;
         
-        // World movement (for moving the ground)
         this.worldX = 0;
         this.worldZ = 0;
         this.rotation = 0;
         this.force = 0;
         this.currentSpeed = CONFIG.SPEEDS.WALK;
         
-        // Ground
         this.ground = null;
         this.groundTexture = null;
         
-        // Joystick
         this.joystick = null;
         this.joystickContainer = null;
         
-        // World group
         this.worldGroup = new THREE.Group();
         this.scene.add(this.worldGroup);
         
         this.init();
         
-        // Initialize HUD
         this.hud = document.getElementById("hud");
         
-        // Character height tracking
         this.targetHeight = CONFIG.HEIGHT_OFFSET;
         this.currentHeight = CONFIG.HEIGHT_OFFSET;
         this.heightSmoothing = 0.5;
@@ -248,7 +229,6 @@
       init() {
         this.setupGround();
         this.setupJoystick();
-        console.log("Environment initialized with Flatland collision");
       }
       
       setupGround() {
@@ -274,33 +254,7 @@
         this.ground.receiveShadow = true;
         
         this.worldGroup.add(this.ground);
-        //
-
-var pivot = new THREE.Group();
-pivot.rotation.x = -Math.PI*0.5;
-pivot.rotation.z = Math.PI;
-pivot.position.z = -1;
-pivot.position.y = 0.2;
-this.scene.add(pivot)
-
-var dust = [];
-function makedust() {
-for ( var i = 0; i < 10; i ++ ) {
-  var geometry = new THREE.SphereGeometry( 1, 32, 32, 0, Math.PI );
-  var material = new THREE.MeshBasicMaterial( {
-    color: 0xff0000, 
-    // transparent:true, opacity:0.1
-  } );
-  var ball = new THREE.Mesh( geometry, material );
-  ball.position.x=(Math.random()-0.5)*0.5;
-  ball.position.y=-5*(Math.random()*10);
-  // var xscale = Math.random();
-  // ball.scale.set(xscale,xscale,xscale);
-  pivot.add( ball );
-  dust.push(ball)
-} 
-}
-      }// setupground
+      }
       
       setupJoystick() {
         this.joystickContainer = document.createElement('div');
@@ -316,7 +270,6 @@ for ( var i = 0; i < 10; i ++ ) {
             if (!data.force || data.force < 0.1) return;
             this.force = data.force;
             
-            // Flatland-style velocity calculation
             const vx = data.force * Math.cos(data.angle.radian) * this.currentSpeed;
             const vz = -data.force * Math.sin(data.angle.radian) * this.currentSpeed;
             
@@ -325,7 +278,6 @@ for ( var i = 0; i < 10; i ++ ) {
             this.vz = limited.vz;
             this.moving = true;
             
-            // Calculate rotation for character
             this.rotation = Math.atan2(this.vz, this.vx) - Math.PI / 2;
           });
           
@@ -337,127 +289,81 @@ for ( var i = 0; i < 10; i ++ ) {
         }
       }
       
-      // Get height from bump canvas at position - FIXED VERSION
       getHeightFromBumpCanvas(worldX, worldZ) {
-        // Convert world coordinates to canvas coordinates
         const u = HALF_CANVAS + Math.floor(worldX * (CANVAS_SIZE / levelSize));
         const v = HALF_CANVAS + Math.floor(worldZ * (CANVAS_SIZE / levelSize));
         
-        // Make sure we're within canvas bounds
         if (u < 0 || u >= CANVAS_SIZE || v < 0 || v >= CANVAS_SIZE) {
           return CONFIG.HEIGHT_OFFSET;
         }
         
-        // Get pixel data from bump canvas (grayscale height map)
         const pixelData = bmpCtx.getImageData(u, v, 1, 1).data;
-        
-        // Bump maps: 0 = black (lowest), 255 = white (highest)
-        // Convert 0-255 to -1 to 1 range (to match displacementBias/Scale)
-        const normalizedValue = (pixelData[0] / 255) * 2 - 1; // -1 to 1
-        // console.log(normalizedValue)
-        // Apply the same transformation as the ground material:
-        // height = (normalizedValue * displacementScale) + displacementBias
+        const normalizedValue = (pixelData[0] / 255) * 2 - 1;
         const terrainHeight = (normalizedValue * CONFIG.DISPLACEMENT_SCALE) + CONFIG.DISPLACEMENT_BIAS;
-        
-        // Convert to world Y position
         const worldY = CONFIG.GROUND_Y_POSITION + (terrainHeight/2);
         
-        // Add character offset
         return worldY + CONFIG.HEIGHT_OFFSET;
       }
       
-      // Update character height based on bump map
       updateCharacterHeight(worldX, worldZ) {
         if (!this.characterObject) return;
         
-        // Get target height from bump map
         this.targetHeight = this.getHeightFromBumpCanvas(worldX, worldZ);
-        
-        // Smoothly interpolate to target height
         this.currentHeight += (this.targetHeight - this.currentHeight) * this.heightSmoothing;
-        
-        // Apply height to character
         this.characterObject.position.y = this.currentHeight;
       }
       
-      // FLATLAND COLLISION METHOD
       checkCollision(worldX, worldZ) {
-        // Convert world coordinates to canvas coordinates
-        // World: -32 to 32, Canvas: 0 to 512
         const u = HALF_CANVAS + Math.floor(worldX * (CANVAS_SIZE / levelSize));
         const v = HALF_CANVAS + Math.floor(worldZ * (CANVAS_SIZE / levelSize));
         
-        // Get pixel data
         const pixelData = hitCtx.getImageData(u, v, 1, 1).data;
-        const pixel = pixelData[0]; // Check red channel
+        const pixel = pixelData[0];
         
-        // Get height for HUD display
-        // const height = this.getHeightFromBumpCanvas(worldX, worldZ);
-        
-        // Update HUD with position and height
-        // this.hud.textContent = `Position: ${worldX.toFixed(2)}, ${worldZ.toFixed(2)} | Height: ${height.toFixed(3)} | Collision: ${pixel > 254 ? 'YES' : 'NO'}`;
-
-        return pixel > 254; // true = collision, false = walkable
+        return pixel > 254;
       }
       
-      // FLATLAND MOVEMENT UPDATE
       update(delta) {
-        // Update bump canvas with red pixel at player position
         this.updateBumpCanvasPixel(this.posX, this.posZ);
         
-        // Handle movement
         if (this.moving && this.force > 0.2) {
-          // Calculate new position
           const newPosX = this.posX + this.vx * delta;
           const newPosZ = this.posZ + this.vz * delta;
           
-          // Check collision at new position
           const hasCollision = this.checkCollision(newPosX, newPosZ);
           
           if (!hasCollision) {
-            // No collision, move freely
             this.posX = newPosX;
             this.posZ = newPosZ;
             this.allowMove = true;
           } else {
-            // Collision detected, don't move
             this.allowMove = false;
             
-      // Try sliding along X axis (keep X movement, stop Z)
-
-      const slideXCollision = this.checkCollision(newPosX, this.posZ);
-      if (!slideXCollision) {
-        // Can slide along X axis
-        this.posX = newPosX;
-        this.vz = 0; // Stop Z movement
-        this.allowMove = true;
-      } else {
-        // Try sliding along Z axis (keep Z movement, stop X)
-        const slideZCollision = this.checkCollision(this.posX, newPosZ);
-        if (!slideZCollision) {
-          // Can slide along Z axis
-          this.posZ = newPosZ;
-          this.vx = 0; // Stop X movement
-          this.allowMove = true;
-        } else {
-          // Cannot slide in either direction, stop completely
-          this.vx = this.vz = 0;
-        }
-      }
-    }
+            const slideXCollision = this.checkCollision(newPosX, this.posZ);
+            if (!slideXCollision) {
+              this.posX = newPosX;
+              this.vz = 0;
+              this.allowMove = true;
+            } else {
+              const slideZCollision = this.checkCollision(this.posX, newPosZ);
+              if (!slideZCollision) {
+                this.posZ = newPosZ;
+                this.vx = 0;
+                this.allowMove = true;
+              } else {
+                this.vx = this.vz = 0;
+              }
+            }
+          }
           
-          // Update world group position (move ground under character)
           this.worldGroup.position.x = -this.posX;
           this.worldGroup.position.z = -this.posZ;
           
-          // Store world position for external use
           this.worldX = this.posX;
           this.worldZ = this.posZ;
           
-          // Update character height based on bump map
           this.updateCharacterHeight(this.posX, this.posZ);
           
-          // Rotate character to face movement direction
           if (this.characterObject) {
             this.characterObject.rotation.y = -this.rotation;
           }
@@ -469,7 +375,6 @@ for ( var i = 0; i < 10; i ++ ) {
             height: this.currentHeight
           };
         } else {
-          // Still update height even when not moving
           this.updateCharacterHeight(this.posX, this.posZ);
         }
         
@@ -481,7 +386,6 @@ for ( var i = 0; i < 10; i ++ ) {
         };
       }
       
-      // Helper function from Flatland
       limitVelocity(vx, vz, max) {
         const len = Math.hypot(vx, vz);
         if (!len) return { vx: 0, vz: 0 };
@@ -489,30 +393,24 @@ for ( var i = 0; i < 10; i ++ ) {
         return { vx: vx * scale, vz: vz * scale };
       }
       
-      // Update bump canvas with red pixel
       updateBumpCanvasPixel(worldX, worldZ) {
-        // Clear and redraw base image
         bmpCtx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
         bmpCtx.drawImage(imageArray[0], 0, 0);
         
-        // Convert world to canvas coordinates
         const u = HALF_CANVAS + Math.floor(worldX * (CANVAS_SIZE / levelSize));
         const v = HALF_CANVAS + Math.floor(worldZ * (CANVAS_SIZE / levelSize));
-        
-        // Draw sampled pixel
-        // bmpCtx.strokeRect(u - 2, v - 2, 4, 4);
       }
       
       setSpeedForState(state) {
         switch(state) {
-          case 'walk':
-            this.currentSpeed = CONFIG.SPEEDS.WALK;
-            break;
-          case 'run':
-            this.currentSpeed = CONFIG.SPEEDS.RUN;
-            break;
-          default:
-            this.currentSpeed = CONFIG.SPEEDS.WALK;
+        case 'walk':
+          this.currentSpeed = CONFIG.SPEEDS.WALK;
+          break;
+        case 'run':
+          this.currentSpeed = CONFIG.SPEEDS.RUN;
+          break;
+        default:
+          this.currentSpeed = CONFIG.SPEEDS.WALK;
         }
       }
       
@@ -526,7 +424,7 @@ for ( var i = 0; i < 10; i ++ ) {
       }
     }
 
-    // Face Manager Class
+    // Face manager
     class FaceManager {
       constructor() {
         this.textures = {};
@@ -592,7 +490,7 @@ for ( var i = 0; i < 10; i ++ ) {
       }
     }
 
-    // Footstep Manager Class
+    // Footstep manager
     class FootstepManager {
       constructor(animationMixer) {
         this.mixer = animationMixer;
@@ -655,7 +553,7 @@ for ( var i = 0; i < 10; i ++ ) {
       }
     }
 
-    // Application main class
+    // Main application
     class Shabooboo {
       constructor() {
         this.state = 'sit';
@@ -713,7 +611,7 @@ for ( var i = 0; i < 10; i ++ ) {
           window.innerWidth / window.innerHeight,
           0.1,
           1000
-        );
+          );
         this.camera.position.set(0, 2, 5);
         this.scene.add(this.camera);
       }
@@ -845,7 +743,7 @@ for ( var i = 0; i < 10; i ++ ) {
           this.camera,
           this.renderer,
           this.characterObject
-        );
+          );
         
         this.playAction(CONFIG.ANIMATIONS.SIT);
       }
@@ -944,14 +842,14 @@ for ( var i = 0; i < 10; i ++ ) {
         
         let stateName = '';
         switch(index) {
-          case CONFIG.ANIMATIONS.WALK:
-            stateName = 'walk';
-            break;
-          case CONFIG.ANIMATIONS.RUN:
-            stateName = 'run';
-            break;
-          default:
-            stateName = '';
+        case CONFIG.ANIMATIONS.WALK:
+          stateName = 'walk';
+          break;
+        case CONFIG.ANIMATIONS.RUN:
+          stateName = 'run';
+          break;
+        default:
+          stateName = '';
         }
         
         if (this.footstepManager) {
@@ -1010,7 +908,7 @@ for ( var i = 0; i < 10; i ++ ) {
               };
             })(i),
             70 * i
-          );
+            );
         }
         
         this.speechTimeout = setTimeout(() => {
@@ -1095,10 +993,9 @@ for ( var i = 0; i < 10; i ++ ) {
           this.blink();
         }
         
-        // Adjust camera height based on character height
         if (this.environment) {
           const characterHeight = this.environment.currentHeight;
-          this.camera.position.y = 2 + characterHeight; // Keep camera above character
+          this.camera.position.y = 2 + characterHeight;
         }
         
         this.camera.lookAt(0, 0.9 + (this.environment ? this.environment.currentHeight : 0), 0);
