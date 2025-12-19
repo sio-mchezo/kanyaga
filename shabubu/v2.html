@@ -1,0 +1,1131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+  <meta charset="UTF-8">
+  <title>shabubu</title>
+  <style>
+    body {
+      user-select: none;
+      padding: 0;
+      margin: 0;
+      background: #000;
+      overflow: hidden;
+      height: 100vh;
+      position: relative;
+    }
+    
+    #shabubuBtn {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      padding: 15px 25px;
+      font-family: monospace;
+      cursor: pointer;
+      background: transparent;
+      color: white;
+      border: none;
+      text-transform: uppercase;
+      font-size: 1.5em;
+      z-index: 100;
+    }
+    
+    #joystickContainer {
+      visibility: hidden;
+    }
+    
+    #bumpcanvas,
+    #hitcanvas { display:none;
+/*      position: absolute;
+      top: -100px;
+      left: -100px;
+      width: 512px;
+      height: 512px;
+      background: #222;
+      transform: scale(0.5);*/
+    }
+    #hitcanvas {
+      top: 160px;
+    }
+    
+    #hud {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 99;
+      padding: 8px;
+      background: rgba(0, 0, 0, 0.7);
+      color: #fff;
+      font-family: monospace;
+      font-size: 12px;
+      border-radius: 5px;
+    }
+
+  </style>
+
+  <canvas id="bumpcanvas" width="512" height="512"></canvas>
+  <canvas id="hitcanvas" width="512" height="512"></canvas>
+
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.9.0/nipplejs.min.js"></script>
+  <script src="js/three.min.js"></script>
+  <script src='js/inflate.min.js'></script>
+  <script src='js/FBXLoader.js'></script>
+  <script src='js/ZzFX.js'></script>
+  
+  <script>
+    // globals
+    const CANVAS_SIZE = 512;
+    const HALF_CANVAS = CANVAS_SIZE / 2;
+    const levelSize = 64;
+    const PLAYER_MAX_SPEED = 5;
+    const JOYSTICK_MAX_SPEED = 5;
+    
+    const bumpCanvas = document.getElementById("bumpcanvas");
+    const bmpCtx = bumpCanvas.getContext("2d");
+    bmpCtx.fillStyle = "#e60087";
+    bmpCtx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+    const hitCanvas = document.getElementById("hitcanvas");
+    const hitCtx = hitCanvas.getContext("2d", {
+      willReadFrequently: true,
+    });
+    hitCtx.fillStyle = "#e60087";
+    hitCtx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+    // offscreen canvas
+    var images = [
+      {"src":"3d/lvl-bump.png"},  // set on floor
+      {"src":"3d/lvl-hit.png"}    // collision
+    ];
+
+    const imageArray = [];
+    var imageCount = 0;
+    
+    images.forEach(function(element, index){
+      const image = new Image();
+      image.src = element.src;
+      image.onload = ()=>{ 
+        imageCount += 1;
+        if(imageCount === images.length){ 
+          startLevel();
+        }
+      }
+      imageArray.push(image); 
+    });
+
+    function startLevel() {
+      bmpCtx.drawImage(imageArray[0], 0, 0);
+      hitCtx.drawImage(imageArray[1], 0, 0);
+    }
+
+    const CONFIG = {
+      ANIMATIONS: {
+        T_POSE: 0,
+        SIT: 1,
+        IDLE: 2,
+        WALK: 3,
+        RUN: 4 
+      },
+      SPEEDS: {
+        IDLE: 0,
+        WALK: 1.7,
+        RUN: 2.5
+      },
+      AUTO_SIT_TIME: 1.0,
+      GROUND_Y_POSITION: -0.01, // Ground plane Y position
+      DISPLACEMENT_SCALE: 4, // Must match groundMaterial displacementScale
+      DISPLACEMENT_BIAS: -3, // Must match groundMaterial displacementBias
+      HEIGHT_OFFSET: 0.5 // Base height offset for character
+    };
+
+    // Lip sync mapping
+    const phonemeMap = {
+      silence: "0",
+      " ": "0",
+      ".": "0",
+      ",": "0",
+      a: "3",
+      A: "3",
+      i: "5",
+      I: "5",
+      y: "5",
+      e: "5",
+      E: "5",
+      o: "7",
+      O: "7",
+      u: "7",
+      U: "7",
+      w: "7",
+      q: "7",
+      m: "8",
+      M: "8",
+      b: "8",
+      B: "8",
+      p: "8",
+      f: "9",
+      F: "9",
+      v: "9",
+      V: "9",
+      l: "6",
+      L: "6",
+      n: "5",
+      N: "5",
+      d: "5",
+      D: "5",
+      t: "4",
+      T: "4",
+      s: "5",
+      S: "5",
+      z: "5",
+      Z: "5",
+      c: "5",
+      C: "5",
+      g: "3",
+      G: "3",
+      k: "3",
+      K: "3",
+      h: "5",
+      H: "5",
+      r: "7",
+      R: "7",
+      default: "0"
+    };
+
+    // Sound effects
+    function stepSFX() {
+      zzfx(...[.1, .1, 400, .01, .02, .06, , .7, , -5, , .01, , , 3, , .04, .24, .01, .1]);
+    }
+
+    // SIMPLE Environment Class
+    class Environment {
+      constructor(scene, camera, renderer, characterObject) {
+        this.scene = scene;
+        this.camera = camera;
+        this.renderer = renderer;
+        this.characterObject = characterObject;
+        
+        // Movement state - using the Flatland approach
+        this.allowMove = true;
+        this.moving = false;
+        this.maxSpeed = PLAYER_MAX_SPEED;
+        this.posX = 0;  // Cursor position (like Flatland)
+        this.posZ = 0;
+        this.vx = 0;
+        this.vz = 0;
+        this.lastPixel = 0;
+        
+        // World movement (for moving the ground)
+        this.worldX = 0;
+        this.worldZ = 0;
+        this.rotation = 0;
+        this.force = 0;
+        this.currentSpeed = CONFIG.SPEEDS.WALK;
+        
+        // Ground
+        this.ground = null;
+        this.groundTexture = null;
+        
+        // Joystick
+        this.joystick = null;
+        this.joystickContainer = null;
+        
+        // World group
+        this.worldGroup = new THREE.Group();
+        this.scene.add(this.worldGroup);
+        
+        this.init();
+        
+        // Initialize HUD
+        this.hud = document.getElementById("hud");
+        
+        // Character height tracking
+        this.targetHeight = CONFIG.HEIGHT_OFFSET;
+        this.currentHeight = CONFIG.HEIGHT_OFFSET;
+        this.heightSmoothing = 0.5;
+      }
+      
+      init() {
+        this.setupGround();
+        this.setupJoystick();
+        console.log("Environment initialized with Flatland collision");
+      }
+      
+      setupGround() {
+        const geometry = new THREE.PlaneGeometry(levelSize, levelSize, 256, 256);
+        const textureLoader = new THREE.TextureLoader();
+        this.groundTexture = textureLoader.load('3d/lvl-colour.png');
+        this.groundTexture.magFilter = this.groundTexture.minFilter = THREE.NearestFilter;
+
+        const groundMaterial = new THREE.MeshStandardMaterial({
+          map: this.groundTexture,
+          shininess: 0,
+          displacementMap: new THREE.TextureLoader().load("3d/lvl-bump.png"),
+          displacementScale: CONFIG.DISPLACEMENT_SCALE,
+          displacementBias: CONFIG.DISPLACEMENT_BIAS,
+          metalness: 0.01,
+          roughness: 0.9,
+          side: THREE.DoubleSide
+        });
+        
+        this.ground = new THREE.Mesh(geometry, groundMaterial);
+        this.ground.rotation.x = -Math.PI / 2;
+        this.ground.position.y = CONFIG.GROUND_Y_POSITION;
+        this.ground.receiveShadow = true;
+        
+        this.worldGroup.add(this.ground);
+        //
+
+var pivot = new THREE.Group();
+pivot.rotation.x = -Math.PI*0.5;
+pivot.rotation.z = Math.PI;
+pivot.position.z = -1;
+pivot.position.y = 0.2;
+this.scene.add(pivot)
+
+var dust = [];
+function makedust() {
+for ( var i = 0; i < 10; i ++ ) {
+  var geometry = new THREE.SphereGeometry( 1, 32, 32, 0, Math.PI );
+  var material = new THREE.MeshBasicMaterial( {
+    color: 0xff0000, 
+    // transparent:true, opacity:0.1
+  } );
+  var ball = new THREE.Mesh( geometry, material );
+  ball.position.x=(Math.random()-0.5)*0.5;
+  ball.position.y=-5*(Math.random()*10);
+  // var xscale = Math.random();
+  // ball.scale.set(xscale,xscale,xscale);
+  pivot.add( ball );
+  dust.push(ball)
+} 
+}
+      }// setupground
+      
+      setupJoystick() {
+        this.joystickContainer = document.createElement('div');
+        this.joystickContainer.id = 'joystickContainer';
+        document.body.appendChild(this.joystickContainer);
+        
+        if (typeof nipplejs !== 'undefined') {
+          this.joystick = nipplejs.create({
+            dataOnly: true,
+          });
+          
+          this.joystick.on('move', (evt, data) => {
+            if (!data.force || data.force < 0.1) return;
+            this.force = data.force;
+            
+            // Flatland-style velocity calculation
+            const vx = data.force * Math.cos(data.angle.radian) * this.currentSpeed;
+            const vz = -data.force * Math.sin(data.angle.radian) * this.currentSpeed;
+            
+            const limited = this.limitVelocity(vx, vz, JOYSTICK_MAX_SPEED);
+            this.vx = limited.vx;
+            this.vz = limited.vz;
+            this.moving = true;
+            
+            // Calculate rotation for character
+            this.rotation = Math.atan2(this.vz, this.vx) - Math.PI / 2;
+          });
+          
+          this.joystick.on('end', () => {
+            this.moving = false;
+            this.vx = this.vz = 0;
+            this.force = 0;
+          });
+        }
+      }
+      
+      // Get height from bump canvas at position - FIXED VERSION
+      getHeightFromBumpCanvas(worldX, worldZ) {
+        // Convert world coordinates to canvas coordinates
+        const u = HALF_CANVAS + Math.floor(worldX * (CANVAS_SIZE / levelSize));
+        const v = HALF_CANVAS + Math.floor(worldZ * (CANVAS_SIZE / levelSize));
+        
+        // Make sure we're within canvas bounds
+        if (u < 0 || u >= CANVAS_SIZE || v < 0 || v >= CANVAS_SIZE) {
+          return CONFIG.HEIGHT_OFFSET;
+        }
+        
+        // Get pixel data from bump canvas (grayscale height map)
+        const pixelData = bmpCtx.getImageData(u, v, 1, 1).data;
+        
+        // Bump maps: 0 = black (lowest), 255 = white (highest)
+        // Convert 0-255 to -1 to 1 range (to match displacementBias/Scale)
+        const normalizedValue = (pixelData[0] / 255) * 2 - 1; // -1 to 1
+        // console.log(normalizedValue)
+        // Apply the same transformation as the ground material:
+        // height = (normalizedValue * displacementScale) + displacementBias
+        const terrainHeight = (normalizedValue * CONFIG.DISPLACEMENT_SCALE) + CONFIG.DISPLACEMENT_BIAS;
+        
+        // Convert to world Y position
+        const worldY = CONFIG.GROUND_Y_POSITION + (terrainHeight/2);
+        
+        // Add character offset
+        return worldY + CONFIG.HEIGHT_OFFSET;
+      }
+      
+      // Update character height based on bump map
+      updateCharacterHeight(worldX, worldZ) {
+        if (!this.characterObject) return;
+        
+        // Get target height from bump map
+        this.targetHeight = this.getHeightFromBumpCanvas(worldX, worldZ);
+        
+        // Smoothly interpolate to target height
+        this.currentHeight += (this.targetHeight - this.currentHeight) * this.heightSmoothing;
+        
+        // Apply height to character
+        this.characterObject.position.y = this.currentHeight;
+      }
+      
+      // FLATLAND COLLISION METHOD
+      checkCollision(worldX, worldZ) {
+        // Convert world coordinates to canvas coordinates
+        // World: -32 to 32, Canvas: 0 to 512
+        const u = HALF_CANVAS + Math.floor(worldX * (CANVAS_SIZE / levelSize));
+        const v = HALF_CANVAS + Math.floor(worldZ * (CANVAS_SIZE / levelSize));
+        
+        // Get pixel data
+        const pixelData = hitCtx.getImageData(u, v, 1, 1).data;
+        const pixel = pixelData[0]; // Check red channel
+        
+        // Get height for HUD display
+        // const height = this.getHeightFromBumpCanvas(worldX, worldZ);
+        
+        // Update HUD with position and height
+        // this.hud.textContent = `Position: ${worldX.toFixed(2)}, ${worldZ.toFixed(2)} | Height: ${height.toFixed(3)} | Collision: ${pixel > 254 ? 'YES' : 'NO'}`;
+
+        return pixel > 254; // true = collision, false = walkable
+      }
+      
+      // FLATLAND MOVEMENT UPDATE
+      update(delta) {
+        // Update bump canvas with red pixel at player position
+        this.updateBumpCanvasPixel(this.posX, this.posZ);
+        
+        // Handle movement
+        if (this.moving && this.force > 0.2) {
+          // Calculate new position
+          const newPosX = this.posX + this.vx * delta;
+          const newPosZ = this.posZ + this.vz * delta;
+          
+          // Check collision at new position
+          const hasCollision = this.checkCollision(newPosX, newPosZ);
+          
+          if (!hasCollision) {
+            // No collision, move freely
+            this.posX = newPosX;
+            this.posZ = newPosZ;
+            this.allowMove = true;
+          } else {
+            // Collision detected, don't move
+            this.allowMove = false;
+            
+      // Try sliding along X axis (keep X movement, stop Z)
+
+      const slideXCollision = this.checkCollision(newPosX, this.posZ);
+      if (!slideXCollision) {
+        // Can slide along X axis
+        this.posX = newPosX;
+        this.vz = 0; // Stop Z movement
+        this.allowMove = true;
+      } else {
+        // Try sliding along Z axis (keep Z movement, stop X)
+        const slideZCollision = this.checkCollision(this.posX, newPosZ);
+        if (!slideZCollision) {
+          // Can slide along Z axis
+          this.posZ = newPosZ;
+          this.vx = 0; // Stop X movement
+          this.allowMove = true;
+        } else {
+          // Cannot slide in either direction, stop completely
+          this.vx = this.vz = 0;
+        }
+      }
+    }
+          
+          // Update world group position (move ground under character)
+          this.worldGroup.position.x = -this.posX;
+          this.worldGroup.position.z = -this.posZ;
+          
+          // Store world position for external use
+          this.worldX = this.posX;
+          this.worldZ = this.posZ;
+          
+          // Update character height based on bump map
+          this.updateCharacterHeight(this.posX, this.posZ);
+          
+          // Rotate character to face movement direction
+          if (this.characterObject) {
+            this.characterObject.rotation.y = -this.rotation;
+          }
+          
+          return {
+            isMoving: true,
+            speed: Math.sqrt(this.vx * this.vx + this.vz * this.vz),
+            position: { x: this.posX, z: this.posZ },
+            height: this.currentHeight
+          };
+        } else {
+          // Still update height even when not moving
+          this.updateCharacterHeight(this.posX, this.posZ);
+        }
+        
+        return {
+          isMoving: false,
+          speed: 0,
+          position: { x: this.posX, z: this.posZ },
+          height: this.currentHeight
+        };
+      }
+      
+      // Helper function from Flatland
+      limitVelocity(vx, vz, max) {
+        const len = Math.hypot(vx, vz);
+        if (!len) return { vx: 0, vz: 0 };
+        const scale = Math.min(len, max) / len;
+        return { vx: vx * scale, vz: vz * scale };
+      }
+      
+      // Update bump canvas with red pixel
+      updateBumpCanvasPixel(worldX, worldZ) {
+        // Clear and redraw base image
+        bmpCtx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+        bmpCtx.drawImage(imageArray[0], 0, 0);
+        
+        // Convert world to canvas coordinates
+        const u = HALF_CANVAS + Math.floor(worldX * (CANVAS_SIZE / levelSize));
+        const v = HALF_CANVAS + Math.floor(worldZ * (CANVAS_SIZE / levelSize));
+        
+        // Draw sampled pixel
+        // bmpCtx.strokeRect(u - 2, v - 2, 4, 4);
+      }
+      
+      setSpeedForState(state) {
+        switch(state) {
+          case 'walk':
+            this.currentSpeed = CONFIG.SPEEDS.WALK;
+            break;
+          case 'run':
+            this.currentSpeed = CONFIG.SPEEDS.RUN;
+            break;
+          default:
+            this.currentSpeed = CONFIG.SPEEDS.WALK;
+        }
+      }
+      
+      dispose() {
+        if (this.joystick) {
+          this.joystick.destroy();
+        }
+        if (this.joystickContainer && this.joystickContainer.parentNode) {
+          this.joystickContainer.parentNode.removeChild(this.joystickContainer);
+        }
+      }
+    }
+
+    // Face Manager Class
+    class FaceManager {
+      constructor() {
+        this.textures = {};
+        this.currentFace = "0";
+        this.isReady = false;
+        this.textureLoader = new THREE.TextureLoader();
+        this.faces = [
+          { n: "0", col: "3d/sm-face.png", bump: "3d/sm-facebmp.png" },
+          { n: "1", col: "3d/sm-face.png", bump: "3d/sm-facebmp.png" },
+          { n: "2", col: "3d/sm-faceblink.png", bump: "3d/sm-facebmp.png" },
+          { n: "3", col: "3d/sm-face-A.png", bump: "3d/sm-facebmp-A.png" },
+          { n: "4", col: "3d/sm-face-aaa.png", bump: "3d/sm-facebmp-aaa.png" },
+          { n: "5", col: "3d/sm-face-E.png", bump: "3d/sm-facebmp-E.png" },
+          { n: "6", col: "3d/sm-face-L.png", bump: "3d/sm-facebmp-L.png" },
+          { n: "7", col: "3d/sm-face-oo.png", bump: "3d/sm-facebmp-oo.png" },
+          { n: "8", col: "3d/sm-face-M.png", bump: "3d/sm-facebmp-M.png" },
+          { n: "9", col: "3d/sm-face-F.png", bump: "3d/sm-facebmp-F.png" }
+        ];
+      }
+
+      async init() {
+        await this.preloadTextures();
+        this.isReady = true;
+      }
+
+      async preloadTextures() {
+        const loadPromises = this.faces.map(async (face) => {
+          const [col, bump] = await Promise.all([
+            this.loadTexture(face.col),
+            this.loadTexture(face.bump)
+          ]);
+          this.texfix(col);
+          this.texfix(bump);
+          return { n: face.n, col, bump };
+        });
+
+        const loaded = await Promise.all(loadPromises);
+        loaded.forEach((texture) => {
+          this.textures[texture.n] = texture;
+        });
+      }
+
+      loadTexture(url) {
+        return new Promise((resolve, reject) => {
+          this.textureLoader.load(url, resolve, undefined, reject);
+        });
+      }
+
+      texfix(texture) {
+        texture.magFilter = texture.minFilter = THREE.NearestFilter;
+      }
+
+      setFace(faceIndex) {
+        if (!this.isReady || !window.headMaterial) return;
+
+        const face = this.textures[faceIndex];
+        if (face && this.currentFace !== faceIndex) {
+          window.headMaterial.map = face.col;
+          window.headMaterial.displacementMap = face.bump;
+          window.headMaterial.needsUpdate = true;
+          this.currentFace = faceIndex;
+        }
+      }
+    }
+
+    // Footstep Manager Class
+    class FootstepManager {
+      constructor(animationMixer) {
+        this.mixer = animationMixer;
+        this.currentState = '';
+        this.stepSounds = {
+          walk: stepSFX,
+          run: stepSFX
+        };
+        
+        this.lastAnimationTime = 0;
+        this.stepCounter = 0;
+        this.stepPatterns = {
+          walk: { intervals: [0.4, 0.9], threshold: 0.1, lastPlayed: {} },
+          run: { intervals: [0.4, 0.9], threshold: 0.1, lastPlayed: {} }
+        };
+      }
+      
+      setState(state, animationAction) {
+        this.currentState = state;
+        if (this.stepPatterns[state]) {
+          Object.keys(this.stepPatterns[state].lastPlayed).forEach(key => {
+            this.stepPatterns[state].lastPlayed[key] = false;
+          });
+        }
+      }
+      
+      update(delta, animationAction) {
+        if (!animationAction || !this.stepPatterns[this.currentState]) return;
+        const currentTime = animationAction.time;
+        const clipDuration = animationAction.getClip().duration;
+        const normalizedTime = (currentTime % clipDuration) / clipDuration;
+        this.playStepFromAnimation(normalizedTime);
+        this.lastAnimationTime = currentTime;
+      }
+      
+      playStepFromAnimation(normalizedTime) {
+        const pattern = this.stepPatterns[this.currentState];
+        if (!pattern) return;
+        
+        for (const interval of pattern.intervals) {
+          const lowerBound = interval - pattern.threshold;
+          const upperBound = interval + pattern.threshold;
+          
+          if (normalizedTime >= lowerBound && normalizedTime <= upperBound) {
+            if (!pattern.lastPlayed[interval]) {
+              this.playStep();
+              pattern.lastPlayed[interval] = true;
+            }
+          } else {
+            pattern.lastPlayed[interval] = false;
+          }
+        }
+      }
+      
+      playStep() {
+        if (this.stepSounds[this.currentState]) {
+          this.stepSounds[this.currentState]();
+          this.stepCounter++;
+        }
+      }
+    }
+
+    // Application main class
+    class Shabooboo {
+      constructor() {
+        this.state = 'sit';
+        this.environment = null;
+        this.scene = null;
+        this.camera = null;
+        this.renderer = null;
+        this.clock = null;
+        this.mixer = null;
+        this.actions = [];
+        this.currentAction = null;
+        this.num = 0;
+        this.earGroup = null;
+        this.ear1 = null;
+        this.ear2 = null;
+        this.characterObject = null;
+        
+        this.inactivityTimer = 0;
+        this.lastMovementTime = 0;
+        
+        this.synth = window.speechSynthesis;
+        this.isSpeaking = false;
+        this.speechTimeout = null;
+        
+        this.bones = {
+          head: null
+        };
+        
+        this.textures = {};
+        this.faceManager = new FaceManager();
+        this.footstepManager = null;
+        
+        this.init();
+      }
+      
+      init() {
+        this.setupScene();
+        this.setupCamera();
+        this.setupRenderer();
+        this.setupLights();
+        this.setupUI();
+        this.loadCharacter();
+        this.setupEventListeners();
+        this.startAnimationLoop();
+      }
+      
+      setupScene() {
+        this.scene = new THREE.Scene();
+        this.clock = new THREE.Clock();
+      }
+      
+      setupCamera() {
+        this.camera = new THREE.PerspectiveCamera(
+          70,
+          window.innerWidth / window.innerHeight,
+          0.1,
+          1000
+        );
+        this.camera.position.set(0, 2, 5);
+        this.scene.add(this.camera);
+      }
+      
+      setupRenderer() {
+        this.renderer = new THREE.WebGLRenderer({
+          alpha: true,
+          antialias: true
+        });
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.shadowMap.enabled = true;
+        document.body.appendChild(this.renderer.domElement);
+      }
+      
+      setupLights() {
+        const ambient = new THREE.AmbientLight(0xcccccc, 0.8);
+        this.scene.add(ambient);
+        
+        const light1 = new THREE.PointLight(0xffefef, 0.9);
+        light1.position.set(0, 0.2, 2);
+        light1.lookAt(0, 0, 0);
+        this.scene.add(light1);
+        
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+        dirLight.position.set(-3, 15, -8);
+        dirLight.castShadow = true;
+        dirLight.shadow.camera.top = 4;
+        dirLight.shadow.camera.bottom = -4;
+        dirLight.shadow.camera.left = -4;
+        dirLight.shadow.camera.right = 4;
+        dirLight.shadow.camera.near = 0.1;
+        dirLight.shadow.camera.far = 40;
+        dirLight.shadow.radius = 8;
+        this.scene.add(dirLight);
+      }
+      
+      setupUI() {
+        const shabubuBtn = document.createElement('button');
+        shabubuBtn.id = 'shabubuBtn';
+        shabubuBtn.textContent = 'SHABUBU';
+        shabubuBtn.addEventListener('click', () => this.speakContent('shabubu'));
+        shabubuBtn.addEventListener('touchend', (e) => {
+          e.preventDefault();
+          this.speakContent('shabubu');
+        });
+        document.body.appendChild(shabubuBtn);
+      }
+      
+      getTexture(path) {
+        if (!this.textures[path]) {
+          const texture = new THREE.TextureLoader().load(path);
+          texture.magFilter = THREE.NearestFilter;
+          texture.minFilter = THREE.NearestFilter;
+          this.textures[path] = texture;
+        }
+        return this.textures[path];
+      }
+      
+      loadCharacter() {
+        const loader = new THREE.FBXLoader();
+        
+        loader.load('3d/tpose.fbx', (object) => {
+          this.characterObject = object;
+          this.mixer = new THREE.AnimationMixer(object);
+          this.cacheBoneReferences(object);
+          
+          const tPoseAction = this.mixer.clipAction(object.animations[0]);
+          this.actions[CONFIG.ANIMATIONS.T_POSE] = tPoseAction;
+          
+          this.loadSittingPose();
+        }, undefined, (error) => {
+          console.error('Error loading character:', error);
+        });
+      }
+      
+      cacheBoneReferences(object) {
+        this.bones.head = object.getObjectByName('mixamorigHead');
+      }
+      
+      loadSittingPose() {
+        const loader = new THREE.FBXLoader();
+        loader.load('3d/sit.fbx', (object) => {
+          const sitAction = this.mixer.clipAction(object.animations[0]);
+          this.actions[CONFIG.ANIMATIONS.SIT] = sitAction;
+          this.loadOtherAnimations();
+        });
+      }
+      
+      loadOtherAnimations() {
+        const animFiles = [
+          { file: 'idle.fbx', index: CONFIG.ANIMATIONS.IDLE },
+          { file: 'walk.fbx', index: CONFIG.ANIMATIONS.WALK },
+          { file: 'run.fbx', index: CONFIG.ANIMATIONS.RUN }
+        ];
+        
+        const loader = new THREE.FBXLoader();
+        let loadedCount = 0;
+        
+        animFiles.forEach(({ file, index }) => {
+          loader.load(`3d/${file}`, (object) => {
+            const action = this.mixer.clipAction(object.animations[0]);
+            this.actions[index] = action;
+            loadedCount++;
+            
+            if (loadedCount === animFiles.length) {
+              this.finalizeCharacterSetup();
+            }
+          }, undefined, (error) => {
+            console.error(`Error loading ${file}:`, error);
+            loadedCount++;
+            
+            if (loadedCount === animFiles.length) {
+              this.finalizeCharacterSetup();
+            }
+          });
+        });
+      }
+      
+      finalizeCharacterSetup() {
+        this.setupMaterials();
+        this.scene.add(this.characterObject);
+        this.setupCharacterParts();
+        
+        this.faceManager.init();
+        this.footstepManager = new FootstepManager(this.mixer);
+        
+        this.environment = new Environment(
+          this.scene,
+          this.camera,
+          this.renderer,
+          this.characterObject
+        );
+        
+        this.playAction(CONFIG.ANIMATIONS.SIT);
+      }
+      
+      setupMaterials() {
+        if (!this.characterObject) return;
+        
+        const bodyTexture = this.getTexture('3d/shabody.png');
+        
+        this.characterObject.traverse(child => {
+          if (child.isMesh && child.material) {
+            child.material.shininess = 0;
+            child.material.map = bodyTexture;
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+      }
+      
+      setupCharacterParts() {
+        if (!this.bones.head) return;
+        
+        const sphereGeometry = new THREE.SphereGeometry(0.7, 40, 40);
+        const sphereMaterial = new THREE.MeshStandardMaterial({
+          metalness: 0.01,
+          roughness: 3,
+          map: this.getTexture('3d/sm-face.png'),
+          displacementMap: this.getTexture('3d/sm-facebmp.png'),
+          roughnessMap: this.getTexture('3d/sm-facerough.png'),
+          displacementScale: -0.4
+        });
+        
+        const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+        sphere.scale.set(0.7, 0.7, 0.8);
+        sphere.rotation.y = -Math.PI / 2;
+        sphere.position.set(0, 0.3, 0.1);
+        this.bones.head.add(sphere);
+        
+        window.headMaterial = sphereMaterial;
+        this.setupEars();
+      }
+      
+      setupEars() {
+        this.earGroup = new THREE.Group();
+        this.earGroup.rotation.y = Math.PI * 2;
+        this.bones.head.add(this.earGroup);
+        
+        const earGeometry = new THREE.SphereGeometry(0.15, 30, 30);
+        const earMaterial = new THREE.MeshStandardMaterial({
+          metalness: 0.01,
+          roughness: 3,
+          map: this.getTexture('3d/eartex.png'),
+          displacementMap: this.getTexture('3d/bmp.png'),
+          displacementScale: -0.1
+        });
+        
+        const createEar = (xPos, rotationY) => {
+          const earGroup = new THREE.Group();
+          earGroup.position.set(xPos, 0.6, 0);
+          earGroup.rotation.set(Math.PI, -Math.PI / 2, 0);
+          earGroup.scale.set(0.6, 1.5, 1);
+          
+          const earMesh = new THREE.Mesh(earGeometry, earMaterial);
+          earMesh.position.set(0, 0.1, 0);
+          earMesh.scale.y = 1.2;
+          earMesh.rotation.y = rotationY;
+          earGroup.add(earMesh);
+          
+          return earGroup;
+        };
+        
+        this.ear1 = createEar(-0.2, 0.3);
+        this.ear2 = createEar(0.2, -0.3);
+        this.earGroup.add(this.ear1);
+        this.earGroup.add(this.ear2);
+      }
+      
+      playAction(index) {
+        if (!this.actions[index] || this.actions[index] === this.currentAction) {
+          return;
+        }
+        
+        const newAction = this.actions[index];
+        
+        if (this.currentAction) {
+          this.currentAction.fadeOut(0.2);
+        }
+        
+        newAction.reset();
+        newAction.setEffectiveWeight(1);
+        newAction.fadeIn(0.2);
+        newAction.play();
+        
+        this.currentAction = newAction;
+        this.mixer.update(0);
+        
+        let stateName = '';
+        switch(index) {
+          case CONFIG.ANIMATIONS.WALK:
+            stateName = 'walk';
+            break;
+          case CONFIG.ANIMATIONS.RUN:
+            stateName = 'run';
+            break;
+          default:
+            stateName = '';
+        }
+        
+        if (this.footstepManager) {
+          this.footstepManager.setState(stateName, newAction);
+        }
+      }
+      
+      blink() {
+        this.faceManager.setFace("2");
+        setTimeout(() => {
+          if (!this.isSpeaking) {
+            this.faceManager.setFace("1");
+          }
+        }, Math.random() * 200);
+      }
+      
+      speakContent(text) {
+        if (!this.faceManager.isReady || this.isSpeaking) return;
+        
+        this.isSpeaking = true;
+        this.mouthshape(text);
+        
+        const utterThis = new SpeechSynthesisUtterance(text);
+        utterThis.pitch = 1.2;
+        utterThis.rate = 0.85;
+
+        const voices = speechSynthesis.getVoices();
+        const tessaVoice = voices.find(voice => voice.name === "Tessa");
+        if (tessaVoice) {
+          utterThis.voice = tessaVoice;
+        }
+
+        utterThis.volume = 0.5;
+        this.synth.speak(utterThis);
+        
+        utterThis.onend = () => {
+          this.isSpeaking = false;
+          clearTimeout(this.speechTimeout);
+          this.faceManager.setFace("1");
+          this.blink();
+        };
+        
+        utterThis.onerror = () => {
+          this.isSpeaking = false;
+          clearTimeout(this.speechTimeout);
+          this.faceManager.setFace("1");
+        };
+      }
+      
+      mouthshape(text) {
+        for (let i = 0, len = text.length; i < len; i++) {
+          setTimeout(
+            ((i) => {
+              return () => {
+                this.lipsync(text[i]);
+              };
+            })(i),
+            70 * i
+          );
+        }
+        
+        this.speechTimeout = setTimeout(() => {
+          if (this.isSpeaking) {
+            this.faceManager.setFace("1");
+          }
+        }, 70 * text.length + 50);
+      }
+      
+      lipsync(character) {
+        const faceIndex = phonemeMap[character] || phonemeMap.default;
+        this.faceManager.setFace(faceIndex);
+      }
+      
+      update(delta) {
+        this.num++;
+        
+        if (this.environment) {
+          const envState = this.environment.update(delta);
+          const isActuallyMoving = envState.isMoving && this.environment.force > 0.2;
+          
+          if (isActuallyMoving) {
+            this.lastMovementTime = 0;
+            this.inactivityTimer = 0;
+            
+            const joystickForce = this.environment.force;
+            
+            if (joystickForce > 1.0) {
+              if (this.state !== 'run') {
+                this.state = 'run';
+                this.environment.setSpeedForState('run');
+                this.playAction(CONFIG.ANIMATIONS.RUN);
+              }
+            } else if (joystickForce > 0.2) {
+              if (this.state !== 'walk') {
+                this.state = 'walk';
+                this.environment.setSpeedForState('walk');
+                this.playAction(CONFIG.ANIMATIONS.WALK);
+              }
+            }
+          } else {
+            this.lastMovementTime += delta;
+            this.inactivityTimer += delta;
+            
+            if (this.inactivityTimer >= CONFIG.AUTO_SIT_TIME && this.state !== 'sit') {
+              this.state = 'sit';
+              this.playAction(CONFIG.ANIMATIONS.SIT);
+              this.inactivityTimer = 0;
+            } else if (!envState.isMoving && this.state !== 'idle' && this.state !== 'sit') {
+              this.state = 'idle';
+              this.playAction(CONFIG.ANIMATIONS.IDLE);
+            }
+          }
+        }
+
+        if (this.mixer) {
+          this.mixer.update(delta);
+          
+          if (this.footstepManager && (this.state === 'walk' || this.state === 'run')) {
+            this.footstepManager.update(delta, this.currentAction);
+          }
+          
+          if (this.ear1 && this.ear2) {
+            let rotation;
+            
+            if (this.isSpeaking) {
+              rotation = Math.sin(this.num / 10) / 10;
+            } else if (this.state === 'walk') {
+              rotation = Math.sin(this.num / 10) / 10;
+            } else if (this.state === 'run') {
+              rotation = Math.sin(this.num / 5) / 5;
+            } else {
+              rotation = Math.sin(this.num / 20) / 20;
+            }
+            
+            this.ear1.rotation.x += (rotation - this.ear1.rotation.x) * 0.3;
+            this.ear2.rotation.x += (Math.cos(this.num / (this.state === 'run' ? 5 : 10)) / 10 - this.ear2.rotation.x) * 0.3;
+          }
+        }
+        
+        if (!this.isSpeaking && Math.random() > 0.99 && this.faceManager.isReady) {
+          this.blink();
+        }
+        
+        // Adjust camera height based on character height
+        if (this.environment) {
+          const characterHeight = this.environment.currentHeight;
+          this.camera.position.y = 2 + characterHeight; // Keep camera above character
+        }
+        
+        this.camera.lookAt(0, 0.9 + (this.environment ? this.environment.currentHeight : 0), 0);
+        this.renderer.render(this.scene, this.camera);
+      }
+      
+      startAnimationLoop() {
+        const animate = (time) => {
+          requestAnimationFrame(animate);
+          const delta = this.clock.getDelta();
+          this.update(delta);
+        };
+        animate();
+      }
+      
+      setupEventListeners() {
+        window.addEventListener('resize', () => {
+          this.camera.aspect = window.innerWidth / window.innerHeight;
+          this.camera.updateProjectionMatrix();
+          this.renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+      }
+    }
+    
+    window.addEventListener('DOMContentLoaded', () => {
+      new Shabooboo();
+    });
+  </script>
+</body>
+</html>
