@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voronoi</title>
+    <script src="rhill-voronoi-core.js"></script>
+    <style>
+        body {
+            background: #000;
+            overflow: hidden;
+        }
+        canvas {margin: 0; padding: 0;}
+        #voronoiCanvas {display: none;}
+    </style>
+</head>
+<body>
+    
+    <canvas id="voronoiCanvas" width="512" height="512"></canvas>
+      <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/build/three.min.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/controls/OrbitControls.js"></script>
+
+    <script>
+       // start
+        const canvas = document.getElementById('voronoiCanvas');
+        const ctx = canvas.getContext('2d');
+        const bbox = { xl: 0, xr: 512, yt: 0, yb: 512 };
+        const voronoi = new Voronoi();
+        const numSites = 50;
+        const sites = [];
+        for (let i = 0; i < numSites; i++) {
+            sites.push({
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height
+            });
+        }
+
+        const diagram = voronoi.compute(sites, bbox);
+
+        diagram.cells.forEach(cell => {
+            const edges = cell.halfedges;
+            if (edges.length < 3) return;
+
+            ctx.beginPath();
+            const start = edges[0].getStartpoint();
+            ctx.moveTo(start.x, start.y);
+
+            for (let i = 0; i < edges.length; i++) {
+                const edge = edges[i];
+                const end = edge.getEndpoint();
+                ctx.lineTo(end.x, end.y);
+            }
+            ctx.closePath();
+
+            let d = distance(start.x, start.y, 256, 256);
+            // let d = Math.random()*255;
+
+            ctx.fillStyle = 'rgb('+ d +','+ d +','+ d +')';
+            ctx.fill();
+
+        });
+
+        // distacte to
+		function distance(x1, y1, x2, y2) {
+		  return Math.sqrt((x2 - x1)*(x2 - x1) + (y2 - y1)*(y2 - y1));
+		}
+
+		//
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 1, 2000 );
+
+const renderer = new THREE.WebGLRenderer();
+renderer.setSize( window.innerWidth, window.innerHeight );
+document.body.appendChild( renderer.domElement );
+
+camera.position.set(0,2,6);
+
+const ambient = new THREE.AmbientLight(0xcccccc, 0.8);
+scene.add(ambient);
+
+// plane
+const geometry = new THREE.PlaneGeometry( 10, 10, 512, 512);
+const material = new THREE.MeshStandardMaterial({
+      map : new THREE.CanvasTexture(canvas),
+      displacementMap: new THREE.CanvasTexture(canvas),
+      displacementScale: -3,
+      displacementBias: 3,
+      metalness: 0.01,
+      roughness: 0.9,
+      side: THREE.DoubleSide
+    });
+const ground = new THREE.Mesh( geometry, material );
+ground.rotation.x = -Math.PI / 2;
+scene.add( ground );
+
+//
+var controls = new THREE.OrbitControls( camera, renderer.domElement );
+
+
+function animate() {
+  requestAnimationFrame( animate );
+  renderer.render( scene, camera );
+};
+
+  // START <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+  animate();
+
+    </script>
+</body>
+</html>
