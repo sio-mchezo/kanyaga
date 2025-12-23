@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Low Poly Grass - InstancedMesh</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #87CEEB;
+        }
+        canvas {
+            display: block;
+        }
+        #lod-info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 15px;
+            font-family: monospace;
+            font-size: 12px;
+            border-radius: 5px;
+            pointer-events: none;
+        }
+        #lod-info h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #4af;
+        }
+        .lod-level {
+            margin: 5px 0;
+            padding: 3px 0;
+        }
+        .lod-color {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            margin-right: 8px;
+            border: 1px solid white;
+        }
+    </style>
+</head>
+<body>
+    <div id="lod-info">
+        <h3>LOD System</h3>
+        <div class="lod-level">
+            <span class="lod-color" style="background: #0f0;"></span>
+            LOD 0: &lt;300m (100 seg, 64px, 100% grass)
+        </div>
+        <div class="lod-level">
+            <span class="lod-color" style="background: #ff0;"></span>
+            LOD 1: 300-500m (50 seg, 32px, 50% grass)
+        </div>
+        <div class="lod-level">
+            <span class="lod-color" style="background: #f80;"></span>
+            LOD 2: 500-800m (25 seg, 16px, 25% grass)
+        </div>
+        <div class="lod-level">
+            <span class="lod-color" style="background: #f00;"></span>
+            LOD 3: &gt;800m (10 seg, 8px, no grass)
+        </div>
+        <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #666;">
+            <div id="chunk-count">Chunks: 0</div>
+            <div id="grass-count">Grass blades: 0</div>
+            <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #444;">
+                <div style="color: #8f8;">Press 'G' to toggle grid</div>
+            </div>
+        </div>
+    </div>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
+        }
+    }
+    </script>
+    <script src="js/seedrandom.min.js"></script>
+    <script src="js/noise.js"></script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { Biome } from './js/classes/Biome.js';
+        import { ChunkLODManager } from './js/classes/ChunkLODManager.js';
+
+        // Scene setup
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB);
+        // scene.fog = new THREE.Fog(
+        //   0x87CEEB,
+        //   60, // starting distance
+        //   100 // ending distance
+        // );
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 200);
+        camera.position.set(0, 15, 20);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+
+        // ===== CONFIGURATION =====
+        const CHUNK_SIZE = 20;
+        let GRID_SIZE = 9; // Must be odd number (3, 5, 7, 9, etc.) to keep [0,0] in center
+
+        // Ensure GRID_SIZE is odd
+        if (GRID_SIZE % 2 === 0) {
+            console.warn(`GRID_SIZE must be odd. Adjusting ${GRID_SIZE} to ${GRID_SIZE + 1}`);
+            GRID_SIZE += 1;
+        }
+
+        // Create biome system
+        const biome = new Biome({
+            heatFrequency: 0.05,
+            moistureFrequency: 0.08,
+            fertilityFrequency: 0.1,
+            continentalnessFrequency: 0.02,
+            heatLoopSize: 0.2,
+            moistureLoopSize: 0.15,
+            fertilityLoopSize: 0.25,
+            continentalnessLoopSize: 0.1
+        });
+
+        // Load biome configuration
+        await biome.loadConfig('./BIOME_CONFIG.json');
+
+        // ===== CREATE LOD MANAGER =====
+        const lodManager = new ChunkLODManager({
+            chunkSize: CHUNK_SIZE,
+            biome: biome,
+            updateInterval: 500, // Check LOD every 500ms
+            lodLevels: [
+                { distance: 300, segments: 100, textureSize: 64, grassDensityMultiplier: 1.0 },   // High detail
+                { distance: 500, segments: 50, textureSize: 32, grassDensityMultiplier: 0.5 },    // Medium detail
+                { distance: 800, segments: 25, textureSize: 16, grassDensityMultiplier: 0.25 },   // Low detail
+                { distance: Infinity, segments: 10, textureSize: 8, grassDensityMultiplier: 0 }  // Very low detail (no grass)
+            ]
+        });
+
+        lodManager.setCamera(camera);
+
+        // ===== CREATE WORLD CHUNKS =====
+        // Dynamically generate chunk coordinates for an NxN grid
+        // Grid is centered at [0,0] with radius extending in all directions
+        const chunkCoords = [];
+        const halfSize = Math.floor(GRID_SIZE / 2);
+
+        for (let z = -halfSize; z <= halfSize; z++) {
+            for (let x = -halfSize; x <= halfSize; x++) {
+                chunkCoords.push([x, z]);
+            }
+        }
+
+        console.log(`Creating ${GRID_SIZE}x${GRID_SIZE} grid (${chunkCoords.length} chunks) centered at [0,0]`);
+
+        chunkCoords.forEach(([worldX, worldZ]) => {
+            lodManager.addChunk(worldX, worldZ, scene);
+        });
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(5, 10, 5);
+        scene.add(directionalLight);
+
+        // ===== GRID HELPER =====
+        // Create a grid that perfectly aligns with chunk boundaries
+        // Each grid cell represents one chunk
+        const gridSize = GRID_SIZE * CHUNK_SIZE; // Total world size
+        const gridDivisions = GRID_SIZE; // One division per chunk
+        const gridHelper = new THREE.GridHelper(
+            gridSize,           // Size of the grid
+            gridDivisions,      // Number of divisions (chunks)
+            0x444444,          // Center line color
+            0x222222           // Grid line color
+        );
+        gridHelper.position.y = 15; // Slightly above ground to prevent z-fighting
+        gridHelper.visible = true; // Start with grid visible
+        scene.add(gridHelper);
+
+        // ===== KEYBOARD CONTROLS =====
+        window.addEventListener('keydown', (event) => {
+            // Press 'G' to toggle grid visibility
+            if (event.key === 'g' || event.key === 'G') {
+                gridHelper.visible = !gridHelper.visible;
+                console.log(`Grid ${gridHelper.visible ? 'shown' : 'hidden'} - Press 'G' to toggle`);
+            }
+        });
+
+        console.log('Press "G" to toggle chunk grid visibility');
+
+        // ===== ANIMATION =====
+        let frameCount = 0;
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const currentTime = Date.now();
+            const time = currentTime * 0.001;
+
+            // Update LOD based on camera position
+            lodManager.update(scene, currentTime);
+
+            // Update wind effect on all chunks
+            lodManager.getChunks().forEach(chunk => chunk.updateWind(time));
+
+            // Update stats every 30 frames
+            frameCount++;
+            if (frameCount % 30 === 0) {
+                const stats = lodManager.getStats();
+                document.getElementById('chunk-count').textContent = `Chunks: ${stats.totalChunks}`;
+                document.getElementById('grass-count').textContent = `Grass blades: ${stats.totalGrassBlades.toLocaleString()}`;
+            }
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
