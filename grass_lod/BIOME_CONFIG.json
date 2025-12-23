@@ -1,0 +1,146 @@
+{
+  "biomes": {
+    "desert": {
+      "conditions": {
+        "heat": "high",
+        "moisture": "low"
+      },
+      "ground": {
+        "hue": {
+          "base": 0.1,
+          "fertilityInfluence": 0.05
+        },
+        "saturation": {
+          "base": 0.4,
+          "fertilityInfluence": 0.2
+        },
+        "lightness": {
+          "base": 0.5,
+          "moistureInfluence": 0.1
+        }
+      },
+      "grass": {
+        "densityMultiplier": 0.3,
+        "clusterMultiplier": 0.4,
+        "scaleMultiplier": 0.6
+      }
+    },
+    "tropical": {
+      "conditions": {
+        "heat": "high",
+        "moisture": "high"
+      },
+      "ground": {
+        "hue": {
+          "base": 0.25,
+          "fertilityInfluence": 0.1
+        },
+        "saturation": {
+          "base": 0.5,
+          "fertilityInfluence": 0.3
+        },
+        "lightness": {
+          "base": 0.2,
+          "moistureInfluence": 0.1
+        }
+      },
+      "grass": {
+        "densityMultiplier": 1.5,
+        "clusterMultiplier": 1.3,
+        "scaleMultiplier": 1.2
+      }
+    },
+    "tundra": {
+      "conditions": {
+        "heat": "low",
+        "moisture": "low"
+      },
+      "ground": {
+        "hue": {
+          "base": 0.1,
+          "fertilityInfluence": 0
+        },
+        "saturation": {
+          "base": 0.1,
+          "fertilityInfluence": 0.2
+        },
+        "lightness": {
+          "base": 0.3,
+          "moistureInfluence": 0.2
+        }
+      },
+      "grass": {
+        "densityMultiplier": 0.2,
+        "clusterMultiplier": 0.3,
+        "scaleMultiplier": 0.5
+      }
+    },
+    "boreal": {
+      "conditions": {
+        "heat": "low",
+        "moisture": "high"
+      },
+      "ground": {
+        "hue": {
+          "base": 0.25,
+          "fertilityInfluence": 0.05
+        },
+        "saturation": {
+          "base": 0.3,
+          "fertilityInfluence": 0.3
+        },
+        "lightness": {
+          "base": 0.25,
+          "moistureInfluence": 0.15
+        }
+      },
+      "grass": {
+        "densityMultiplier": 0.8,
+        "clusterMultiplier": 0.9,
+        "scaleMultiplier": 0.9
+      }
+    }
+  },
+  "grass": {
+    "color": {
+      "baseHue": 0.28,
+      "heatShiftAmount": 0.08,
+      "fertilityShiftAmount": 0.04,
+      "baseSaturation": 0.35,
+      "moistureBoost": 0.4,
+      "fertilityBoost": 0.25,
+      "baseLightness": 0.25,
+      "moistureLightness": 0.18,
+      "fertilityLightness": 0.12
+    },
+    "density": {
+      "base": 1000,
+      "max": 6000
+    },
+    "clusterCount": {
+      "base": 5,
+      "max": 20
+    },
+    "clusterProbability": {
+      "base": 0.5,
+      "max": 0.5
+    },
+    "scale": {
+      "min": 0.2,
+      "baseMax": 0.5,
+      "fertilityBoost": 1.0
+    },
+    "clusterRadius": {
+      "baseMin": 1.0,
+      "minBoost": 0.5,
+      "baseMax": 3.0,
+      "maxBoost": 10.0
+    }
+  },
+  "terrain": {
+    "height": {
+      "continentalnessMultiplier": 15,
+      "moistureInfluence": 5
+    }
+  }
+}
