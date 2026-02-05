@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <title>plague</title>
+    <style>
+    @font-face {
+       font-family: 'uni0553-webfont';
+       src: url('font/uni0553-webfont.eot');
+       src: url('font/uni0553-webfont.eot?#iefix') format('embedded-opentype'), url('font/uni0553-webfont.woff') format('woff'), url('font/uni0553-webfont.ttf') format('truetype');
+       font-weight: normal;
+       font-style: normal;
+   }
+   html, body {background:#333 ;  margin: 0; padding: 0;}
+   body {
+        font-family: 'uni0553-webfont';
+       /*text-transform: lowercase;*/
+       font-size: 15px; 
+       cursor: crosshair;
+       height:100%;
+       overflow: hidden;
+       margin: 0;
+       line-height: 1em;
+   }
+   #content {
+       display: block;
+       position: absolute; 
+       top:10px; 
+       left:10px;
+    } 
+  #stats {
+       position: absolute; 
+       bottom:10px; 
+       left:10px; 
+       color: #fff;
+       display: block;
+       width: 400px;
+   }
+   #stats * { background: transparent; 
+   font-family: 'uni0553-webfont' !important;
+    }
+/*   #earthcol { position: absolute; top: 0; right: 0; }*/
+   #hud {position: absolute; top: 4px; right: 4px; height: 100%; text-align: right;}
+   #view2D {
+    display: block;
+    width: 128px;
+    height: 64px;
+   }
+   #cnv {
+    image-rendering: crisp-edges;
+    image-rendering: pixelated;
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: block;
+   }
+   #league, #vstats, #cstats {
+    list-style: none;
+    margin: 12px 2px;
+    padding: 12px;
+    color: #fff;
+   }
+   #league li {
+    line-height: 1.2em;
+   }
+   #league button {
+    background: transparent;
+    border: none;
+    font-family: 'uni0553-webfont';
+    color: #fff;
+   }
+   #league button:hover, #league button:focus {
+    color: yellow;
+   }
+
+#vstats {
+    position: absolute;
+    bottom: 10px;
+    right:0;
+    margin: 10px;
+    padding: 0;
+    line-height: 1em;
+}
+
+#vstats li  {
+    background: #111;
+    margin-bottom: 2px;
+}
+
+#cstats {
+    margin: 0;
+    padding: 0;
+    width: 200px;
+}
+
+.calendar {
+    display: grid;
+    grid-template-columns: repeat(7, 10px);
+    gap: 2px;
+    margin-bottom: 10px;
+}
+
+.day {
+    width: 10px;
+    height: 10px;
+    background: white;
+    transition: background-color 0.3s;
+}
+
+.day.grey {
+    background: #666;
+}
+
+.day.current {
+    background: #888;
+}
+
+.day.past {
+    background: #444;
+}
+
+#controls {
+    padding: 4px;
+    position: absolute;
+    top: 0;
+    left: 110px;
+}
+
+#speedSlider {
+    width: 150px;
+    margin: 0 10px;
+    display: inline;
+    height: 10px;
+}
+label {
+  color: #ccc;
+  display: inline;
+}
+#startStopToggle {
+    cursor: pointer;
+    color: #fff;
+    font-weight: bold;
+    height: 30px;
+    background: #cc0000;
+    display: block;
+    width: 50px;
+    border: none;
+    text-align: center;
+    margin: 8px 0;
+}
+#startStopToggle:hover {
+  color: #fff;
+}
+
+#date {
+    margin: 5px;
+    font-size: 14px;
+    display: block;
+    color: #ccc;
+}
+
+</style>
+</head>
+<body>
+    <div id="stats">
+    <ul id="cstats"><li id="">12</li></ul>
+    <p id="title"></p>
+    </div>
+
+    
+  <div id="content" class="item">
+      <div id="date"></div>
+      <div id="cal" class="calendar"></div>
+      <div id="controls">
+        <label>speed</label>
+        <input type="range" id="speedSlider" min="1" max="1000" value="100">
+        <button id="startStopToggle" class="corners">stop</button>
+      </div>
+</div>
+
+    
+    <div id="hud">
+        <div id="view2D"></div>
+        <ul id="league"></ul>
+        <ul id="vstats">
+            <li id="transmission">transmission</li>
+            <li id="infectivity">infectivity</li>
+            <li id="severity">severity</li>
+            <li id="lethality">lethality</li>
+            <li id="mutation_rate">mutation_rate</li>
+            <li id="detection">detection</li>
+            <li id="resistance">cure_resistance</li>
+            <li id="adaptability">adaptability</li>
+        </ul>
+    </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.102.0/examples/js/controls/OrbitControls.js"></script>    
+
+  <script>
+class Calendar {
+    constructor() {
+        this.currentDate = new Date();
+        this.currentDate.setDate(1);
+        this.currentDay = 0;
+        this.animationId = null;
+        this.speed = 100;
+        this.running = true;
+        this.days = [];
+        
+        this.init();
+        this.startAnimation();
+    }
+    
+    getDaysInMonth() {
+        const year = this.currentDate.getFullYear();
+        const month = this.currentDate.getMonth();
+        return new Date(year, month + 1, 0).getDate();
+    }
+    
+    getFirstDayOfMonth() {
+        const year = this.currentDate.getFullYear();
+        const month = this.currentDate.getMonth();
+        return new Date(year, month, 1).getDay();
+    }
+    
+    updateDateDisplay() {
+        const dateElement = document.getElementById('date');
+        const options = { year: 'numeric', month: 'short' };
+        dateElement.textContent = this.currentDate.toLocaleDateString('en-US', options);
+    }
+    
+    init() {
+        const cal = document.getElementById('cal');
+        cal.innerHTML = '';
+        this.days = [];
+        
+        this.updateDateDisplay();
+        const totalDays = this.getDaysInMonth();
+        const firstDay = this.getFirstDayOfMonth();
+        
+        const daysNeeded = Math.ceil((totalDays + firstDay) / 7) * 7;
+        
+        for (let i = 0; i < daysNeeded; i++) {
+            const day = document.createElement('div');
+            day.className = 'day';
+            
+            if (i < firstDay || i >= firstDay + totalDays) {
+                day.classList.add('grey');
+            } else {
+                const dayNumber = i - firstDay + 1;
+                if (dayNumber === 1) {
+                    day.classList.add('current');
+                } else {
+                    day.classList.add('grey');
+                }
+            }
+            
+            this.days.push(day);
+            cal.appendChild(day);
+        }
+        
+        const slider = document.getElementById('speedSlider');
+        slider.addEventListener('input', (e) => {
+            this.speed = parseInt(e.target.value);
+        });
+        
+        const toggle = document.getElementById('startStopToggle');
+        toggle.addEventListener('click', () => {
+            this.running = !this.running;
+            toggle.textContent = this.running ? 'stop' : 'start';
+            toggle.classList = this.running ? 'stop' : 'start';
+            
+            if (this.running) {
+                this.startAnimation();
+            } else {
+                this.stopAnimation();
+            }
+        });
+    }
+    
+    updateDay() {
+        const totalDays = this.getDaysInMonth();
+        const firstDay = this.getFirstDayOfMonth();
+        
+        if (this.currentDay > 0 && this.currentDay <= totalDays) {
+            const prevIndex = firstDay + this.currentDay - 1;
+            this.days[prevIndex].classList.remove('current');
+            this.days[prevIndex].classList.add('past');
+        }
+        
+        if (this.currentDay < totalDays) {
+            const currentIndex = firstDay + this.currentDay;
+            this.days[currentIndex].classList.remove('grey');
+            this.days[currentIndex].classList.add('current');
+            this.currentDay++;
+        } else {
+            this.currentDay = 0;
+            this.currentDate.setMonth(this.currentDate.getMonth() + 1);
+            this.init();
+        }
+    }
+    
+    startAnimation() {
+        if (this.animationId) return;
+        
+        const animate = () => {
+            if (this.running) {
+                this.updateDay();
+            }
+            this.animationId = setTimeout(() => {
+                requestAnimationFrame(animate);
+            }, 1000 - (this.speed * 0.99));
+        };
+        
+        animate();
+    }
+    
+    stopAnimation() {
+        if (this.animationId) {
+            clearTimeout(this.animationId);
+            this.animationId = null;
+        }
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    new Calendar();
+});
+
+ const VIRUSES = [
+        { id: 1, name: 'Alpha Variant', color: 0xff0000, infected: 1500000, lethality: 0.02, mutation: 0.1 },
+        { id: 2, name: 'Beta Strain', color: 0x00ff00, infected: 850000, lethality: 0.05, mutation: 0.15 },
+        { id: 3, name: 'Gamma Type', color: 0x0000ff, infected: 1200000, lethality: 0.03, mutation: 0.12 },
+        { id: 4, name: 'Delta Mutation', color: 0xffff00, infected: 950000, lethality: 0.04, mutation: 0.18 },
+        { id: 5, name: 'Epsilon Form', color: 0xff00ff, infected: 650000, lethality: 0.06, mutation: 0.09 }
+    ];
+
+ // earth col
+ var earthcol = document.createElement('canvas');
+ ctx = earthcol.getContext('2d');
+ earthcol.id = "earthcol";
+ earthcol.width = 128;
+ earthcol.height = 64;
+ var earthimg = new Image();
+ earthimg.src = 'img/lookup_128.png';
+ earthimg.onload = function () {
+ ctx.drawImage(earthimg, 0, 0, 128, 64);
+ view2D.appendChild(earthcol)
+};
+
+
+ //GET JSON DATA
+ var locations = [];
+ var request = new XMLHttpRequest();
+ request.open('GET', "js/locations.json");
+ request.responseType = 'json';
+ request.send();
+ request.onload = function() {
+   locations = request.response;
+}
+
+createList(VIRUSES);
+
+function createList(argument) {
+ for(let x = 0; x < VIRUSES.length; x++) {
+        var li = document.createElement('LI');
+        var a = document.createElement('BUTTON');
+       a.innerHTML = argument[x].name;
+       league.appendChild(li)
+       li.appendChild(a)
+ }
+}
+ 
+ // init position
+ var xu = 0; //cursor 2D.x pos
+ var xv = 0; //cursor 2D.y pos
+ var radius = 15.21;
+ var last = 0;
+ var i = 0;
+ 
+ // colour canvas refresh
+ function changeCanvas() {
+   ctx.drawImage(earthimg, 0, 0);
+   texData = ctx.getImageData(0, 0, 128, 64);
+   ctx.fillStyle = "red";
+   ctx.fillRect(xu, xv, 1, 1);      
+ }//end changecanvas
+ 
+ 
+ // threejs
+ var scene = new THREE.Scene();
+ var camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 50);
+ camera.position.z = 30;
+ var renderer = new THREE.WebGLRenderer( { alpha: true, antialias: true } );
+ renderer.setClearColor( 0xff0000, 0 );
+ renderer.setSize(window.innerWidth, window.innerHeight);
+ renderer.id = 'cnv';
+ document.body.appendChild(renderer.domElement);
+ 
+ // controls
+ var orbit = new THREE.OrbitControls(camera, renderer.domElement);
+ orbit.enableZoom = true;
+ orbit.zoomSpeed = 1.2;
+ orbit.minDistance = 20;
+ orbit.maxDistance = 50;
+ orbit.enablePan = false;
+ 
+ //globe
+ earthgroup = new THREE.Group();
+ earthgroup.visible = false; 
+ scene.add( earthgroup );
+ 
+ 
+ //on click pivot
+ pvt = new THREE.Object3D();
+ pvt.position.set( 0, 0, 0 );
+ pvt.lookAt( 0, 300, 0 )
+ scene.add( pvt );
+ 
+ //cursor pivot
+ cursorpvt = new THREE.Object3D();
+ cursorpvt.position.set( 0, 0, 0 );
+ cursorpvt.lookAt( 0, 300, 0 )
+ scene.add( cursorpvt );
+ 
+ //cursor pointer
+ var geometry = new THREE.BoxGeometry( 0.2, 0.2, 4 );
+ var material = new THREE.MeshBasicMaterial( {color: 0xff0000} );
+ var cube = new THREE.Mesh( geometry, material );
+ cube.name = 'pointer';
+ cube.position.set(0,0,16);
+ cursorpvt.add( cube );
+ 
+ // raycaster
+ var raycaster = new THREE.Raycaster();
+ var mouse = new THREE.Vector2();
+ var mesh = new THREE.Object3D();
+ 
+ 
+ // earth 2D
+ var d = {
+   radius: 15,
+   widthSegments: 30,
+   heightSegments: 30
+};
+texture = new THREE.CanvasTexture(earthcol);
+texture.magFilter = THREE.NearestFilter;
+texture.minFilter = THREE.NearestFilter;
+var geometry = new THREE.SphereGeometry(d.radius, d.widthSegments, d.heightSegments);
+var material = new THREE.MeshBasicMaterial({    
+    map: texture    });
+var mesh = new THREE.Mesh(geometry, material);
+mesh.name = "earthgroup"   
+scene.add(mesh);
+
+// virus map
+var VirusMaterial = new THREE.MeshBasicMaterial({    map: texture    });
+
+
+ //RENDER
+ var render = function() {
+         texture.needsUpdate = true;
+     requestAnimationFrame(render);
+     renderer.render(scene, camera);
+ };  //END RENDER
+ 
+ // resize
+ window.addEventListener('resize', function() {
+   camera.aspect = window.innerWidth / window.innerHeight;
+   camera.updateProjectionMatrix();
+   renderer.setSize(window.innerWidth, window.innerHeight);
+}, false);
+ 
+ 
+ //on doc mousedown
+ window.addEventListener('mousedown', function(event) {
+   clientClickX = event.clientX;
+   clientClickY = event.clientY;
+}, false);
+ 
+ 
+ //on doc mouseup
+ window.addEventListener('mouseup', function (ev){
+   if (ev.target == renderer.domElement) {
+       var x = ev.clientX;
+       var y = ev.clientY;
+       if( x != clientClickX || y != clientClickY )
+           return;
+
+       mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+       mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+       raycaster.setFromCamera( mouse, camera );
+       var intersects = raycaster.intersectObject( mesh );
+       if (intersects.length > 0) {
+           pvt.lookAt( intersects[0].point );
+           xu = Math.floor(intersects[0].uv.x*128);
+           xv = -(Math.floor(intersects[0].uv.y*64)-63);
+           var index = (Math.floor(xv) * 128 + Math.floor(xu)) * 4;
+
+             // put 2D cursor on globe
+             ctx.clearRect(0, 0, 128, 64);
+             ctx.drawImage(earthimg, 0, 0);
+             texData = ctx.getImageData(0, 0, 128, 64);
+             ctx.fillStyle = "red";
+             ctx.fillRect(xu, xv, 1, 1); 
+
+             // find index to country
+             var r = texData.data[index];
+             cursorpvt.rotation.set(pvt.rotation.x, pvt.rotation.y, pvt.rotation.z);
+
+
+            // console.log(locations[r].name)
+            
+            if (locations[r].name) {
+              title.innerHTML = locations[r].name;
+            }
+            
+
+          } 
+
+      }
+  }, false);
+ 
+ 
+
+// START <<<<<<<<<<<<<<<<<<<<<<<<<
+ render();
+
+</script>
+</body>
+</html>
