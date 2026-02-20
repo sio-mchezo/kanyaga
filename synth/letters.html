@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width">
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <title>LETTERS</title>
+  <meta name="description" content="uni 05_64 WebFont" />
+  <meta name="keywords" content="uni 05_64 WebFont" />
+  <style type="text/css">
+    @font-face {
+      font-family: 'uni-05_64';
+      src: url('font/uni0553.ttf') format('truetype'); 
+      font-weight: normal;
+      font-style: normal;
+    }
+    html, body {
+      font-family: 'uni-05_64', monospace;  
+      background: #2c283f;
+      color: #fffcf3;
+      font-size: 30px;
+    }
+   .container {
+    height: 98vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+  }
+  .header-controls {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    align-items: center;
+  }
+  input, button {
+    font-family: 'uni-05_64';  
+  }
+  input[type="text"] {
+    font-size: 30px;
+    font-family: 'uni-05_64';
+    width: 200px;
+    height: 20px;
+    padding: 10px;
+    text-indent: 5px;
+    text-align: left;
+    border: none;
+    background: rgba(0, 0, 0, 0.1);
+    color: #fffcf3;
+    opacity: 0.8;
+    border-left: #fb2c86 2px solid;
+    transition: border-left 0.1s ease;
+  }
+  input[type="text"].on {
+    border-left: #ff0 2px solid;
+    background: rgba(0, 0, 0, 0.1);
+  }
+  input[type="text"]:hover {
+    opacity: 1;
+    border-left: #fb2c86 2px solid;
+    background: rgba(0, 0, 0, 0.3);
+  }
+  input[type="text"]:focus {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.3);
+    outline: none;
+    border-left: #ff0 2px solid;
+  }
+
+  .volume-slider {
+    -webkit-appearance: none;
+    width: 60px;
+    height: 2px;
+    background: #fb2c86;
+    outline: none;
+    margin: 0 5px;
+    cursor: pointer;
+  }
+  .volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    background: #fffcf3;
+    cursor: pointer;
+    border-radius: 0;
+  }
+  .volume-slider::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    background: #fffcf3;
+    cursor: pointer;
+    border: none;
+    border-radius: 0;
+  }
+  .volume-slider:hover {
+    background: #ff0;
+  }
+  .volume-slider:hover::-webkit-slider-thumb {
+    background: #ff0;
+  }
+  
+  button {
+    font-size: 20px;
+    color: #fb2c86;
+    font-family: 'uni-05_64';
+    background: transparent;
+    border: none;
+    height: 2em;
+    width: 2em;
+    cursor: pointer;
+    display: inline;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.1s ease;
+    margin-left: 4px;
+  }
+  button:hover {
+    color: #ff0;
+  }
+  #addBtn, #reverbBtn {
+    color: #fffcf3;
+    width: 2em;
+  }
+  #reverbBtn.active, .loop-btn.active {
+    color: #ff0;
+  }
+  #track-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: center;
+  }
+  .track-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="header-controls">
+      <button id="addBtn" class="add-btn" title="add track">+</button>
+      <button id="reverbBtn" class="reverb-btn" title="add reverb">~</button>
+    </div>
+    <div id="track-container">
+      <div id="track" class="track-row">
+        <button id="loopBtn" class="loop-btn" title="loop track">0</button>
+        <button id="playBtn" class="play-btn" title="play track">></button>
+        <input type="text" id="d" value="syntheSizer" title="pattern">
+        <input type="range" id="volume-d" class="volume-slider" min="0.01" max="2" step="0.01" value="1.0" title="volume">
+      </div>
+    </div>
+  </div>
+
+<script>
+  const trackContainer = document.getElementById('track-container');
+  const addBtn = document.getElementById('addBtn');
+  const reverbBtn = document.getElementById('reverbBtn');
+  
+  let trackCount = 1;
+  let loopTimeouts = {};
+  let activeTimeouts = {};
+  let reverbActive = false;
+  let volumes = { d: 1.0 };
+
+  document.getElementById('volume-d').addEventListener('input', function(e) {
+    volumes.d = parseFloat(e.target.value);
+  });
+
+  function setInputPlaying(input, duration) {
+    input.classList.add('on');
+    if (activeTimeouts[input.id]) clearTimeout(activeTimeouts[input.id]);
+    activeTimeouts[input.id] = setTimeout(() => {
+      input.classList.remove('on');
+      delete activeTimeouts[input.id];
+    }, Math.min(duration * 1000, 1000));
+  }
+
+  window.onkeypress = function(e) {
+    const currentInput = document.getElementById('d');
+    const volume = volumes[currentInput.id] || 1.0;
+    
+    for(M=!e||e.which==13?currentInput.value:String.fromCharCode(e.which),S='',h=g=l=k=s=0;s<M.length;s+=1/1024,S+=String.fromCharCode(t>255?255:t<0?0:0|t))
+
+      if(f=g,g=h,
+      j=k,k=l,
+  t=128,p={o:[52,55,10,10,6],i:[45,96,10,10,3],j:[45,96,10,10,3],u:[45,54,10,10,3],a:[58,70,10,10,15],e:[54,90,10,10,15],E:[60,80,10,10,12],w:[43,54,10,10,1],v:[42,60,20,10,3],T:[42,60,40,1,5],z:[45,68,10,5,3],Z:[44,70,50,1,5],b:[44,44,10,10,2],d:[44,99,10,10,2],m:[44,60,10,10,2],n:[44,99,10,10,2],r:[43,50,30,8,3],l:[48,60,10,10,5],g:[42,50,15,5,1],f:[48,60,10,10,4,1],h:[62,66,30,10,10,1],s:[120,150,80,40,5,1],S:[20,70,99,99,10,1],p:[44,50,5,10,2,1],t:[44,60,10,20,3,1],k:[60,99,10,10,6,1]}[M[0|s]])
+        i=1-p[2]/255,
+        m=1-p[3]/255,
+        h=i*(g*2*Math.sin(p[0]/25)-i*f)+(p[5]?Math.random():s*16%1)-.5,
+        l=m*(k*2*Math.sin(p[1]/25)-m*j)+(p[5]?Math.random():s*16%1)-.5,
+        t+=Math.min(1,4*Math.sin(Math.PI*s))*((h+l)*p[4]*volume*volume+(g+k)/2+(f+j)/8);
+
+    const audioHeader = 'data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgA';
+    const audio = new Audio(audioHeader + btoa(audioHeader + S));
+    audio.play();
+    
+    const duration = currentInput.value.length * 0.12;
+    setInputPlaying(currentInput, duration);
+    
+    if (e && e.which == 13 && loopTimeouts[currentInput.id] && loopTimeouts[currentInput.id].active) {
+      if (loopTimeouts[currentInput.id].timeout) clearTimeout(loopTimeouts[currentInput.id].timeout);
+      const text = currentInput.value;
+      const durationMs = text.length * 0.12 * 1000;
+      loopTimeouts[currentInput.id].timeout = setTimeout(() => {
+        if (loopTimeouts[currentInput.id] && loopTimeouts[currentInput.id].active) {
+          window.onkeypress({ which: 13 });
+        }
+      }, Math.max(durationMs - 15, 485));
+    }
+  }
+
+  reverbBtn.addEventListener('click', function() {
+    reverbActive = !reverbActive;
+    this.classList.toggle('active');
+  });
+
+  function createTrack(value) {
+    trackCount++;
+    const trackId = 'track' + trackCount;
+    volumes[trackId] = 1.0;
+    
+    const trackDiv = document.createElement('div');
+    trackDiv.className = 'track-row';
+    
+    const loopBtn = document.createElement('button');
+    loopBtn.className = 'loop-btn';
+    loopBtn.textContent = '0';
+    
+    const playBtn = document.createElement('button');
+    playBtn.className = 'play-btn';
+    playBtn.textContent = '>';
+    
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.id = trackId;
+    input.value = value;
+    
+    const volumeSlider = document.createElement('input');
+    volumeSlider.type = 'range';
+    volumeSlider.className = 'volume-slider';
+    volumeSlider.min = '0.01';
+    volumeSlider.max = '2';
+    volumeSlider.step = '0.01';
+    volumeSlider.value = '1.0';
+    
+    trackDiv.appendChild(loopBtn);
+    trackDiv.appendChild(playBtn);
+    trackDiv.appendChild(input);
+    trackDiv.appendChild(volumeSlider);
+    
+    trackContainer.appendChild(trackDiv);
+    
+    loopTimeouts[trackId] = { active: false, timeout: null };
+    
+    volumeSlider.addEventListener('input', function(e) {
+      volumes[trackId] = parseFloat(e.target.value);
+    });
+    
+    loopBtn.addEventListener('click', function() {
+      loopTimeouts[trackId].active = !loopTimeouts[trackId].active;
+      this.classList.toggle('active');
+      
+      if (!loopTimeouts[trackId].active && loopTimeouts[trackId].timeout) {
+        clearTimeout(loopTimeouts[trackId].timeout);
+        loopTimeouts[trackId].timeout = null;
+      } else if (loopTimeouts[trackId].active) {
+        function runLoop() {
+          if (!loopTimeouts[trackId].active) return;
+          const currentInput = document.getElementById(trackId);
+          document.getElementById('d').id = 'temp';
+          currentInput.id = 'd';
+          window.onkeypress({ which: 13 });
+          currentInput.id = trackId;
+          document.getElementById('temp').id = 'd';
+          const duration = currentInput.value.length * 0.12 * 1000;
+          loopTimeouts[trackId].timeout = setTimeout(runLoop, Math.max(duration - 15, 485));
+        }
+        runLoop();
+      }
+    });
+    
+    playBtn.addEventListener('click', function() {
+      const currentInput = document.getElementById(trackId);
+      document.getElementById('d').id = 'temp';
+      currentInput.id = 'd';
+      window.onkeypress({ which: 13 });
+      currentInput.id = trackId;
+      document.getElementById('temp').id = 'd';
+    });
+    
+    input.addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const currentInput = document.getElementById(trackId);
+        document.getElementById('d').id = 'temp';
+        currentInput.id = 'd';
+        window.onkeypress({ which: 13 });
+        currentInput.id = trackId;
+        document.getElementById('temp').id = 'd';
+      }
+    });
+  }
+  
+  addBtn.addEventListener('click', function() {
+    createTrack('');
+  });
+  
+  loopTimeouts['d'] = { active: false, timeout: null };
+  
+  document.getElementById('loopBtn').addEventListener('click', function() {
+    loopTimeouts['d'].active = !loopTimeouts['d'].active;
+    this.classList.toggle('active');
+    if (!loopTimeouts['d'].active && loopTimeouts['d'].timeout) {
+      clearTimeout(loopTimeouts['d'].timeout);
+      loopTimeouts['d'].timeout = null;
+    } else if (loopTimeouts['d'].active) {
+      function runLoop() {
+        if (!loopTimeouts['d'].active) return;
+        window.onkeypress({ which: 13 });
+        const duration = document.getElementById('d').value.length * 0.12 * 1000;
+        loopTimeouts['d'].timeout = setTimeout(runLoop, Math.max(duration - 15, 485));
+      }
+      runLoop();
+    }
+  });
+  
+  document.getElementById('playBtn').addEventListener('click', function() {
+    window.onkeypress({ which: 13 });
+  });
+  
+  window.onkeypress({ which: 13 });
+</script>
+</body>
+</html>
