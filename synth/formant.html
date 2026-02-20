@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>formant joystick · with recording</title>
+    <style>
+        body, html {
+            background-color: #000;
+            color: #0f0;
+            font-family: monospace;
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+        }
+        #joy {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            cursor: crosshair;
+        }
+        #recordBtn {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: #333;
+            z-index: 20;
+            cursor: pointer;
+        }
+        #recordBtn.recording {
+            background: #f00;
+        }
+        #recordings {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            z-index: 20;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-width: 400px;
+        }
+        .recording-item {
+            background: #000;
+            padding: 8px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            animation: fadeIn 0.3s;
+            color: #0f0;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .recording-item .filename {
+            font-size: 11px;
+            color: #0f0;
+            opacity: 0.5;
+            min-width: 140px;
+        }
+        .recording-item .controls {
+            display: flex;
+            gap: 8px;
+        }
+        .recording-item button {
+            background: #000;
+            color: #0f0;
+            border: none;
+            font-family: monospace;
+            font-size: 16px;
+            padding: 4px 8px;
+            cursor: pointer;
+            opacity: 0.7;
+            min-width: 32px;
+            text-align: center;
+        }
+        .recording-item button:hover {
+            opacity: 1;
+        }
+        .recording-item .play-btn.playing {
+            transform: rotate(90deg);
+            display: inline-block;
+        }
+        #timeDisplay {
+            position: fixed;
+            top: 30px;
+            left: 100px;
+            z-index: 20;
+            color: #0f0;
+            font-size: 14px;
+            background: #000;
+            padding: 5px 10px;
+            opacity: 0.7;
+            display: none;
+        }
+        #timeDisplay.visible {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div id="joy"></div>
+    <div id="recordBtn"></div>
+    <div id="timeDisplay">00:00</div>
+    <div id="recordings"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.9.0/nipplejs.min.js"></script>
+
+    <script>
+        'use strict';
+        
+        // Audio context
+        let ctx = null;
+        let osc = null;
+        let peak1, peak2, peak3 = null;
+        let masterGain = null;
+        let limiter = null;
+        let isPlaying = false;
+        let fadeTimeout = null;
+        
+        // Recording
+        let mediaStreamDest = null;
+        let mediaRecorder = null;
+        let recordedChunks = [];
+        let isRecording = false;
+        let recordingStartTime = 0;
+        let recordingTimer = null;
+        
+        // Store all active audio elements
+        let activeAudios = new Map(); // button -> {audio, isPlaying}
+        
+        // UI Elements
+        const recordBtn = document.getElementById('recordBtn');
+        const timeDisplay = document.getElementById('timeDisplay');
+        const recordingsDiv = document.getElementById('recordings');
+        
+        // Volume control
+        let volume = 0.05;
+        const fadeTime = 0.1;
+        
+        // Parameters - expanded
+        let params = {
+            f1: 500, f2: 1500, f3: 2500,
+            pitch: 120,
+            tenseness: 0.6,
+            // New hidden parameters
+            waveform: 0, // 0:saw,1:triangle,2:square,3:sine
+            pitchBendRange: 0.3, // 0.1 to 0.8
+            filterQ: 0.5, // 0.2 to 1.5
+            microtonal: 0, // 0:off, 1:on
+            harmonicContent: 0.5 // 0:fundamental only, 1:rich harmonics
+        };
+        
+        // Ranges
+        const ranges = {
+            f1: { min: 200, max: 1000 },
+            f2: { min: 800, max: 2800 },
+            f3: { min: 1500, max: 4000 },
+            pitch: { min: 60, max: 300 },
+            tenseness: { min: 0.2, max: 1.0 },
+            pitchBendRange: { min: 0.1, max: 0.8 },
+            filterQ: { min: 0.2, max: 1.5 },
+            microtonal: { min: 0, max: 1 },
+            harmonicContent: { min: 0.2, max: 1.0 }
+        };
+        
+        // Store start position
+        let startX = 0;
+        let startY = 0;
+        let basePitch = 120;
+        
+        // Waveform types
+        const waveforms = ['sawtooth', 'triangle', 'square', 'sine'];
+        
+        // Initialize audio
+        function initAudio() {
+            if (!ctx) {
+                ctx = new (window.AudioContext || webkitAudioContext)();
+            }
+        }
+        
+        function setupRecording() {
+            if (!ctx) return;
+            
+            // Create media stream destination
+            mediaStreamDest = ctx.createMediaStreamDestination();
+            
+            // Set up media recorder
+            mediaRecorder = new MediaRecorder(mediaStreamDest.stream);
+            
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    recordedChunks.push(event.data);
+                }
+            };
+            
+            mediaRecorder.onstop = () => {
+                // Create blob from recorded chunks
+                const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+                const url = URL.createObjectURL(blob);
+                const timestamp = new Date().toLocaleTimeString().replace(/:/g, '-');
+                
+                // Create recording UI element
+                const recordingEl = document.createElement('div');
+                recordingEl.className = 'recording-item';
+                recordingEl.innerHTML = `
+                    <span class="filename">${timestamp}</span>
+                    <div class="controls">
+                        <button class="play-btn">></button>
+                        <button class="save-btn">↓</button>
+                    </div>
+                `;
+                
+                const playBtn = recordingEl.querySelector('.play-btn');
+                
+                // Play button - now allows multiple simultaneous playback
+                playBtn.onclick = () => {
+                    const existing = activeAudios.get(playBtn);
+                    
+                    if (existing && existing.isPlaying) {
+                        // Pause this specific track
+                        existing.audio.pause();
+                        existing.isPlaying = false;
+                        playBtn.textContent = '>';
+                        playBtn.classList.remove('playing');
+                        activeAudios.delete(playBtn);
+                    } else {
+                        // Create new audio element for this track
+                        const audio = new Audio(url);
+                        audio.loop = true;
+                        audio.play();
+                        
+                        // Store in active map
+                        activeAudios.set(playBtn, {
+                            audio: audio,
+                            isPlaying: true
+                        });
+                        
+                        playBtn.textContent = '=';
+                        playBtn.classList.add('playing');
+                        
+                        // Handle pause event
+                        audio.onpause = () => {
+                            const entry = activeAudios.get(playBtn);
+                            if (entry) {
+                                entry.isPlaying = false;
+                                playBtn.textContent = '>';
+                                playBtn.classList.remove('playing');
+                                activeAudios.delete(playBtn);
+                            }
+                        };
+                    }
+                };
+                
+                // Save button
+                recordingEl.querySelector('.save-btn').onclick = () => {
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `formant_${timestamp}.webm`;
+                    a.click();
+                };
+                
+                recordingsDiv.appendChild(recordingEl);
+                
+                // Clear chunks for next recording
+                recordedChunks = [];
+            };
+        }
+        
+        function startRecording() {
+            if (!ctx || !mediaRecorder || isRecording) return;
+            
+            recordedChunks = [];
+            mediaRecorder.start();
+            isRecording = true;
+            recordingStartTime = Date.now();
+            
+            // Update UI
+            recordBtn.classList.add('recording');
+            timeDisplay.classList.add('visible');
+            
+            // Start timer
+            recordingTimer = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+                const mins = Math.floor(elapsed / 60);
+                const secs = elapsed % 60;
+                timeDisplay.textContent = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+            }, 100);
+        }
+        
+        function stopRecording() {
+            if (!mediaRecorder || !isRecording) return;
+            
+            mediaRecorder.stop();
+            isRecording = false;
+            
+            // Update UI
+            recordBtn.classList.remove('recording');
+            timeDisplay.classList.remove('visible');
+            
+            // Clear timer
+            if (recordingTimer) {
+                clearInterval(recordingTimer);
+                recordingTimer = null;
+            }
+        }
+        
+        // Toggle recording
+        recordBtn.onclick = () => {
+            if (!ctx) {
+                initAudio();
+            }
+            
+            if (!mediaStreamDest) {
+                setupRecording();
+            }
+            
+            if (isRecording) {
+                stopRecording();
+            } else {
+                startRecording();
+            }
+        };
+        
+        function startAudio() {
+            initAudio();
+            if (ctx.state === 'suspended') ctx.resume();
+            
+            // Clear any pending fade timeout
+            if (fadeTimeout) {
+                clearTimeout(fadeTimeout);
+                fadeTimeout = null;
+            }
+            
+            // Create nodes if needed
+            if (!masterGain) {
+                // Create limiter first
+                limiter = ctx.createDynamicsCompressor();
+                limiter.threshold.setValueAtTime(-3, ctx.currentTime);
+                limiter.knee.setValueAtTime(0, ctx.currentTime);
+                limiter.ratio.setValueAtTime(20, ctx.currentTime);
+                limiter.attack.setValueAtTime(0.001, ctx.currentTime);
+                limiter.release.setValueAtTime(0.05, ctx.currentTime);
+                
+                masterGain = ctx.createGain();
+                masterGain.gain.value = 0; // Start at 0 for fade in
+                
+                masterGain.connect(limiter);
+                
+                osc = ctx.createOscillator();
+                osc.type = waveforms[Math.floor(params.waveform * 3.999)];
+                osc.frequency.value = params.pitch;
+                
+                peak1 = ctx.createBiquadFilter();
+                peak1.type = 'peaking';
+                peak1.frequency.value = params.f1;
+                peak1.Q.value = 6 * params.filterQ;
+                peak1.gain.value = 12 * params.harmonicContent;
+                
+                peak2 = ctx.createBiquadFilter();
+                peak2.type = 'peaking';
+                peak2.frequency.value = params.f2;
+                peak2.Q.value = 8 * params.filterQ;
+                peak2.gain.value = 12 * params.harmonicContent;
+                
+                peak3 = ctx.createBiquadFilter();
+                peak3.type = 'peaking';
+                peak3.frequency.value = params.f3;
+                peak3.Q.value = 10 * params.filterQ;
+                peak3.gain.value = 12 * params.harmonicContent;
+                
+                osc.connect(peak1);
+                peak1.connect(peak2);
+                peak2.connect(peak3);
+                peak3.connect(masterGain);
+            }
+            
+            // Connect limiter to destination (and recording if setup)
+            if (limiter) {
+                limiter.connect(ctx.destination);
+                if (mediaStreamDest) {
+                    limiter.connect(mediaStreamDest);
+                }
+            }
+            
+            const now = ctx.currentTime;
+            
+            // Fade in FIRST
+            masterGain.gain.cancelScheduledValues(now);
+            masterGain.gain.setValueAtTime(0, now);
+            masterGain.gain.linearRampToValueAtTime(volume, now + fadeTime);
+            
+            // THEN start oscillator (at the same time, but gain is already at 0)
+            if (osc && !isPlaying) {
+                osc.start(now);
+            }
+            
+            isPlaying = true;
+        }
+        
+        function stopAudio() {
+            if (!ctx || !masterGain || !isPlaying) return;
+            
+            // Fade out
+            const now = ctx.currentTime;
+            masterGain.gain.cancelScheduledValues(now);
+            masterGain.gain.setValueAtTime(masterGain.gain.value, now);
+            masterGain.gain.linearRampToValueAtTime(0, now + fadeTime);
+            
+            // Stop after fade
+            fadeTimeout = setTimeout(() => {
+                if (osc) {
+                    osc.stop();
+                    osc.disconnect();
+                    osc = null;
+                }
+                if (peak1) peak1.disconnect();
+                if (peak2) peak2.disconnect();
+                if (peak3) peak3.disconnect();
+                if (masterGain) masterGain.disconnect();
+                if (limiter) limiter.disconnect();
+                
+                peak1 = peak2 = peak3 = null;
+                masterGain = null;
+                limiter = null;
+                isPlaying = false;
+                fadeTimeout = null;
+            }, fadeTime * 1000);
+        }
+        
+        function updateFilters() {
+            if (!ctx || !peak1 || !peak2 || !peak3 || !osc || !isPlaying) return;
+            
+            const now = ctx.currentTime;
+            
+            // Apply microtonal if enabled (continuous pitch, no rounding)
+            if (params.microtonal > 0.5) {
+                osc.frequency.setValueAtTime(basePitch * (1 + (params.pitchBendRange * 0.5)), now);
+            } else {
+                osc.frequency.setValueAtTime(params.pitch, now);
+            }
+            
+            peak1.frequency.setValueAtTime(params.f1, now);
+            peak2.frequency.setValueAtTime(params.f2, now);
+            peak3.frequency.setValueAtTime(params.f3, now);
+            
+            const safeTenseness = Math.min(params.tenseness, 0.9);
+            peak1.gain.setValueAtTime(12 * safeTenseness * params.harmonicContent, now);
+            peak2.gain.setValueAtTime(12 * safeTenseness * params.harmonicContent, now);
+            peak3.gain.setValueAtTime(12 * safeTenseness * params.harmonicContent, now);
+            
+            // Update Q based on filterQ parameter
+            peak1.Q.setValueAtTime(6 * params.filterQ, now);
+            peak2.Q.setValueAtTime(8 * params.filterQ, now);
+            peak3.Q.setValueAtTime(10 * params.filterQ, now);
+            
+            // Update waveform (changes timbre dramatically)
+            osc.type = waveforms[Math.floor(params.waveform * 3.999)];
+        }
+        
+        
+        // Joystick
+        const nipple = nipplejs.create({
+            zone: document.getElementById('joy'),
+            mode: 'dynamic',
+            dataOnly: true,
+            catchDistance: 50
+        });
+        
+        nipple.on("start", (e, data) => {
+            startX = data.position.x;
+            startY = data.position.y;
+            
+            const windowHeight = window.innerHeight;
+            const yNorm = Math.max(0, Math.min(1, startY / windowHeight));
+            basePitch = ranges.pitch.min + (1 - yNorm) * (ranges.pitch.max - ranges.pitch.min);
+            params.pitch = Math.round(basePitch);
+            
+            // Start audio with fade in
+            startAudio();
+        });
+        
+        nipple.on("move", (e, data) => {
+            const x = data.vector.x;
+            const y = -data.vector.y;
+            const force = data.force;
+            const angle = data.angle.radian;
+            const distance = data.distance / 100; // normalize roughly
+            
+            const windowWidth = window.innerWidth;
+            const startZone = startX < windowWidth / 2 ? 'left' : 'right';
+            
+            // Pitch shift with adjustable range
+            const pitchShift = y * params.pitchBendRange;
+            params.pitch = Math.round(basePitch * (1 + pitchShift));
+            params.pitch = Math.max(ranges.pitch.min, Math.min(ranges.pitch.max, params.pitch));
+            
+            const safeForce = Math.min(force, 0.99);
+            
+            // Main formant control (original behavior)
+            if (startZone === 'left') {
+                const xNorm = (x + 1) / 2;
+                params.f1 = Math.round(ranges.f1.min + xNorm * (ranges.f1.max - ranges.f1.min));
+                
+                const yNorm = (y + 1) / 2;
+                params.f2 = Math.round(ranges.f2.min + yNorm * (ranges.f2.max - ranges.f2.min));
+                
+                params.tenseness = ranges.tenseness.min + 
+                    safeForce * (ranges.tenseness.max - ranges.tenseness.min);
+                
+            } else {
+                const xNorm = (x + 1) / 2;
+                params.f2 = Math.round(ranges.f2.min + xNorm * (ranges.f2.max - ranges.f2.min));
+                
+                const yNorm = (y + 1) / 2;
+                params.f3 = Math.round(ranges.f3.min + yNorm * (ranges.f3.max - ranges.f3.min));
+                
+                params.tenseness = ranges.tenseness.min + 
+                    safeForce * (ranges.tenseness.max - ranges.tenseness.min);
+            }
+            
+            // Hidden parameters mapped to joystick dimensions
+            // Angle controls waveform (0-2PI maps to 0-1)
+            params.waveform = (angle / (2 * Math.PI));
+            
+            // Distance controls pitch bend range
+            params.pitchBendRange = ranges.pitchBendRange.min + 
+                Math.min(distance, 1) * (ranges.pitchBendRange.max - ranges.pitchBendRange.min);
+            
+            // Force also subtly affects filter Q (higher force = sharper resonance)
+            params.filterQ = ranges.filterQ.min + 
+                safeForce * (ranges.filterQ.max - ranges.filterQ.min);
+            
+            // X position of start + current Y creates microtonal switch
+            // Left side + high Y = microtonal on, etc.
+            const microtonalThreshold = (startX / windowWidth) * 2 - 1; // -1 to 1
+            params.microtonal = (y > microtonalThreshold) ? 1 : 0;
+            
+            // Angle + distance creates harmonic content variation
+            params.harmonicContent = ranges.harmonicContent.min + 
+                ((angle / (2 * Math.PI)) * Math.min(distance, 1)) * 
+                (ranges.harmonicContent.max - ranges.harmonicContent.min);
+            
+            // Clamp all values
+            params.f1 = Math.max(ranges.f1.min, Math.min(ranges.f1.max, params.f1));
+            params.f2 = Math.max(ranges.f2.min, Math.min(ranges.f2.max, params.f2));
+            params.f3 = Math.max(ranges.f3.min, Math.min(ranges.f3.max, params.f3));
+            params.pitchBendRange = Math.max(ranges.pitchBendRange.min, 
+                Math.min(ranges.pitchBendRange.max, params.pitchBendRange));
+            params.filterQ = Math.max(ranges.filterQ.min, 
+                Math.min(ranges.filterQ.max, params.filterQ));
+            params.harmonicContent = Math.max(ranges.harmonicContent.min, 
+                Math.min(ranges.harmonicContent.max, params.harmonicContent));
+            
+            updateFilters();
+        });
+        
+        nipple.on("end", () => {
+            stopAudio();
+        });
+        
+    </script>
+</body>
+</html>
