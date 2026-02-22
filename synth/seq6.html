@@ -1,0 +1,1664 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>seq</title>
+	<style>
+		@font-face {
+			font-family: 'uni-05_64';
+			src:  url('font/uni-05_64.ttf.woff') format('woff'),
+			url('font/uni-05_64.ttf.svg#uni-05_64') format('svg'),
+			url('font/uni-05_64.ttf.eot'),
+			url('font/uni-05_64.eot?#iefix') format('embedded-opentype'); 
+			font-weight: normal;
+			font-style: normal;
+		}
+		* {
+			-webkit-tap-highlight-color: transparent;
+			touch-action: manipulation;
+		}
+		body {
+			background-color: #444;
+			color: #fff;
+			font-family: monospace;
+			margin: 0;
+			padding: 20px;
+			box-sizing: border-box;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			justify-content: center;
+			min-height: 100vh;
+			font-family: 'uni-05_64';
+			overflow-x: hidden;
+		}
+		body.sound #grid-nav {
+			opacity: 0.4;
+		}
+		body.grid #grid-nav {
+			opacity: 1;
+		}
+		a {	
+			color: #fff; 
+			text-decoration: none; 
+			cursor: pointer;
+			user-select: none;
+		}
+		a:hover, a:active, a:focus,
+		button:hover, button:active, button:focus {
+			color: yellow;
+		}
+		.note-cell:focus {
+			animation-name: flash-animation;
+			animation-duration: 0.3s;
+		}
+		@keyframes flash-animation {  
+			from { background: yellow; }
+			to   { background: default; }
+		}	
+		button:focus-visible {
+			outline: 2px solid #ff0;
+			outline-offset: 2px;
+		}
+		input[type="range"]:focus-visible::-webkit-slider-thumb {
+			outline: 2px solid #ff0;
+			outline-offset: 2px;
+		}
+		#grid {
+			display: grid;
+			grid-template-columns: repeat(16, 32px);
+			grid-template-rows: repeat(16, 32px);
+			gap: 1px;
+			margin: 0;
+			padding-left:6px;
+			padding-top:6px;
+			position: relative;
+			z-index: 1;
+		}
+		.grid-nav-btn:active {
+			transform: scale(0.95);
+			transition: transform 0.05s;
+		}
+		.note-cell {
+			width: 26px;
+			height: 26px;
+			background-color: #333;
+			cursor: pointer;
+			transition: background-color 0.1s, transform 0.05s;
+			transform: translateZ(0);
+		}
+		.note-cell.active {
+			background-color: #666;
+			transform: scale(0.95);
+			transition: transform 0.05s;
+		}
+		.note-cell.current-step {
+			background-color: #444;
+		}
+		.note-cell.active.current-step {
+			background-color: #888;
+			transform: scale(0.95);
+		}
+		#container {
+			position: relative;
+			display: inline-block;
+			margin: 0;
+			padding: 0;
+			width: 533px;
+			height: 533px;
+			background: #111;
+			overflow: hidden;
+		}
+		#hud {
+			width: 533px;
+			max-width: 100%;
+			margin: 0px;
+			position: relative;
+		}
+		button {
+			background-color: #111;
+			border: none;
+			color: #fff;
+			font-family: 'uni-05_64';
+			padding: 10px;
+			cursor: pointer;
+			text-align: left;
+			margin: 0;
+			line-height: 12px;
+			transition: background-color 0.1s;
+		}
+		button:hover, button:focus {
+			outline: none;
+		}
+		.hud-row {
+			display: flex;
+			gap: 10px;
+			flex-wrap: wrap;
+		}
+		.hud-row #stop,  
+		.hud-row #copy-paste {
+			width: 5.1em;
+		}
+		.hud-label {
+			color: #888;
+			font-size: 12px;
+			margin-bottom: 5px;
+			display: inline-block;
+		}
+		#grid-nav {
+			max-height: 40px;
+			margin: 10px 0 0 0;
+			display: flex;
+			flex-wrap: wrap;
+			gap: 2px;
+		}
+		.grid-nav-btn {
+			display: inline-block;
+			padding: 8px 12px;
+			margin: 0;
+			min-width: 40px;
+			text-align: center;
+			position: relative;
+		}
+		.grid-nav-btn.active {
+			color: yellow;
+		}
+		.grid-nav-btn.playing:before {
+			content: '';
+			display: block;
+			height: 8px;
+			width: 100%;
+			background: #111;
+			position: absolute;
+			top:-8px;
+			right: 0;
+		}
+		#audio-banner {
+			position: fixed;
+			bottom: 16px;
+			right: 16px;
+			background: #111;
+			color: #ff0;
+			font-family: 'uni-05_64';
+			font-size: 12px;
+			padding: 12px 16px;
+			cursor: pointer;
+			letter-spacing: 1px;
+			z-index: 999;
+			transition: opacity 0.3s, transform 0.3s;
+			transform: translateY(0);
+		}
+		#audio-banner:hover {
+			background: #222;
+			color: #fff;
+		}
+		#audio-banner:active {
+			background: #333;
+		}
+		#audio-banner.hidden {
+			opacity: 0;
+			transform: translateY(10px);
+			pointer-events: none;
+		}
+		#auto-life.active,
+		#bounce.active {
+			color: yellow;
+			background-color: #333;
+		}
+		.modetoggle {
+			position: absolute;
+			bottom: 8px;
+			right: 0;
+			z-index: 99;
+		}
+		p {
+			margin: 0; padding: 0;
+		}
+		.hide {
+			display: none !important;
+		}
+		#sound-params {
+			display: none;
+			position: absolute;
+			top: 5px;
+			left: 5px;
+			width: 98%;
+			height: 100%;
+			z-index: 2;
+			overflow:hidden;
+			-webkit-overflow-scrolling: touch;
+		}
+		#sound-params {
+			scrollbar-width: none;
+		}
+		#sound-params::-webkit-scrollbar {
+			display: none;
+		}		
+		.params-container {
+			display: grid;
+			grid-template-columns: repeat(3, 1fr);
+			gap: 4px;
+			margin-top: 10px;
+			width: 100%;
+		}
+		.param-item {
+			display: flex;
+			flex-direction: column;
+			gap: 0;
+			padding: 12px 4px;
+			background: transparent;
+		}
+		.param-item:has(input[type="range"]:active) .param-name {
+			color: #ff0;
+		}
+		.param-header {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+		}
+		.param-name, .param-value, button {
+			-webkit-user-select: none;
+			user-select: none;
+		}
+		.param-name {
+			font-size: 11px;
+			color: #ccc;
+			text-transform: uppercase;
+		}
+		.param-value {
+			font-size: 12px;
+			color: yellow;
+			font-weight: bold;
+			min-width: 40px;
+			text-align: right;
+		}
+		.param-slider,
+		#tempo-slider {
+			width: 100%;
+			height: 30px;
+			border-radius: 0;
+			background: transparent;
+			cursor: pointer;
+			margin: 0;
+			padding: 0;
+			-webkit-appearance: none;
+			touch-action: manipulation;
+		}
+		#tempo-slider {
+			width: 150px;
+			float: right;
+		}
+		input[type="range"]::-webkit-slider-runnable-track {
+			width: 100%;
+			height: 4px;
+			background: #000;
+			border-radius: 0;
+			border: none;
+			cursor: pointer;
+		}
+		input[type="range"]::-moz-range-track {
+			width: 100%;
+			height: 4px;
+			background: #000;
+			border-radius: 0;
+			border: none;
+			cursor: pointer;
+		}
+		input[type="range"]::-moz-range-progress {
+			background-color: #fff;
+			height: 4px;
+		}
+		.param-slider::-webkit-slider-runnable-track,
+		#tempo-slider::-webkit-slider-runnable-track {
+			background: linear-gradient(to right, #fff 0%, #fff var(--fill-percent, 30%), #000 var(--fill-percent, 30%), #000 100%);
+		}
+		input[type="range"]::-webkit-slider-thumb {
+			-webkit-appearance: none;
+			width: 20px;
+			height: 20px;
+			background: #fff;
+			border-radius: 0;
+			cursor: pointer;
+			border: none;
+			margin-top: -8px;
+			transition: all 0.1s ease;
+		}
+		input[type="range"]::-moz-range-thumb {
+			width: 20px;
+			height: 20px;
+			background: #fff;
+			border-radius: 0;
+			cursor: pointer;
+			border: none;
+			transition: all 0.1s ease;
+		}
+		input[type="range"]:hover::-webkit-slider-thumb {
+			background: #ff0;
+			transform: scale(1.1);
+		}
+		input[type="range"]:hover::-moz-range-thumb {
+			background: #ff0;
+			transform: scale(1.1);
+		}
+		input[type="range"]:active::-webkit-slider-thumb {
+			background: #ff4;
+			transform: scale(0.95);
+		}
+		input[type="range"]:active::-moz-range-thumb {
+			background: #ff4;
+			transform: scale(0.95);
+		}
+		input[type="range"]:focus::-webkit-slider-thumb {
+			background: #ff0;
+		}
+		input[type="range"]:focus::-moz-range-thumb {
+			background: #ff0;
+		}
+		input[type="range"]:focus {
+			outline: none;
+		}
+		#tempo-value {
+			color: #ccc;
+			font-size: 12px;
+			text-align: left;
+			margin: 8px;
+			display: inline-block;
+		}
+		#export-wav {
+			background-color: #111;
+			border: none;
+			color: #fff;
+			font-family: 'uni-05_64';
+			padding: 10px;
+			cursor: pointer;
+			text-align: left;
+			margin: 0;
+			line-height: 12px;
+			transition: background-color 0.1s, opacity 0.3s;
+		}
+		#export-wav:hover {
+			color: yellow;
+		}
+		#export-wav:active {
+			background-color: #777;
+		}
+		#export-wav:disabled {
+			opacity: 0.5;
+			cursor: not-allowed;
+		}
+		#export-wav:disabled:hover {
+			background-color: #111;
+			color: #fff;
+		}
+		@media (max-width: 600px) {
+			body {
+				padding: 10px;
+			}
+			#hud, #container {
+				width: 100%;
+				max-width: 533px;
+			}
+			#container {
+				height: auto;
+				min-height: 533px;
+			}
+			.hud-section {
+				min-width: 100%;
+			}
+			.hud-row {
+				gap: 5px;
+			}
+			.params-container {
+				grid-template-columns: repeat(2, 1fr);
+				gap: 6px;
+			}
+			.param-item {
+				width: 100%;
+				padding: 6px;
+			}
+			#sound-params {
+				padding: 15px;
+			}
+			input[type="range"]::-webkit-slider-thumb {
+				width: 24px;
+				height: 24px;
+				margin-top: -10px;
+			}
+			input[type="range"]::-moz-range-thumb {
+				width: 24px;
+				height: 24px;
+			}
+			#grid {
+				grid-template-columns: repeat(16, 28px);
+				grid-template-rows: repeat(16, 28px);
+			}
+			.note-cell {
+				width: 22px;
+				height: 22px;
+			}
+		}
+		@media (max-width: 400px) {
+			.params-container {
+				grid-template-columns: 1fr;
+			}
+			#grid {
+				grid-template-columns: repeat(16, 24px);
+				grid-template-rows: repeat(16, 24px);
+			}
+			.note-cell {
+				width: 18px;
+				height: 18px;
+			}
+			.grid-nav-btn {
+				padding: 6px 8px;
+				min-width: 36px;
+			}
+			#sound-params {
+				padding: 10px;
+			}
+		}
+		@media (max-height: 700px) {
+			#sound-params {
+				max-height: 500px;
+				overflow-y: auto;
+			}
+			body {
+				padding: 10px;
+			}
+		}
+	</style>
+</head>
+<body class="grid">
+	<div id="hud">
+		<div class="hud-row">
+			<div class="hud-section">
+				<div class="hud-label">CONTROLS</div>
+				<div class="hud-row">
+					<button id="stop" tabindex="1">stop</button>
+					<button id="add-grid">+ grid</button>
+					<button id="remove-grid">- grid</button>
+					<button id="copy-paste">copy</button>
+					<button id="export-wav">export</button>
+					<button id="reset">reset</button>
+					<button id="life">life</button>
+					<button id="auto-life">auto</button>
+					<button id="seed">seed</button>
+					<button id="bounce">bounce</button>
+				</div>
+				<button class="modetoggle" onclick="modetoggle()"><span id="modebtn">sound</span></button>
+			</div>
+			<div class="hud-section">
+				<div class="hud-label">
+					BPM 
+					<div id="tempo-value">120</div>
+				</div>
+				<input type="range" id="tempo-slider" min="50" max="400" value="120">
+			</div>
+		</div>
+		<div class="hud-section">
+			<div id="grid-nav"></div>
+		</div>
+	</div>
+	<div id="container">
+		<div id="grid"></div>
+		<div id="sound-params">
+			<div id="sound-params-container" class="params-container"></div>
+		</div>
+	</div>
+	<div id="audio-banner" onclick="unlockAudio()">&#9654; tap to enable audio</div>
+</body>
+<script type="text/javascript">
+	var mode = 'grid';
+	
+	function modetoggle() {
+		var grid = document.getElementById('grid');
+		var soundParams = document.getElementById('sound-params');
+		var container = document.getElementById('container');
+		
+		if (grid.classList.contains('hide')) {
+			grid.classList.remove('hide');
+			soundParams.style.display = 'none';
+			document.getElementById('modebtn').innerHTML = 'sound';
+			document.body.classList = 'grid';
+			
+		} else {
+			grid.classList.add('hide');
+			soundParams.style.display = 'block';
+			document.getElementById('modebtn').innerHTML = 'grid';
+			document.body.classList = 'sound';
+		}
+	}
+	
+	var audioReady = false;
+	let zzfxV=.3,
+	zzfxX=new AudioContext,
+	zzfx=
+	(p=1,k=.05,b=220,e=0,r=0,t=.1,q=0,D=1,u=0,y=0,v=0,z=0,l=0,E=0,A=0,F=0,c=0,w=1,m=0,B=0
+		,N=0)=>{
+		if (!audioReady) return null;
+		let M=Math,d=2*M.PI,R=44100,G=u*=500*d/R/R,C=b*=(1-k+2*k*M.random(k=[]))*d/R,
+		g=0,H=0,a=0,n=1,I=0,J=0,f=0,h=N<0?-1:1,x=d*h*N*2/R,L=M.cos(x),Z=M.sin,K=Z(x)/4,O=1+K,
+		X=-2*L/O,Y=(1-K)/O,P=(1+h*L)/2/O,Q=-(h+L)/O,S=P,T=0,U=0,V=0,W=0;e=R*e+9;m*=R;r*=R;t*=
+		R;c*=R;y*=500*d/R**3;A*=d/R;v*=d/R;z*=R;l=R*l|0;p*=zzfxV;for(h=e+m+r+t+c|0;a<h;k[a++]
+			=f*p)++J%(100*F|0)||(f=q?1<q?2<q?3<q?4<q?(g/d%1<D/2)*2-1:Z(g**3):M.max(M.min(M.tan(g)
+				,1),-1):1-(2*g/d%2+2)%2:1-4*M.abs(M.round(g/d)-g/d):Z(g),f=(l?1-B+B*Z(d*a/l):1)*(4<q?
+			s:(f<0?-1:1)*M.abs(f)**D)*(a<e?a/e:a<e+m?1-(a-e)/m*(1-w):a<e+m+r?w:a<h-c?(h-a-c)/t*w:
+			0),f=c?f/2+(c>a?0:(a<h-c?1:(h-a)/c)*k[a-c|0]/2/p):f,N?f=W=S*T+Q*(T=U)+P*(U=f)-Y*V-X*(
+			V=W):0),x=(b+=u+=y)*M.cos(A*H++),g+=x+x*E*Z(a**5),n&&++n>z&&(b+=v,C+=v,n=0),!l||++I%l
+			||(b=C,u=G,n=n||1);X=zzfxX,p=X.createBuffer(1,h,R);p.getChannelData(0).set(k);b=X.
+			createBufferSource();b.buffer=p;b.connect(X.destination);b.start()}
+			
+      // SUSPEND THE AUDIO CONTEXT IMMEDIATELY
+			if (zzfxX.state === 'running') {
+				zzfxX.suspend();
+			}
+			
+			function safeZzFx(params) {
+				if (!audioReady) return null;
+				
+				try {
+					if (params[6] !== undefined) {
+						params[6] = Math.round(params[6]);
+					}
+					return zzfx(...params);
+				} catch(e) {
+					console.error('Sound error:', e);
+              return null; // Return null instead of playing default sound
+          }
+      }
+      
+      //
+      function startAudio() {
+      	if (!audioReady) {
+      		audioReady = true;
+
+              // Resume audio context if it's suspended
+      		if (zzfxX.state === 'suspended') {
+      			zzfxX.resume();
+      		}
+
+      		var banner = document.getElementById('audio-banner');
+      		if (banner) banner.classList.add('hidden');
+
+      		console.log('Audio started');
+      	}
+      }
+      
+      var isPlaying = true;
+      var currentStep = 0;
+      var lastUpdateTime = 0;
+      var bpm = 120;
+      var stepInterval = 0;
+      
+      var grids = [];
+      var currentGridIndex = 0;
+      var playingGridIndex = 0;
+      
+      var copiedGrid = null;
+      var autoLife = false;
+      var pingPong = true;
+      var pingPongDir = 1;
+      
+      var noteFrequencies = [
+      	130.81, 146.83, 164.81, 196.00, 220.00,
+      	261.63, 293.66, 329.63, 392.00, 440.00,
+      	523.25, 587.33, 659.25, 783.99, 880.00,
+      	1046.50
+      ];
+      
+      var soundParams = [
+      	{n:'Volume', v:1, min:0, max:2, step:.01, prop:'volume'},
+      	{n:'Random Freq', v:.00, min:0, max:0.5, step:.001, prop:'randomness'},
+      	{n:'Probability', v:100, min:0, max:100, step:1, prop:'probability'},
+      	{n:'Attack', v:0, min:0, max:0.5, step:.001, prop:'attack'},
+      	{n:'Sustain', v:0, min:0, max:1, step:.001, prop:'sustain'},
+      	{n:'Release', v:.1, min:0, max:1, step:.001, prop:'release'},
+      	{n:'Shape', v:0, min:0, max:5, step:1, prop:'shape'},
+      	{n:'Shape Curve', v:1, min:0.1, max:3, step:.01, prop:'shapeCurve'},
+      	{n:'Slide', v:0, min:-10, max:10, step:.01, prop:'slide'},
+      	{n:'Delta Slide', v:0, min:-20, max:20, step:.01, prop:'deltaSlide'},
+      	{n:'Pitch Jump', v:0, min:-50, max:50, step:.1, prop:'pitchJump'},
+      	{n:'Jump Time', v:0, min:0, max:0.5, step:.001, prop:'pitchJumpTime'},
+      	{n:'Repeat Time', v:0, min:0, max:0.5, step:.001, prop:'repeatTime'},
+      	{n:'Noise', v:0, min:0, max:1, step:.01, prop:'noise'},
+      	{n:'Modulation', v:0, min:0, max:50, step:.1, prop:'modulation'},
+      	{n:'Bit Crush', v:0, min:0, max:1, step:.01, prop:'bitCrush'},
+      	{n:'Delay', v:0, min:0, max:0.5, step:.001, prop:'delay'},
+      	{n:'Sustain Vol', v:1, min:0, max:1, step:.01, prop:'sustainVolume'},
+      	{n:'Decay', v:0, min:0, max:0.5, step:.001, prop:'decay'},
+      	{n:'Tremolo', v:0, min:0, max:1, step:.01, prop:'tremolo'},
+      	{n:'Filter', v:0, min:-1000, max:1000, step:1, prop:'filter'}
+      ];
+      
+      var currentSound = {};
+      
+      function initializeSoundParams() {
+      	soundParams.forEach(param => {
+      		currentSound[param.prop] = param.v;
+      	});
+      }
+      
+      function createSoundParamSliders() {
+      	var container = document.getElementById('sound-params-container');
+      	container.innerHTML = '';
+      	
+      	soundParams.forEach((param, i) => {
+      		var div = document.createElement('div');
+      		div.className = 'param-item';
+      		div.innerHTML = `
+      			<div class="param-header">
+      				<div class="param-name">${param.n}</div>
+      				<div class="param-value" id="sound-value${i}">${formatValue(param.v, param.step)}</div>
+      			</div>
+      			<input type="range" class="param-slider" id="sound-slider${i}" 
+      				   min="${param.min}" max="${param.max}" step="${param.step}" value="${param.v}">
+      		`;
+      		container.appendChild(div);
+      		
+      		var slider = document.getElementById(`sound-slider${i}`);
+      		var valueDisplay = document.getElementById(`sound-value${i}`);
+      		
+      		var updateSlider = () => {
+      			var val = parseFloat(slider.value);
+      			currentSound[param.prop] = val;
+      			valueDisplay.textContent = formatValue(val, param.step);
+      			updateSliderFill(slider);
+      			saveAllData();
+      		};
+      		
+      		slider.addEventListener('input', updateSlider);
+      		slider.addEventListener('change', updateSlider);
+      		
+      		updateSliderFill(slider);
+      		
+      		valueDisplay.textContent = formatValue(param.v, param.step);
+      	});
+      }
+      
+      function updateSliderFill(slider) {
+      	if (!slider) return;
+      	const value = parseFloat(slider.value);
+      	const min = parseFloat(slider.min);
+      	const max = parseFloat(slider.max);
+      	const percent = ((value - min) / (max - min)) * 100;
+      	slider.style.setProperty('--fill-percent', percent + '%');
+      }
+      
+      function setupSliderClickSupport() {
+      	const tempoSlider = document.getElementById('tempo-slider');
+      	if (tempoSlider) {
+      		setupSliderClick(tempoSlider, 50, 400);
+      	}
+      	
+      	soundParams.forEach((param, i) => {
+      		const slider = document.getElementById(`sound-slider${i}`);
+      		if (slider) {
+      			setupSliderClick(slider, param.min, param.max);
+      		}
+      	});
+      }
+      
+      function setupSliderClick(slider, min, max) {
+      	slider.addEventListener('click', function(e) {
+      		const rect = this.getBoundingClientRect();
+      		const x = e.clientX - rect.left;
+      		const percentage = x / rect.width;
+      		const step = parseFloat(this.step) || 1;
+      		
+      		let newValue = min + percentage * (max - min);
+      		newValue = Math.round(newValue / step) * step;
+      		newValue = Math.max(min, Math.min(max, newValue));
+      		
+      		this.value = newValue;
+      		this.dispatchEvent(new Event('input', { bubbles: true }));
+      		this.dispatchEvent(new Event('change', { bubbles: true }));
+      	});
+      	
+      	slider.addEventListener('touchstart', function(e) {
+      		const rect = this.getBoundingClientRect();
+      		const touch = e.touches[0];
+      		const x = touch.clientX - rect.left;
+      		const percentage = x / rect.width;
+      		const step = parseFloat(this.step) || 1;
+      		
+      		let newValue = min + percentage * (max - min);
+      		newValue = Math.round(newValue / step) * step;
+      		newValue = Math.max(min, Math.min(max, newValue));
+      		
+      		this.value = newValue;
+      		this.dispatchEvent(new Event('input', { bubbles: true }));
+      		this.dispatchEvent(new Event('change', { bubbles: true }));
+      		
+      		e.preventDefault();
+      	}, { passive: false });
+      }
+      
+      function formatValue(val, step) {
+      	var num = parseFloat(val);
+      	if (step < 0.01) return num.toFixed(2);
+      	if (step < 0.1) return num.toFixed(2);
+      	if (step < 1) return num.toFixed(1);
+      	return Math.round(num);
+      }
+      
+      function calculateStepInterval(bpmValue) {
+      	return 60000 / (bpmValue * 4);
+      }
+      
+      function encodeSoundParams() {
+      	var encoded = '';
+      	soundParams.forEach((param, i) => {
+      		var value = currentSound[param.prop] || param.v;
+      		var normalized = Math.round(((value - param.min) / (param.max - param.min)) * 255);
+      		encoded += String.fromCharCode(normalized);
+      	});
+      	return encoded;
+      }
+      
+      function decodeSoundParams(encoded) {
+      	for (var i = 0; i < soundParams.length && i < encoded.length; i++) {
+      		var param = soundParams[i];
+      		var normalized = encoded.charCodeAt(i);
+      		var value = param.min + (normalized / 255) * (param.max - param.min);
+      		value = Math.round(value / param.step) * param.step;
+      		value = Math.max(param.min, Math.min(param.max, value));
+      		currentSound[param.prop] = value;
+      	}
+      }
+      
+      function saveAllData() {
+      	var encodedData = String.fromCharCode(grids.length);
+      	
+      	for (var i = 0; i < grids.length; i++) {
+      		encodedData += encodeGridToHash(grids[i]);
+      	}
+      	
+      	encodedData += encodeSoundParams();
+      	
+      	var tempoNormalized = Math.round(((bpm - 50) / (400 - 50)) * 255);
+      	encodedData += String.fromCharCode(tempoNormalized);
+      	
+      	top.location.hash = "#!" + btoa(encodedData);
+      }
+      
+      function loadAllData(hashData) {
+      	if (hashData.length === 0) {
+      		grids[0] = createEmptyGrid();
+      		return;
+      	}
+      	
+      	var offset = 0;
+      	
+      	var gridCount = hashData.charCodeAt(offset++);
+      	grids = [];
+      	
+      	for (var i = 0; i < gridCount; i++) {
+      		var gridHash = hashData.substr(offset, 32);
+      		grids.push(parseGridFromHash(gridHash));
+      		offset += 32;
+      	}
+      	
+      	if (offset + 21 <= hashData.length) {
+      		var soundParamsData = hashData.substr(offset, 21);
+      		decodeSoundParams(soundParamsData);
+      		offset += 21;
+      	}
+      	
+      	if (offset < hashData.length) {
+      		var tempoNormalized = hashData.charCodeAt(offset);
+      		bpm = Math.round(50 + (tempoNormalized / 255) * (400 - 50));
+      		var tempoSlider = document.getElementById('tempo-slider');
+      		var tempoValue = document.getElementById('tempo-value');
+      		if (tempoSlider) {
+      			tempoSlider.value = bpm;
+      			tempoValue.textContent = bpm;
+      			stepInterval = calculateStepInterval(bpm);
+      			updateSliderFill(tempoSlider);
+      		}
+      	}
+      }
+      
+      
+      function unlockAudio() {
+      	if (!audioReady) {
+      		startAudio();
+      	}
+      }
+      
+      function setupAudioUnlock() {
+      	const clickableElements = document.querySelectorAll('button, .note-cell, input[type="range"], .grid-nav-btn');
+      	clickableElements.forEach(element => {
+      		element.addEventListener('click', unlockAudio);
+      		element.addEventListener('touchstart', unlockAudio);
+      	});
+      	
+          // Also unlock on any key press
+      	document.addEventListener('keydown', unlockAudio);
+      }
+      
+      (function (locationObj) {
+      	initializeSoundParams();
+      	createSoundParamSliders();
+      	setupAudioUnlock();
+      	audioReady = false;
+      	setupAudioUnlock();
+      	
+      	
+          // Also start audio when stop/start button is clicked
+      	document.getElementById('stop').addEventListener('click', function() {
+      		startAudio();
+      		isPlaying = !isPlaying;
+      		this.textContent = isPlaying ? "stop" : "start";
+      		if (isPlaying) {
+      			lastUpdateTime = performance.now() - stepInterval;
+      			requestAnimationFrame(updateSequencer);
+      		}
+      	});
+      	
+      	setupSliderClickSupport();
+      	stepInterval = calculateStepInterval(bpm);
+      	
+      	try {
+      		var hashData = atob(locationObj.hash.substr(2));
+      		loadAllData(hashData);
+      	} catch(e) {
+      		grids[0] = createEmptyGrid();
+      	}
+      	
+      	createGridDisplay();
+      	
+      	setTimeout(saveAllData, 100);
+      	
+      	requestAnimationFrame(updateSequencer);
+      	
+      	
+      	document.getElementById('add-grid').addEventListener('click', function() {
+      		if(currentGridIndex>6){return}
+      			
+      			grids.push(createEmptyGrid());
+      		currentGridIndex = grids.length - 1;
+      		updateGridDisplay();
+      		updateGridNavigation();
+      		saveAllData();
+      	});
+      	
+      	document.getElementById('remove-grid').onclick = function() {
+      		if (grids.length > 1) {
+      			grids.splice(currentGridIndex, 1);
+      			if (currentGridIndex >= grids.length) {
+      				currentGridIndex = grids.length - 1;
+      			}
+      			if (playingGridIndex >= grids.length) {
+      				playingGridIndex = grids.length - 1;
+      			}
+      			updateGridDisplay();
+      			updateGridNavigation();
+      			saveAllData();
+      		}
+      	};
+      	
+      	document.getElementById('copy-paste').onclick = function() {
+      		if (copiedGrid === null) {
+      			copiedGrid = grids[currentGridIndex].slice();
+      			this.textContent = "paste";
+      			this.style.backgroundColor = '#444';
+      			setTimeout(() => {
+      				if (this.textContent === "paste") {
+      					this.style.backgroundColor = '#111';
+      				}
+      			}, 200);
+      		} else {
+      			grids[currentGridIndex] = copiedGrid.slice();
+      			updateGridDisplay();
+      			this.textContent = "copy";
+      			this.style.backgroundColor = '#444';
+      			setTimeout(() => {
+      				this.style.backgroundColor = '#111';
+      			}, 200);
+      		}
+      		saveAllData();
+      	};
+      	
+      	document.getElementById('life').addEventListener('click', function() {
+      		grids[currentGridIndex] = conwayStep(grids[currentGridIndex]);
+      		updateGridDisplay();
+      		saveAllData();
+      	});
+
+      	document.getElementById('auto-life').addEventListener('click', function() {
+      		autoLife = !autoLife;
+      		this.classList.toggle('active', autoLife);
+      	});
+
+      	document.getElementById('seed').addEventListener('click', function() {
+      		generateLifeSequence(6);
+      		// Turn off auto-life since generations are pre-computed
+      		autoLife = false;
+      		document.getElementById('auto-life').classList.remove('active');
+      		// Turn on bounce by default for seed sequences
+      		if (!pingPong) {
+      			pingPong = true;
+      			document.getElementById('bounce').classList.add('active');
+      		}
+      	});
+
+      	var bounceBtn = document.getElementById('bounce');
+      	bounceBtn.classList.add('active');
+      	bounceBtn.addEventListener('click', function() {
+      		pingPong = !pingPong;
+      		pingPongDir = 1;
+      		this.classList.toggle('active', pingPong);
+      	});
+
+      	var tempoSlider = document.getElementById('tempo-slider');
+      	var tempoValue = document.getElementById('tempo-value');
+
+      	tempoSlider.addEventListener('input', function() {
+      		bpm = parseInt(this.value);
+      		stepInterval = calculateStepInterval(bpm);
+      		tempoValue.textContent = bpm;
+      		updateSliderFill(tempoSlider);
+      		saveAllData();
+      	});
+      	
+      	updateSliderFill(tempoSlider);
+      	
+      	updateGridNavigation();
+      	updateGridDisplay();
+      	
+      })(top.location);
+      
+      //
+      function createEmptyGrid() {
+      	var grid = [];
+      	for (var i = 0; i < 256; i++) {
+      		grid[i] = 0;
+      	}
+      	return grid;
+      }
+      
+      function conwayStep(grid) {
+      	var next = [];
+      	for (var col = 0; col < 16; col++) {
+      		for (var row = 0; row < 16; row++) {
+      			var neighbors = 0;
+      			for (var dc = -1; dc <= 1; dc++) {
+      				for (var dr = -1; dr <= 1; dr++) {
+      					if (dc === 0 && dr === 0) continue;
+      					var nc = (col + dc + 16) % 16;
+      					var nr = (row + dr + 16) % 16;
+      					if (grid[nc * 16 + nr]) neighbors++;
+      				}
+      			}
+      			var idx = col * 16 + row;
+      			if (grid[idx]) {
+      				next[idx] = (neighbors === 2 || neighbors === 3) ? 1 : 0;
+      			} else {
+      				next[idx] = (neighbors === 3) ? 1 : 0;
+      			}
+      		}
+      	}
+      	return next;
+      }
+
+      function generateSeed() {
+      	var grid = createEmptyGrid();
+      	// ~25% density produces interesting Conway evolution on 16x16
+      	// Cluster-based: place 8-12 random clusters of 3-5 cells
+      	var clusterCount = 8 + Math.floor(Math.random() * 5);
+      	for (var c = 0; c < clusterCount; c++) {
+      		var cx = Math.floor(Math.random() * 16);
+      		var cy = Math.floor(Math.random() * 16);
+      		// Each cluster: activate the center + 2-4 random neighbors
+      		grid[cx * 16 + cy] = 1;
+      		var spread = 2 + Math.floor(Math.random() * 3);
+      		for (var s = 0; s < spread; s++) {
+      			var nx = (cx + Math.floor(Math.random() * 3) - 1 + 16) % 16;
+      			var ny = (cy + Math.floor(Math.random() * 3) - 1 + 16) % 16;
+      			grid[nx * 16 + ny] = 1;
+      		}
+      	}
+      	return grid;
+      }
+
+      function generateLifeSequence(iterations) {
+      	var seed = generateSeed();
+      	grids = [seed];
+      	for (var i = 1; i < iterations; i++) {
+      		grids.push(conwayStep(grids[i - 1]));
+      	}
+      	currentGridIndex = 0;
+      	playingGridIndex = 0;
+      	pingPongDir = 1;
+      	currentStep = 0;
+      	updateGridDisplay();
+      	updateGridNavigation();
+      	saveAllData();
+      }
+
+      function parseGridFromHash(hashData) {
+      	var grid = [];
+      	for (var i = 0; i < 256; i++) {
+      		grid[i] = (hashData.charCodeAt(i >> 3) >> (7 - (i % 8))) & 1;
+      	}
+      	return grid;
+      }
+      
+      function encodeGridToHash(grid) {
+      	var encodedData = "";
+      	var byteValue = 0;
+      	
+      	for (var i = 0; i < 256; i++) {
+      		var row = i % 16;
+      		
+      		if (row % 8) {
+      			byteValue = byteValue * 2 + grid[i];
+      		} else {
+      			byteValue = grid[i];
+      		}
+      		
+      		if (row % 8 == 7) {
+      			encodedData += String.fromCharCode(byteValue);
+      		}
+      	}
+      	
+      	return encodedData;
+      }
+      
+      function createGridDisplay() {
+      	var gridContainer = document.getElementById('grid');
+      	gridContainer.innerHTML = '';
+      	
+      	for (var row = 0; row < 16; row++) {
+      		for (var col = 0; col < 16; col++) {
+      			var cell = document.createElement('BUTTON');
+      			cell.className = 'note-cell';
+      			cell.dataset.row = row;
+      			cell.dataset.col = col;
+      			cell.dataset.index = col * 16 + row;
+      			
+      			cell.addEventListener('click', function(e) {
+      				var col = parseInt(this.dataset.col);
+      				var row = parseInt(this.dataset.row);
+      				var index = col * 16 + row;
+      				
+      				grids[currentGridIndex][index] = !grids[currentGridIndex][index];
+      				
+      				updateGridDisplay();
+      				saveAllData();
+      			});
+      			
+      			cell.addEventListener('touchstart', function(e) {
+      				e.preventDefault();
+      				this.click();
+      			}, { passive: false });
+      			
+      			cell.addEventListener('keydown', function(e) {
+      				if (e.code === 'Enter' || e.code === 'Space') {
+      					e.preventDefault();
+      					this.click();
+      				}
+      			});
+      			gridContainer.appendChild(cell);
+      		}
+      	}
+      	
+      	updateGridDisplay();
+      }
+      
+      function updateGridDisplay() {
+      	var cells = document.querySelectorAll('.note-cell');
+      	var currentGrid = grids[currentGridIndex];
+      	
+      	cells.forEach(function(cell) {
+      		var col = parseInt(cell.dataset.col);
+      		var row = parseInt(cell.dataset.row);
+      		var index = col * 16 + row;
+      		
+      		cell.classList.remove('active', 'current-step');
+      		
+      		if (currentGrid[index]) {
+      			cell.classList.add('active');
+      		}
+      		
+      		if (currentGridIndex === playingGridIndex && col === currentStep) {
+      			cell.classList.add('current-step');
+      		}
+      	});
+      }
+      
+      function updateGridNavigation() {
+      	var gridNav = document.getElementById('grid-nav');
+      	gridNav.innerHTML = '';
+      	
+      	grids.forEach(function(grid, index) {
+      		var btn = document.createElement('button');
+      		btn.className = 'grid-nav-btn';
+      		btn.textContent = (index + 1);
+      		
+      		if (index === currentGridIndex) {
+      			btn.classList.add('active');
+      		}
+      		if (index === playingGridIndex) {
+      			btn.classList.add('playing');
+      		}
+      		
+      		btn.addEventListener('click', function() {
+      			currentGridIndex = index;
+      			updateGridDisplay();
+      			updateGridNavigation();
+      			var copyPasteBtn = document.getElementById('copy-paste');
+      			if (copiedGrid !== null) {
+      				copyPasteBtn.textContent = "paste";
+      			} else {
+      				copyPasteBtn.textContent = "copy";
+      			}
+      		});
+      		
+      		btn.addEventListener('touchstart', function(e) {
+      			e.preventDefault();
+      			this.click();
+      		}, { passive: false });
+      		
+      		gridNav.appendChild(btn);
+      	});
+      }
+      
+      function updateSequencer(timestamp) {
+      	if (!isPlaying) return;
+      	
+      	if (!lastUpdateTime) {
+      		lastUpdateTime = timestamp;
+      	}
+      	
+      	if (timestamp - lastUpdateTime >= stepInterval) {
+      		lastUpdateTime = timestamp;
+      		
+      		if (grids.length > 0) {
+      			var currentPlayingGrid = grids[playingGridIndex];
+      			
+      			for (var y = 0; y < 16; y++) {
+      				if (currentPlayingGrid[currentStep * 16 + y]) {
+      					var probability = currentSound.probability || 100;
+      					if (Math.random() * 100 < probability) {
+      						var baseFrequency = noteFrequencies[y] || 440;
+      						var randomness = currentSound.randomness || 0;
+      						var actualFrequency = baseFrequency;
+      						
+      						if (randomness > 0) {
+      							var randomFactor = 1 + (Math.random() * 2 - 1) * randomness;
+      							actualFrequency = baseFrequency * randomFactor;
+      							actualFrequency = Math.max(20, Math.min(5000, actualFrequency));
+      						}
+      						
+      						safeZzFx([
+      							currentSound.volume || 0.3,
+      							0.00,
+      							actualFrequency,
+      							currentSound.attack || 0,
+      							currentSound.sustain || 0.15,
+      							currentSound.release || 0.1,
+      							currentSound.shape || 0,
+      							currentSound.shapeCurve || 1,
+      							currentSound.slide || 0,
+      							currentSound.deltaSlide || 0,
+      							currentSound.pitchJump || 0,
+      							currentSound.pitchJumpTime || 0,
+      							currentSound.repeatTime || 0,
+      							currentSound.noise || 0,
+      							currentSound.modulation || 0,
+      							currentSound.bitCrush || 0,
+      							currentSound.delay || 0,
+      							currentSound.sustainVolume || 1,
+      							currentSound.decay || 0,
+      							currentSound.tremolo || 0,
+      							currentSound.filter || 0
+      						]);
+      					}
+      				}
+      			}
+      		}
+      		
+      		currentStep = (currentStep + 1) % 16;
+
+      		if (currentStep === 0) {
+      			if (autoLife) {
+      				grids[playingGridIndex] = conwayStep(grids[playingGridIndex]);
+      			}
+      			if (grids.length > 1) {
+      				if (pingPong) {
+      					// Reverse direction at boundaries
+      					if (playingGridIndex >= grids.length - 1) pingPongDir = -1;
+      					if (playingGridIndex <= 0) pingPongDir = 1;
+      					playingGridIndex += pingPongDir;
+      				} else {
+      					playingGridIndex = (playingGridIndex + 1) % grids.length;
+      				}
+      			}
+      			// Auto-follow: view tracks the playing grid
+      			currentGridIndex = playingGridIndex;
+      			updateGridNavigation();
+      			updateGridDisplay();
+      			if (autoLife) saveAllData();
+      		} else {
+      			if (currentGridIndex === playingGridIndex) {
+      				updateGridDisplay();
+      			}
+      		}
+      	}
+      	
+      	requestAnimationFrame(updateSequencer);
+      }
+      
+      document.addEventListener('touchmove', function(e) {
+      	if (e.target.type === 'range') {
+      		e.preventDefault();
+      	}
+      }, { passive: false });
+      
+      var saveTimeout = null;
+      function debouncedSave() {
+      	if (saveTimeout) clearTimeout(saveTimeout);
+      	saveTimeout = setTimeout(saveAllData, 300);
+      }
+      
+      	// WAV EXPORT FUNCTIONS
+      function audioBufferToWav(buffer) {
+      	const numberOfChannels = buffer.numberOfChannels;
+      	const sampleRate = buffer.sampleRate;
+      	const length = buffer.length;
+      	
+      		// Create WAV header
+      	const wavData = new DataView(new ArrayBuffer(44 + length * numberOfChannels * 2));
+      	
+      		// Write WAV header
+      	writeString(wavData, 0, 'RIFF');
+      	wavData.setUint32(4, 36 + length * numberOfChannels * 2, true);
+      	writeString(wavData, 8, 'WAVE');
+      	writeString(wavData, 12, 'fmt ');
+      	wavData.setUint32(16, 16, true);
+      	wavData.setUint16(20, 1, true);
+      	wavData.setUint16(22, numberOfChannels, true);
+      	wavData.setUint32(24, sampleRate, true);
+      	wavData.setUint32(28, sampleRate * numberOfChannels * 2, true);
+      	wavData.setUint16(32, numberOfChannels * 2, true);
+      	wavData.setUint16(34, 16, true);
+      	writeString(wavData, 36, 'data');
+      	wavData.setUint32(40, length * numberOfChannels * 2, true);
+      	
+      		// Write audio data
+      	const channelData = [];
+      	for (let i = 0; i < numberOfChannels; i++) {
+      		channelData.push(buffer.getChannelData(i));
+      	}
+      	
+      	let offset = 44;
+      	for (let i = 0; i < length; i++) {
+      		for (let channel = 0; channel < numberOfChannels; channel++) {
+      			const sample = Math.max(-1, Math.min(1, channelData[channel][i]));
+      			wavData.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+      			offset += 2;
+      		}
+      	}
+      	
+      	return wavData;
+      }
+      
+      function writeString(dataView, offset, string) {
+      	for (let i = 0; i < string.length; i++) {
+      		dataView.setUint8(offset + i, string.charCodeAt(i));
+      	}
+      }
+      
+      
+      // Call this after your initialization
+      setupAudioUnlock();
+      
+      // Full zzfx implementation for export (copied from original zzfx function)
+      function zzfxExport(...args) {
+      	const [
+             p = 1,  // volume
+             k = .05, // randomness
+             b = 220, // frequency
+             e = 0,   // attack
+             r = 0,   // sustain
+             t = .1,  // release
+             q = 0,   // shape
+             D = 1,   // shapeCurve
+             u = 0,   // slide
+             y = 0,   // deltaSlide
+             v = 0,   // pitchJump
+             z = 0,   // pitchJumpTime
+             l = 0,   // repeatTime
+             E = 0,   // noise
+             A = 0,   // modulation
+             F = 0,   // bitCrush
+             c = 0,   // delay
+             w = 1,   // sustainVolume
+             m = 0,   // decay
+             B = 0,   // tremolo
+             N = 0    // filter
+         ] = args;
+         
+         const M = Math;
+         const d = 2 * M.PI;
+         const R = 44100;
+         
+         // Create mutable copies of variables that need to be modified
+         let slideAmount = u * 500 * d / R / R;
+         let currentFrequency = b * (1 - k + 2 * k * M.random()) * d / R;
+         let baseFrequency = currentFrequency;
+         
+         let g = 0, H = 0, a = 0, n = 1, I = 0, J = 0, f = 0;
+         let h = N < 0 ? -1 : 1;
+         const x = d * h * N * 2 / R;
+         const L = M.cos(x), Z = M.sin, K = Z(x) / 4, O = 1 + K;
+         const X = -2 * L / O, Y = (1 - K) / O, P = (1 + h * L) / 2 / O, Q = -(h + L) / O;
+         let S = P, T = 0, U = 0, V = 0, W = 0;
+         
+         // Convert time parameters to samples
+         const attackSamples = R * e + 9;
+         const decaySamples = R * m;
+         const sustainSamples = R * r;
+         const releaseSamples = R * t;
+         const delaySamples = R * c;
+         const deltaSlideAmount = y * 500 * d / R ** 3;
+         const modulationAmount = A * d / R;
+         const pitchJumpAmount = v * d / R;
+         const pitchJumpTimeSamples = R * z;
+         const repeatTimeSamples = R * l | 0;
+         
+         const totalSamples = attackSamples + decaySamples + sustainSamples + releaseSamples + delaySamples | 0;
+         const samples = new Float32Array(totalSamples);
+         
+         // Temporary variables that will be modified
+         let tempSlide = slideAmount;
+         let tempFreq = currentFrequency;
+         let tempBaseFreq = baseFrequency;
+         let tempN = n;
+         
+         for (a = 0; a < totalSamples; a++) {
+             // Wave shape generation
+         	++J % (100 * F | 0) || (
+         		f = q ? 
+         		q < 1 ? Z(g) :
+         		q < 2 ? 1 - 4 * M.abs(M.round(g / d) - g / d) :
+         		q < 3 ? 1 - (2 * g / d % 2 + 2) % 2 :
+         		q < 4 ? M.max(M.min(M.tan(g), 1), -1) :
+         		q < 5 ? Z(g ** 3) :
+         		(g / d % 1 < D / 2) * 2 - 1 : Z(g),
+         		
+         		f = (repeatTimeSamples ? 1 - B + B * Z(d * a / repeatTimeSamples) : 1) *
+         		(q < 4 ? 
+         			(f < 0 ? -1 : 1) * M.abs(f) ** D : 
+         			f) *
+         		(a < attackSamples ? a / attackSamples :
+         			a < attackSamples + decaySamples ? 1 - (a - attackSamples) / decaySamples * (1 - w) :
+         			a < attackSamples + decaySamples + sustainSamples ? w :
+         			a < totalSamples - delaySamples ? (totalSamples - a - delaySamples) / releaseSamples * w :
+         			0),
+         		
+         		f = delaySamples ? f / 2 + (delaySamples > a ? 0 : (a < totalSamples - delaySamples ? 1 : (totalSamples - a) / delaySamples) * 
+         			(samples[a - delaySamples | 0] || 0) / 2 / p) : f,
+         		
+         		N ? f = W = S * T + Q * (T = U) + P * (U = f) - Y * V - X * (V = W) : 0
+         		);
+         	
+             // Frequency modulation
+         	const modulated = (tempFreq += tempSlide += deltaSlideAmount) * M.cos(modulationAmount * H++);
+         	g += modulated + modulated * E * Z(a ** 5);
+         	
+             // Pitch jump
+         	tempN && ++tempN > pitchJumpTimeSamples && (tempFreq += pitchJumpAmount, tempBaseFreq += pitchJumpAmount, tempN = 0);
+         	
+             // Repeat time
+         	!repeatTimeSamples || ++I % repeatTimeSamples || (tempFreq = tempBaseFreq, tempSlide = slideAmount, tempN = tempN || 1);
+         	
+         	samples[a] = f * p;
+         }
+         
+         return samples;
+     }
+     
+      // Generate audio buffer from sequence
+     function generateAudioBuffer() {
+     	const sampleRate = 44100;
+     	const stepsPerBar = 16;
+         const bars = 4; // Export 4 bars
+         const totalSteps = bars * stepsPerBar;
+         const stepDuration = 60000 / (bpm * 4); // ms per step
+         const totalDuration = (totalSteps * stepDuration) / 1000; // seconds
+         const totalSamples = Math.ceil(totalDuration * sampleRate);
+         
+         // Create stereo buffer
+         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+         const buffer = audioContext.createBuffer(2, totalSamples, sampleRate);
+         const leftChannel = buffer.getChannelData(0);
+         const rightChannel = buffer.getChannelData(1);
+         
+         const samplesPerStep = Math.ceil((stepDuration / 1000) * sampleRate);
+         
+         // Store all generated sounds
+         const sounds = [];
+         
+         // First pass: generate all sounds at their correct timing
+         for (let step = 0; step < totalSteps; step++) {
+         	const currentGridIndex = Math.floor(step / stepsPerBar) % grids.length;
+         	const stepInGrid = step % stepsPerBar;
+         	const currentGrid = grids[currentGridIndex];
+         	const stepStartSample = step * samplesPerStep;
+         	
+         	for (let y = 0; y < 16; y++) {
+         		if (currentGrid[stepInGrid * 16 + y]) {
+         			const probability = currentSound.probability || 100;
+         			if (Math.random() * 100 < probability) {
+         				let baseFrequency = noteFrequencies[y] || 440;
+         				const randomness = currentSound.randomness || 0;
+         				
+         				if (randomness > 0) {
+         					const randomFactor = 1 + (Math.random() * 2 - 1) * randomness;
+         					baseFrequency = baseFrequency * randomFactor;
+         					baseFrequency = Math.max(20, Math.min(5000, baseFrequency));
+         				}
+         				
+                         // Generate sound with all parameters
+         				const soundSamples = zzfxExport(
+         					currentSound.volume || 0.3,
+                             0.00, // randomness already applied
+                             baseFrequency,
+                             currentSound.attack || 0,
+                             currentSound.sustain || 0.15,
+                             currentSound.release || 0.1,
+                             currentSound.shape || 0,
+                             currentSound.shapeCurve || 1,
+                             currentSound.slide || 0,
+                             currentSound.deltaSlide || 0,
+                             currentSound.pitchJump || 0,
+                             currentSound.pitchJumpTime || 0,
+                             currentSound.repeatTime || 0,
+                             currentSound.noise || 0,
+                             currentSound.modulation || 0,
+                             currentSound.bitCrush || 0,
+                             currentSound.delay || 0,
+                             currentSound.sustainVolume || 1,
+                             currentSound.decay || 0,
+                             currentSound.tremolo || 0,
+                             currentSound.filter || 0
+                             );
+         				
+         				sounds.push({
+         					samples: soundSamples,
+         					startSample: stepStartSample
+         				});
+         			}
+         		}
+         	}
+         }
+         
+         // Second pass: mix all sounds into buffer
+         for (const sound of sounds) {
+         	const soundSamples = sound.samples;
+         	const startSample = sound.startSample;
+         	
+         	for (let i = 0; i < soundSamples.length; i++) {
+         		const targetSample = startSample + i;
+         		if (targetSample < totalSamples) {
+         			const sample = soundSamples[i];
+         			leftChannel[targetSample] += sample;
+         			rightChannel[targetSample] += sample;
+         		}
+         	}
+         }
+         
+         // Normalize to prevent clipping
+         let max = 0;
+         for (let i = 0; i < totalSamples; i++) {
+         	max = Math.max(max, Math.abs(leftChannel[i]), Math.abs(rightChannel[i]));
+         }
+         
+         if (max > 0.9) {
+         	const scale = 0.9 / max;
+         	for (let i = 0; i < totalSamples; i++) {
+         		leftChannel[i] *= scale;
+         		rightChannel[i] *= scale;
+         	}
+         }
+         
+         return buffer;
+     }
+     
+      	// Main export function
+     function exportWAV() {
+     	try {
+      			// Disable export button during generation
+     		const exportBtn = document.getElementById('export-wav');
+     		if (exportBtn) {
+     			exportBtn.disabled = true;
+     			exportBtn.textContent = "Exporting...";
+     			exportBtn.style.opacity = "0.5";
+     		}
+     		
+      			// Small delay to let UI update
+     		setTimeout(() => {
+      				// Generate audio buffer
+     			const audioBuffer = generateAudioBuffer();
+     			
+      				// Convert to WAV
+     			const wavData = audioBufferToWav(audioBuffer);
+     			
+      				// Create download link
+     			const blob = new Blob([wavData], { type: 'audio/wav' });
+     			const url = URL.createObjectURL(blob);
+     			const a = document.createElement('a');
+     			a.href = url;
+     			a.download = `sequence_${bpm}bpm_${Date.now()}.wav`;
+     			document.body.appendChild(a);
+     			a.click();
+     			
+      				// Clean up
+     			setTimeout(() => {
+     				document.body.removeChild(a);
+     				URL.revokeObjectURL(url);
+     				
+      					// Re-enable export button
+     				if (exportBtn) {
+     					exportBtn.disabled = false;
+     					exportBtn.textContent = "Export WAV";
+     					exportBtn.style.opacity = "1";
+     				}
+     			}, 100);
+     			
+     			console.log('WAV exported successfully');
+     		}, 50);
+     		
+     	} catch (error) {
+     		console.error('Error exporting WAV:', error);
+     		
+      			// Re-enable button on error
+     		const exportBtn = document.getElementById('export-wav');
+     		if (exportBtn) {
+     			exportBtn.disabled = false;
+     			exportBtn.textContent = "Export WAV";
+     			exportBtn.style.opacity = "1";
+     		}
+     		
+     		alert('Error exporting WAV. Please try again.');
+     	}
+     }
+     
+     document.getElementById('reset').onclick = function() {
+     	if (confirm('Reset everything? This will clear all grids and reset sound settings.')) {
+             // Reset grids
+     		grids = [createEmptyGrid()];
+     		currentGridIndex = 0;
+     		playingGridIndex = 0;
+     		
+             // Reset current step
+     		currentStep = 0;
+     		
+             // Reset sound parameters to defaults
+     		soundParams.forEach((param, i) => {
+     			currentSound[param.prop] = param.v;
+     			const slider = document.getElementById(`sound-slider${i}`);
+     			const valueDisplay = document.getElementById(`sound-value${i}`);
+     			if (slider) {
+     				slider.value = param.v;
+     				updateSliderFill(slider);
+     			}
+     			if (valueDisplay) {
+     				valueDisplay.textContent = formatValue(param.v, param.step);
+     			}
+     		});
+     		
+             // Reset tempo
+     		bpm = 120;
+     		stepInterval = calculateStepInterval(bpm);
+     		const tempoSlider = document.getElementById('tempo-slider');
+     		const tempoValue = document.getElementById('tempo-value');
+     		if (tempoSlider) {
+     			tempoSlider.value = bpm;
+     			updateSliderFill(tempoSlider);
+     		}
+     		if (tempoValue) {
+     			tempoValue.textContent = bpm;
+     		}
+     		
+             // Reset copy/paste
+     		copiedGrid = null;
+     		const copyPasteBtn = document.getElementById('copy-paste');
+     		if (copyPasteBtn) {
+     			copyPasteBtn.textContent = "copy";
+     			copyPasteBtn.style.backgroundColor = '#111';
+     		}
+     		
+             // Reset play state
+     		isPlaying = true;
+     		const stopBtn = document.getElementById('stop');
+     		if (stopBtn) {
+     			stopBtn.textContent = "stop";
+     		}
+     		
+             // Update UI
+     		updateGridDisplay();
+     		updateGridNavigation();
+     		
+             // Save reset state
+     		saveAllData();
+     		
+     		console.log('Reset complete');
+     	}
+     };
+     
+      	// Add event listener for export button
+     document.getElementById('export-wav').addEventListener('click', exportWAV);
+     document.getElementById('export-wav').addEventListener('touchstart', function(e) {
+     	e.preventDefault();
+     	exportWAV();
+     }, { passive: false });
+     
+ </script>
+</body>
+</html>
+
