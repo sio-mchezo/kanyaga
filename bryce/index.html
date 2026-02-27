@@ -3,23 +3,32 @@
 <head>
     <meta charset="utf-8">
     <title>webrtc cubes</title>
-</head>
+<style>
+      body {padding: 0; margin: 0; overflow: hidden; background: #111; }
+</style>
+      </head>
 <body>
-<div id="info" style="position:absolute; top:10px; left:10px; color:white; background:rgba(0,0,0,0.7); padding:10px; font-family:monospace; z-index:1000;">
-    <div>My ID: <span id="my-id">connecting...</span></div>
-    <div>Users online: <span id="user-count">0</span></div>
+<div id="info" style="position:absolute; top:10px; left:10px; color:white; background:rgba(0,0,0,0.7); padding:10px; font-family:monospace; z-index:1000; border-radius:5px;">
+    <div>My ID: <span id="my-id">-</span></div>
+    <div>Users: <span id="user-count">0</span></div>
     <div id="user-list"></div>
-    <div>Status: <span id="status">initializing...</span></div>
+    <div>Status: <span id="status">starting...</span></div>
 </div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-<script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+
 <script>
 // UI elements
 const myIdEl = document.getElementById('my-id')
 const userCountEl = document.getElementById('user-count')
 const userListEl = document.getElementById('user-list')
 const statusEl = document.getElementById('status')
+
+// Generate a random ID
+const myId = Math.random().toString(36).substring(2, 8)
+myIdEl.textContent = myId
 
 // Three.js setup
 const scene = new THREE.Scene()
@@ -48,136 +57,100 @@ const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8)
 directionalLight.position.set(1, 2, 1)
 scene.add(directionalLight)
 
-// Peer connection setup
-const otherCubes = new Map() // id -> cube
-const users = new Map() // id -> { color, lastSeen }
+// Other users
+const otherCubes = new Map()
+const users = new Map()
 
-const peer = new Peer()
-let roomConnections = []
+// Connect to signaling server (public test server)
+statusEl.textContent = 'connecting...'
+const socket = io('https://socket-io-server-demo.herokuapp.com/', {
+    transports: ['websocket'],
+    reconnectionAttempts: 3
+})
 
-statusEl.textContent = 'connecting to peer server...'
-
-peer.on('open', (id) => {
-    myIdEl.textContent = id
-    statusEl.textContent = 'connected, waiting for peers...'
-    console.log('My peer ID:', id)
+socket.on('connect', () => {
+    statusEl.textContent = 'connected to signaling'
+    socket.emit('join-room', 'bryce-room', myId)
     
-    // Try to connect to a room peer if it exists
-    const roomPeerId = 'bryce-room-' + 'default' // simple room system
-    const conn = peer.connect(roomPeerId)
-    if (conn) {
-        setupConnection(conn)
+    // Announce ourselves
+    socket.emit('user-move', {
+        id: myId,
+        color: material.color.getHex(),
+        x: cube.position.x,
+        y: cube.position.y,
+        z: cube.position.z
+    })
+})
+
+socket.on('user-joined', (userId) => {
+    statusEl.textContent = 'user joined: ' + userId.substr(0,4)
+})
+
+socket.on('room-users', (usersList) => {
+    users.clear()
+    usersList.forEach(userId => {
+        if (userId !== myId) {
+            users.set(userId, { lastSeen: Date.now() })
+        }
+    })
+    updateUserList()
+})
+
+socket.on('user-move', (data) => {
+    if (data.id === myId) return
+    
+    // Update or create cube
+    let otherCube = otherCubes.get(data.id)
+    if (!otherCube) {
+        otherCube = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: data.color }))
+        scene.add(otherCube)
+        otherCubes.set(data.id, otherCube)
+        users.set(data.id, { color: data.color, lastSeen: Date.now() })
+        updateUserList()
+    }
+    
+    otherCube.position.set(data.x, data.y, data.z)
+    if (users.has(data.id)) {
+        users.get(data.id).lastSeen = Date.now()
+        users.get(data.id).color = data.color
     }
 })
 
-peer.on('connection', (conn) => {
-    statusEl.textContent = 'peer connected!'
-    setupConnection(conn)
+socket.on('user-left', (userId) => {
+    users.delete(userId)
+    const cube = otherCubes.get(userId)
+    if (cube) {
+        scene.remove(cube)
+        otherCubes.delete(userId)
+    }
+    updateUserList()
+    statusEl.textContent = 'user left: ' + userId.substr(0,4)
 })
 
-peer.on('error', (err) => {
-    statusEl.textContent = 'error: ' + err.type
-    console.error(err)
+socket.on('disconnect', () => {
+    statusEl.textContent = 'disconnected'
 })
-
-function setupConnection(conn) {
-    statusEl.textContent = 'setting up connection...'
-    roomConnections.push(conn)
-    
-    conn.on('open', () => {
-        statusEl.textContent = 'connection open'
-        // Send our info
-        conn.send({
-            type: 'join',
-            id: peer.id,
-            color: material.color.getHex(),
-            x: cube.position.x,
-            y: cube.position.y,
-            z: cube.position.z
-        })
-    })
-    
-    conn.on('data', (data) => {
-        if (data.id === peer.id) return
-        
-        if (data.type === 'join') {
-            // New user joined
-            if (!users.has(data.id)) {
-                users.set(data.id, { color: data.color, lastSeen: Date.now() })
-                updateUserList()
-                statusEl.textContent = 'user joined: ' + data.id.substr(0,4)
-            }
-        }
-        
-        // Update or create cube for this user
-        let otherCube = otherCubes.get(data.id)
-        if (!otherCube) {
-            otherCube = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: data.color }))
-            scene.add(otherCube)
-            otherCubes.set(data.id, otherCube)
-            users.set(data.id, { color: data.color, lastSeen: Date.now() })
-            updateUserList()
-        }
-        
-        if (data.x !== undefined) {
-            otherCube.position.set(data.x, data.y, data.z)
-            // Update last seen
-            if (users.has(data.id)) {
-                users.get(data.id).lastSeen = Date.now()
-            }
-        }
-    })
-    
-    conn.on('close', () => {
-        statusEl.textContent = 'connection closed'
-        // Remove from connections array
-        roomConnections = roomConnections.filter(c => c !== conn)
-    })
-}
 
 function updateUserList() {
-    const now = Date.now()
-    // Remove users not seen for 5 seconds
-    for (let [id, user] of users) {
-        if (now - user.lastSeen > 5000) {
-            users.delete(id)
-            // Remove their cube
-            const cube = otherCubes.get(id)
-            if (cube) {
-                scene.remove(cube)
-                otherCubes.delete(id)
-            }
-        }
-    }
-    
     userCountEl.textContent = users.size
     
     let listHtml = ''
     users.forEach((user, id) => {
         const shortId = id.substr(0, 6)
-        listHtml += `<div style="color: #${user.color.toString(16).padStart(6, '0')}">● ${shortId}</div>`
+        const color = user.color || 0xffffff
+        listHtml += `<div style="color: #${color.toString(16).padStart(6, '0')}">● ${shortId}</div>`
     })
     userListEl.innerHTML = listHtml || '<div style="color:#666">no other users</div>'
 }
 
 // Broadcast position
 setInterval(() => {
-    // Update user list (cleanup)
-    updateUserList()
-    
-    // Broadcast to all connections
-    const message = {
-        id: peer.id,
+    socket.emit('user-move', {
+        id: myId,
         color: material.color.getHex(),
         x: cube.position.x,
         y: cube.position.y,
         z: cube.position.z
-    }
-    
-    roomConnections.forEach(conn => {
-        if (conn.open) {
-            conn.send(message)
-        }
     })
 }, 100)
 
@@ -192,7 +165,7 @@ document.addEventListener("keydown", (e) => {
     if (e.key === "PageDown") cube.position.y -= speed
 })
 
-// Animation loop
+// Animation
 function animate() {
     requestAnimationFrame(animate)
     controls.update()
@@ -200,7 +173,7 @@ function animate() {
 }
 animate()
 
-// Handle window resize
+// Resize handler
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight
     camera.updateProjectionMatrix()
