@@ -3,9 +3,6 @@
 <head>
     <meta charset="utf-8">
     <title>webrtc cubes</title>
-    <style>
-      body {padding: 0; margin: 0; overflow: hidden; background: #111; }
-  </style>
 </head>
 <body>
 <div id="info" style="position:absolute; top:10px; left:10px; color:white; background:rgba(0,0,0,0.7); padding:10px; font-family:monospace; z-index:1000; border-radius:5px;">
@@ -64,7 +61,7 @@ const peers = []
 
 // Use public signaling server
 statusEl.textContent = 'connecting...'
-const signalingServer = new WebSocket('wss://signaling.herokuapp.com')
+const signalingServer = new WebSocket('wss://https://kanyaga.onrender.com/')
 
 signalingServer.onopen = () => {
     statusEl.textContent = 'connected to signaling'
