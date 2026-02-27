@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>webrtc cubes</title>
+    <style>
+      body { margin: 0; overflow: hidden; background: #111; }
+      #info {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        color: #7aff7a;
+        font-family: monospace;
+        background: rgba(0,0,0,0.7);
+        padding: 10px;
+        border-radius: 5px;
+        z-index: 100;
+      }
+    </style>
+</head>
+<body>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+const scene = new THREE.Scene()
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000)
+const renderer = new THREE.WebGLRenderer()
+renderer.setSize(window.innerWidth, window.innerHeight)
+document.body.appendChild(renderer.domElement)
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement)
+camera.position.set(5, 5, 5)
+controls.enableDamping = true
+
+const gridHelper = new THREE.GridHelper(10, 20)
+scene.add(gridHelper)
+
+const geometry = new THREE.BoxGeometry()
+const material = new THREE.MeshStandardMaterial({ color: Math.random() * 0xffffff })
+const cube = new THREE.Mesh(geometry, material)
+cube.position.set(Math.random() * 4 - 2, 0.5, Math.random() * 4 - 2)
+scene.add(cube)
+
+const light = new THREE.AmbientLight(0x404040)
+scene.add(light)
+const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5)
+directionalLight.position.set(1, 2, 1)
+scene.add(directionalLight)
+
+const otherCubes = new Map()
+const id = Math.random().toString(36)
+
+const channel = new BroadcastChannel('cubes')
+
+channel.onmessage = (e) => {
+    const data = e.data
+    if (data.id === id) return
+    
+    let otherCube = otherCubes.get(data.id)
+    if (!otherCube) {
+        otherCube = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: data.color }))
+        scene.add(otherCube)
+        otherCubes.set(data.id, otherCube)
+    }
+    otherCube.position.set(data.x, data.y, data.z)
+}
+
+setInterval(() => {
+    channel.postMessage({
+        type: "position",
+        id: id,
+        color: material.color.getHex(),
+        x: cube.position.x,
+        y: cube.position.y,
+        z: cube.position.z
+    })
+}, 50)
+
+document.addEventListener("keydown", (e) => {
+    const speed = 0.1
+    if (e.key === "ArrowLeft") cube.position.x -= speed
+    if (e.key === "ArrowRight") cube.position.x += speed
+    if (e.key === "ArrowUp") cube.position.z -= speed
+    if (e.key === "ArrowDown") cube.position.z += speed
+    if (e.key === "PageUp") cube.position.y += speed
+    if (e.key === "PageDown") cube.position.y -= speed
+})
+
+function animate() {
+    requestAnimationFrame(animate)
+    controls.update()
+    renderer.render(scene, camera)
+}
+animate()
+</script>
+</body>
+</html>
