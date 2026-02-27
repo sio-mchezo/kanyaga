@@ -1,194 +1,264 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="utf-8">
-    <title>collaborative cubes</title>
-    <style>
-      body {padding: 0; margin: 0; overflow: hidden; background: #111; }
-  </style>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+	<title>bryce</title>
+	<style>
+		* { margin: 0; padding: 0; box-sizing: border-box; }
+		body { background: #111; overflow: hidden; font-family: monospace; }
+		#hud { position: absolute; top: 12px; left: 12px; display: flex; gap: 10px; z-index: 100; }
+		#hud button { width: 60px; height: 60px; background: rgba(30,30,30,0.9); border: 2px solid #ff6600; border-radius: 30px; color: white; font-size: 24px; cursor: pointer; }
+		#spherebtn::after { content: "●"; }
+		#boxbtn::after { content: "■"; }
+		#conebtn::after { content: "▲"; }
+		#info { position: absolute; bottom: 20px; left: 20px; background: rgba(0,0,0,0.7); padding: 12px 20px; border-radius: 30px; border: 1px solid #ff6600; color: white; display: flex; gap: 15px; z-index: 100; }
+		#info button { background: none; border: 1px solid #ff6600; color: #ff6600; padding: 5px 15px; border-radius: 20px; cursor: pointer; }
+		#users { position: absolute; top: 12px; right: 12px; background: rgba(0,0,0,0.7); padding: 10px 15px; border-radius: 20px; border: 1px solid #00ccff; color: white; min-width: 120px; text-align: right; z-index: 100; }
+	</style>
 </head>
 <body>
-<div id="info" style="position:absolute; top:10px; left:10px; color:white; background:rgba(0,0,0,0.7); padding:10px; font-family:monospace; z-index:1000; border-radius:5px;">
-    <div>My ID: <span id="my-id">-</span></div>
-    <div>Users: <span id="user-count">0</span></div>
-    <div id="user-list"></div>
-    <div>Status: <span id="status">starting...</span></div>
-</div>
+	<div id="hud">
+		<button id="spherebtn"></button>
+		<button id="boxbtn"></button>
+		<button id="conebtn"></button>
+	</div>
+	<div id="users">
+		<div>users: <span id="user-count">0</span></div>
+		<div id="user-list"></div>
+	</div>
+	<div id="info">
+		<span id="selected-name">none</span>
+		<button id="delete-btn" style="display:none;">delete</button>
+	</div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+	<script type="importmap">
+		{
+			"imports": {
+				"three": "https://unpkg.com/three@0.128.0/build/three.module.js",
+				"three/addons/": "https://unpkg.com/three@0.128.0/examples/jsm/"
+			}
+		}
+	</script>
 
-<script>
-// UI elements
-const myIdEl = document.getElementById('my-id')
-const userCountEl = document.getElementById('user-count')
-const userListEl = document.getElementById('user-list')
-const statusEl = document.getElementById('status')
+	<script type="module">
+		import * as THREE from 'three';
+		import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+		import { DragControls } from 'three/addons/controls/DragControls.js';
 
-// Generate a random ID
-const myId = Math.random().toString(36).substring(2, 8)
-myIdEl.textContent = myId
+		// --- setup ---
+		const scene = new THREE.Scene();
+		scene.background = new THREE.Color(0x111122);
+		const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 1000);
+		camera.position.set(10, 8, 10);
+		const renderer = new THREE.WebGLRenderer({ antialias: true });
+		renderer.setSize(window.innerWidth, window.innerHeight);
+		renderer.shadowMap.enabled = true;
+		document.body.appendChild(renderer.domElement);
 
-// Three.js setup
-const scene = new THREE.Scene()
-scene.background = new THREE.Color(0x111122)
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000)
-const renderer = new THREE.WebGLRenderer()
-renderer.setSize(window.innerWidth, window.innerHeight)
-document.body.appendChild(renderer.domElement)
+		const orbit = new OrbitControls(camera, renderer.domElement);
+		orbit.enableDamping = true;
+		orbit.maxPolarAngle = Math.PI/2;
 
-const controls = new THREE.OrbitControls(camera, renderer.domElement)
-camera.position.set(5, 5, 5)
-controls.enableDamping = true
+		// --- lights ---
+		const ambient = new THREE.AmbientLight(0x404060);
+		scene.add(ambient);
+		const light = new THREE.DirectionalLight(0xffffff, 1);
+		light.position.set(5, 10, 7);
+		light.castShadow = true;
+		light.shadow.mapSize.width = 1024;
+		light.shadow.mapSize.height = 1024;
+		scene.add(light);
 
-const gridHelper = new THREE.GridHelper(10, 20, 0x8888ff, 0x333344)
-scene.add(gridHelper)
+		// --- ground ---
+		const grid = new THREE.GridHelper(20, 20, 0xff6600, 0x333344);
+		grid.position.y = 0;
+		scene.add(grid);
 
-const geometry = new THREE.BoxGeometry(1, 1, 1)
-const material = new THREE.MeshStandardMaterial({ color: Math.random() * 0xffffff })
-const cube = new THREE.Mesh(geometry, material)
-cube.position.set(Math.random() * 4 - 2, 0.5, Math.random() * 4 - 2)
-scene.add(cube)
+		// --- state ---
+		const objects = [];
+		const group = new THREE.Group();
+		scene.add(group);
+		
+		let selected = null;
+		const myId = Math.random().toString(36).substring(2, 8);
+		const otherCubes = new Map();
+		const users = new Map();
 
-const light = new THREE.AmbientLight(0x404060)
-scene.add(light)
-const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8)
-directionalLight.position.set(1, 2, 1)
-scene.add(directionalLight)
+		// --- ui elements ---
+		document.getElementById('selected-name').textContent = myId;
+		const userCountEl = document.getElementById('user-count');
+		const userListEl = document.getElementById('user-list');
+		const deleteBtn = document.getElementById('delete-btn');
 
-// Other users
-const otherCubes = new Map()
-const users = new Map()
+		// --- websocket ---
+		const ws = new WebSocket('wss://kanyaga.onrender.com');
+		ws.onopen = () => {
+			ws.send(JSON.stringify({
+				type: 'join',
+				id: myId,
+				color: 0xff6600
+			}));
+		};
+		ws.onmessage = (e) => {
+			const data = JSON.parse(e.data);
+			if (data.type === 'users') {
+				data.users.forEach(id => {
+					if (id !== myId && !users.has(id)) users.set(id, { lastSeen: Date.now() });
+				});
+				updateUserList();
+			} else if (data.type === 'join') {
+				if (data.id !== myId && !users.has(data.id)) {
+					users.set(data.id, { lastSeen: Date.now() });
+					updateUserList();
+				}
+			} else if (data.id && data.id !== myId) {
+				let obj = otherCubes.get(data.id);
+				if (!obj && data.type === 'add') {
+					let geom;
+					if (data.shape === 'sphere') geom = new THREE.SphereGeometry(0.6, 32, 16);
+					else if (data.shape === 'cone') geom = new THREE.ConeGeometry(0.6, 1.2, 32);
+					else geom = new THREE.BoxGeometry(1, 1, 1);
+					
+					const mat = new THREE.MeshStandardMaterial({ color: data.color });
+					obj = new THREE.Mesh(geom, mat);
+					obj.castShadow = true;
+					obj.receiveShadow = true;
+					obj.position.set(data.x, data.y, data.z);
+					scene.add(obj);
+					otherCubes.set(data.id, obj);
+					users.set(data.id, { color: data.color, lastSeen: Date.now() });
+				} else if (obj) {
+					obj.position.set(data.x, data.y, data.z);
+					users.get(data.id).lastSeen = Date.now();
+				}
+				updateUserList();
+			}
+		};
 
-// Connect to YOUR Render server
-statusEl.textContent = 'connecting...'
-// CHANGE THIS URL to your actual Render app URL
-const ws = new WebSocket('wss://kanyaga.onrender.com/')
+		// --- local object management ---
+		function addObject(shape) {
+			let geom;
+			if (shape === 'sphere') geom = new THREE.SphereGeometry(0.6, 32, 16);
+			else if (shape === 'cone') geom = new THREE.ConeGeometry(0.6, 1.2, 32);
+			else geom = new THREE.BoxGeometry(1, 1, 1);
+			
+			const color = Math.random() * 0xffffff;
+			const mat = new THREE.MeshStandardMaterial({ color: color });
+			const obj = new THREE.Mesh(geom, mat);
+			obj.castShadow = true;
+			obj.receiveShadow = true;
+			obj.position.set(Math.random()*6-3, 0.6, Math.random()*6-3);
+			obj.userData.shape = shape;
+			
+			objects.push(obj);
+			group.add(obj);
+			
+			// add selection outline
+			const outline = obj.clone();
+			outline.material = new THREE.MeshBasicMaterial({ color: 0x00ccff, side: THREE.BackSide, transparent: true, opacity: 0.5 });
+			outline.scale.set(1.1, 1.1, 1.1);
+			obj.add(outline);
+			outline.visible = false;
+			obj.userData.outline = outline;
+			
+			ws.send(JSON.stringify({
+				type: 'add',
+				id: myId,
+				shape: shape,
+				color: color,
+				x: obj.position.x,
+				y: obj.position.y,
+				z: obj.position.z
+			}));
+		}
 
-ws.onopen = () => {
-    statusEl.textContent = 'connected to server'
-    // Announce ourselves
-    ws.send(JSON.stringify({
-        type: 'join',
-        id: myId,
-        color: material.color.getHex(),
-        x: cube.position.x,
-        y: cube.position.y,
-        z: cube.position.z
-    }))
-}
+		document.getElementById('spherebtn').onclick = () => addObject('sphere');
+		document.getElementById('boxbtn').onclick = () => addObject('box');
+		document.getElementById('conebtn').onclick = () => addObject('cone');
 
-ws.onmessage = (event) => {
-    const data = JSON.parse(event.data)
-    
-    if (data.type === 'users') {
-        // List of existing users
-        data.users.forEach(id => {
-            if (id !== myId && !users.has(id)) {
-                users.set(id, { color: 0xffffff, lastSeen: Date.now() })
-            }
-        })
-        updateUserList()
-    }
-    else if (data.type === 'join') {
-        // New user joined
-        if (data.id !== myId && !users.has(data.id)) {
-            users.set(data.id, { color: data.color, lastSeen: Date.now() })
-            statusEl.textContent = 'user joined: ' + data.id.substr(0,4)
-            updateUserList()
-        }
-    }
-    else if (data.id && data.id !== myId) {
-        // Position update
-        let otherCube = otherCubes.get(data.id)
-        if (!otherCube) {
-            otherCube = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: data.color }))
-            scene.add(otherCube)
-            otherCubes.set(data.id, otherCube)
-            users.set(data.id, { color: data.color, lastSeen: Date.now() })
-            updateUserList()
-            statusEl.textContent = 'seeing user: ' + data.id.substr(0,4)
-        }
-        otherCube.position.set(data.x, data.y, data.z)
-        if (users.has(data.id)) {
-            users.get(data.id).lastSeen = Date.now()
-        }
-    }
-}
+		// --- drag controls ---
+		const drag = new DragControls(objects, camera, renderer.domElement);
+		drag.addEventListener('dragstart', (e) => {
+			orbit.enabled = false;
+			selected = e.object;
+			if (selected.userData.outline) selected.userData.outline.visible = true;
+			document.getElementById('selected-name').textContent = 'selected';
+			deleteBtn.style.display = 'inline-block';
+		});
+		drag.addEventListener('drag', (e) => {
+			e.object.position.y = 0.6;
+			ws.send(JSON.stringify({
+				id: myId,
+				x: e.object.position.x,
+				y: e.object.position.y,
+				z: e.object.position.z
+			}));
+		});
+		drag.addEventListener('dragend', () => {
+			orbit.enabled = true;
+			if (selected && selected.userData.outline) selected.userData.outline.visible = false;
+		});
 
-ws.onclose = () => {
-    statusEl.textContent = 'disconnected - refresh page'
-}
+		deleteBtn.onclick = () => {
+			if (selected) {
+				const idx = objects.indexOf(selected);
+				if (idx > -1) objects.splice(idx, 1);
+				group.remove(selected);
+				selected = null;
+				document.getElementById('selected-name').textContent = 'none';
+				deleteBtn.style.display = 'none';
+			}
+		};
 
-ws.onerror = (err) => {
-    statusEl.textContent = 'connection error'
-    console.error(err)
-}
+		// --- user list ---
+		function updateUserList() {
+			const now = Date.now();
+			users.forEach((user, id) => {
+				if (now - user.lastSeen > 5000) {
+					users.delete(id);
+					const obj = otherCubes.get(id);
+					if (obj) scene.remove(obj);
+					otherCubes.delete(id);
+				}
+			});
+			userCountEl.textContent = users.size;
+			let html = '';
+			users.forEach((user, id) => {
+				html += `<div style="color: #${(user.color || 0x00ccff).toString(16).padStart(6,'0')}">${id.substr(0,4)}</div>`;
+			});
+			userListEl.innerHTML = html;
+		}
 
-function updateUserList() {
-    // Clean up stale users (not seen for 5 seconds)
-    const now = Date.now()
-    users.forEach((user, id) => {
-        if (now - user.lastSeen > 5000) {
-            users.delete(id)
-            const cube = otherCubes.get(id)
-            if (cube) {
-                scene.remove(cube)
-                otherCubes.delete(id)
-            }
-        }
-    })
-    
-    userCountEl.textContent = users.size
-    
-    let listHtml = ''
-    users.forEach((user, id) => {
-        const shortId = id.substr(0, 6)
-        const color = user.color || 0xffffff
-        listHtml += `<div style="color: #${color.toString(16).padStart(6, '0')}">● ${shortId}</div>`
-    })
-    userListEl.innerHTML = listHtml || '<div style="color:#666">no other users</div>'
-}
+		// --- broadcast position ---
+		setInterval(() => {
+			if (ws.readyState === WebSocket.OPEN) {
+				objects.forEach(obj => {
+					ws.send(JSON.stringify({
+						id: myId,
+						x: obj.position.x,
+						y: obj.position.y,
+						z: obj.position.z
+					}));
+				});
+			}
+			updateUserList();
+		}, 100);
 
-// Broadcast position
-setInterval(() => {
-    if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-            id: myId,
-            color: material.color.getHex(),
-            x: cube.position.x,
-            y: cube.position.y,
-            z: cube.position.z
-        }))
-    }
-    updateUserList() // Clean up stale users
-}, 100)
+		// --- resize ---
+		window.addEventListener('resize', () => {
+			camera.aspect = window.innerWidth / window.innerHeight;
+			camera.updateProjectionMatrix();
+			renderer.setSize(window.innerWidth, window.innerHeight);
+		});
 
-// Keyboard controls
-document.addEventListener("keydown", (e) => {
-    const speed = 0.2
-    if (e.key === "ArrowLeft") cube.position.x -= speed
-    if (e.key === "ArrowRight") cube.position.x += speed
-    if (e.key === "ArrowUp") cube.position.z -= speed
-    if (e.key === "ArrowDown") cube.position.z += speed
-    if (e.key === "PageUp") cube.position.y += speed
-    if (e.key === "PageDown") cube.position.y -= speed
-})
-
-// Animation
-function animate() {
-    requestAnimationFrame(animate)
-    controls.update()
-    renderer.render(scene, camera)
-}
-animate()
-
-// Resize handler
-window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight
-    camera.updateProjectionMatrix()
-    renderer.setSize(window.innerWidth, window.innerHeight)
-})
-</script>
+		// --- animate ---
+		function animate() {
+			requestAnimationFrame(animate);
+			orbit.update();
+			renderer.render(scene, camera);
+		}
+		animate();
+	</script>
 </body>
 </html>
