@@ -3,10 +3,10 @@
 <head>
     <meta charset="utf-8">
     <title>webrtc cubes</title>
-<style>
+    <style>
       body {padding: 0; margin: 0; overflow: hidden; background: #111; }
-</style>
-      </head>
+  </style>
+</head>
 <body>
 <div id="info" style="position:absolute; top:10px; left:10px; color:white; background:rgba(0,0,0,0.7); padding:10px; font-family:monospace; z-index:1000; border-radius:5px;">
     <div>My ID: <span id="my-id">-</span></div>
@@ -61,15 +61,18 @@ scene.add(directionalLight)
 const otherCubes = new Map()
 const users = new Map()
 
-// Connect to signaling server (public test server)
+// Connect to working public server
 statusEl.textContent = 'connecting...'
-const socket = io('https://socket-io-server-demo.herokuapp.com/', {
+const socket = io('wss://websocket-demo.onrender.com/', {
+    path: '/socket.io/',
     transports: ['websocket'],
-    reconnectionAttempts: 3
+    reconnection: true,
+    reconnectionAttempts: 5,
+    timeout: 10000
 })
 
 socket.on('connect', () => {
-    statusEl.textContent = 'connected to signaling'
+    statusEl.textContent = 'connected!'
     socket.emit('join-room', 'bryce-room', myId)
     
     // Announce ourselves
@@ -80,6 +83,11 @@ socket.on('connect', () => {
         y: cube.position.y,
         z: cube.position.z
     })
+})
+
+socket.on('connect_error', (err) => {
+    statusEl.textContent = 'connection failed, retrying...'
+    console.log(err)
 })
 
 socket.on('user-joined', (userId) => {
@@ -99,7 +107,6 @@ socket.on('room-users', (usersList) => {
 socket.on('user-move', (data) => {
     if (data.id === myId) return
     
-    // Update or create cube
     let otherCube = otherCubes.get(data.id)
     if (!otherCube) {
         otherCube = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: data.color }))
@@ -145,13 +152,15 @@ function updateUserList() {
 
 // Broadcast position
 setInterval(() => {
-    socket.emit('user-move', {
-        id: myId,
-        color: material.color.getHex(),
-        x: cube.position.x,
-        y: cube.position.y,
-        z: cube.position.z
-    })
+    if (socket.connected) {
+        socket.emit('user-move', {
+            id: myId,
+            color: material.color.getHex(),
+            x: cube.position.x,
+            y: cube.position.y,
+            z: cube.position.z
+        })
+    }
 }, 100)
 
 // Keyboard controls
