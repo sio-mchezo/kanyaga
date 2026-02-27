@@ -3,25 +3,13 @@
 <head>
     <meta charset="utf-8">
     <title>webrtc cubes</title>
-    <style>
-      body { margin: 0; overflow: hidden; background: #111; }
-      #info {
-        position: absolute;
-        top: 20px;
-        left: 20px;
-        color: #7aff7a;
-        font-family: monospace;
-        background: rgba(0,0,0,0.7);
-        padding: 10px;
-        border-radius: 5px;
-        z-index: 100;
-      }
-    </style>
 </head>
 <body>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
 <script>
+// Your existing Three.js setup here...
 const scene = new THREE.Scene()
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000)
 const renderer = new THREE.WebGLRenderer()
@@ -48,31 +36,46 @@ directionalLight.position.set(1, 2, 1)
 scene.add(directionalLight)
 
 const otherCubes = new Map()
-const id = Math.random().toString(36)
+const peer = new Peer()
+const conns = []
 
-const channel = new BroadcastChannel('cubes')
-
-channel.onmessage = (e) => {
-    const data = e.data
-    if (data.id === id) return
-    
-    let otherCube = otherCubes.get(data.id)
-    if (!otherCube) {
-        otherCube = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: data.color }))
-        scene.add(otherCube)
-        otherCubes.set(data.id, otherCube)
+peer.on('open', (id) => {
+    console.log('My peer ID is: ' + id)
+    // Connect to a fixed room - in production, you'd want a room system
+    if (id !== 'room') {
+        const conn = peer.connect('room')
+        setupConnection(conn)
     }
-    otherCube.position.set(data.x, data.y, data.z)
+})
+
+peer.on('connection', (conn) => {
+    setupConnection(conn)
+})
+
+function setupConnection(conn) {
+    conns.push(conn)
+    conn.on('data', (data) => {
+        if (data.id === peer.id) return
+        
+        let otherCube = otherCubes.get(data.id)
+        if (!otherCube) {
+            otherCube = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: data.color }))
+            scene.add(otherCube)
+            otherCubes.set(data.id, otherCube)
+        }
+        otherCube.position.set(data.x, data.y, data.z)
+    })
 }
 
 setInterval(() => {
-    channel.postMessage({
-        type: "position",
-        id: id,
-        color: material.color.getHex(),
-        x: cube.position.x,
-        y: cube.position.y,
-        z: cube.position.z
+    conns.forEach(conn => {
+        conn.send({
+            id: peer.id,
+            color: material.color.getHex(),
+            x: cube.position.x,
+            y: cube.position.y,
+            z: cube.position.z
+        })
     })
 }, 50)
 
