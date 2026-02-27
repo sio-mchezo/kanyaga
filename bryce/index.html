@@ -2,7 +2,10 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>webrtc cubes</title>
+    <title>collaborative cubes</title>
+    <style>
+      body {padding: 0; margin: 0; overflow: hidden; background: #111; }
+  </style>
 </head>
 <body>
 <div id="info" style="position:absolute; top:10px; left:10px; color:white; background:rgba(0,0,0,0.7); padding:10px; font-family:monospace; z-index:1000; border-radius:5px;">
@@ -14,7 +17,6 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-<script src="https://unpkg.com/simple-peer@9.11.1/simplepeer.min.js"></script>
 
 <script>
 // UI elements
@@ -57,119 +59,86 @@ scene.add(directionalLight)
 // Other users
 const otherCubes = new Map()
 const users = new Map()
-const peers = []
 
-// Use public signaling server
+// Connect to YOUR Render server
 statusEl.textContent = 'connecting...'
-const signalingServer = new WebSocket('wss://https://kanyaga.onrender.com/')
+// CHANGE THIS URL to your actual Render app URL
+const ws = new WebSocket('wss://your-render-app-name.onrender.com')
 
-signalingServer.onopen = () => {
-    statusEl.textContent = 'connected to signaling'
-    signalingServer.send(JSON.stringify({
+ws.onopen = () => {
+    statusEl.textContent = 'connected to server'
+    // Announce ourselves
+    ws.send(JSON.stringify({
         type: 'join',
-        room: 'bryce-room',
-        id: myId
+        id: myId,
+        color: material.color.getHex(),
+        x: cube.position.x,
+        y: cube.position.y,
+        z: cube.position.z
     }))
 }
 
-signalingServer.onmessage = (msg) => {
-    const data = JSON.parse(msg.data)
-    
-    if (data.type === 'signal' && data.target !== myId) {
-        // Find or create peer
-        let peer = peers.find(p => p.id === data.source)
-        if (!peer && data.source !== myId) {
-            peer = {
-                id: data.source,
-                connection: new SimplePeer({
-                    initiator: false,
-                    trickle: false
-                })
-            }
-            
-            peer.connection.on('signal', (signal) => {
-                signalingServer.send(JSON.stringify({
-                    type: 'signal',
-                    source: myId,
-                    target: data.source,
-                    signal: signal
-                }))
-            })
-            
-            peer.connection.on('data', (chunk) => {
-                const data = JSON.parse(chunk)
-                if (data.id === myId) return
-                
-                let otherCube = otherCubes.get(data.id)
-                if (!otherCube) {
-                    otherCube = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: data.color }))
-                    scene.add(otherCube)
-                    otherCubes.set(data.id, otherCube)
-                    users.set(data.id, { color: data.color, lastSeen: Date.now() })
-                    updateUserList()
-                }
-                otherCube.position.set(data.x, data.y, data.z)
-            })
-            
-            peer.connection.on('connect', () => {
-                statusEl.textContent = 'peer connected: ' + data.source.substr(0,4)
-            })
-            
-            peers.push(peer)
-        }
-        
-        if (peer) {
-            peer.connection.signal(data.signal)
-        }
-    }
+ws.onmessage = (event) => {
+    const data = JSON.parse(event.data)
     
     if (data.type === 'users') {
-        data.users.forEach(userId => {
-            if (userId !== myId && !peers.find(p => p.id === userId)) {
-                // Create initiator peer
-                const peer = {
-                    id: userId,
-                    connection: new SimplePeer({
-                        initiator: true,
-                        trickle: false
-                    })
-                }
-                
-                peer.connection.on('signal', (signal) => {
-                    signalingServer.send(JSON.stringify({
-                        type: 'signal',
-                        source: myId,
-                        target: userId,
-                        signal: signal
-                    }))
-                })
-                
-                peer.connection.on('data', (chunk) => {
-                    const data = JSON.parse(chunk)
-                    if (data.id === myId) return
-                    
-                    let otherCube = otherCubes.get(data.id)
-                    if (!otherCube) {
-                        otherCube = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: data.color }))
-                        scene.add(otherCube)
-                        otherCubes.set(data.id, otherCube)
-                        users.set(data.id, { color: data.color, lastSeen: Date.now() })
-                        updateUserList()
-                    }
-                    otherCube.position.set(data.x, data.y, data.z)
-                })
-                
-                peer.connection.on('connect', () => {
-                    statusEl.textContent = 'peer connected: ' + userId.substr(0,4)
-                })
-                
-                peers.push(peer)
+        // List of existing users
+        data.users.forEach(id => {
+            if (id !== myId && !users.has(id)) {
+                users.set(id, { color: 0xffffff, lastSeen: Date.now() })
             }
         })
+        updateUserList()
+    }
+    else if (data.type === 'join') {
+        // New user joined
+        if (data.id !== myId && !users.has(data.id)) {
+            users.set(data.id, { color: data.color, lastSeen: Date.now() })
+            statusEl.textContent = 'user joined: ' + data.id.substr(0,4)
+            updateUserList()
+        }
+    }
+    else if (data.id && data.id !== myId) {
+        // Position update
+        let otherCube = otherCubes.get(data.id)
+        if (!otherCube) {
+            otherCube = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: data.color }))
+            scene.add(otherCube)
+            otherCubes.set(data.id, otherCube)
+            users.set(data.id, { color: data.color, lastSeen: Date.now() })
+            updateUserList()
+            statusEl.textContent = 'seeing user: ' + data.id.substr(0,4)
+        }
+        otherCube.position.set(data.x, data.y, data.z)
+        if (users.has(data.id)) {
+            users.get(data.id).lastSeen = Date.now()
+        }
     }
 }
 
+ws.onclose = () => {
+    statusEl.textContent = 'disconnected - refresh page'
+}
+
+ws.onerror = (err) => {
+    statusEl.textContent = 'connection error'
+    console.error(err)
+}
+
 function updateUserList() {
+    // Clean up stale users (not seen for 5 seconds)
+    const now = Date.now()
+    users.forEach((user, id) => {
+        if (now - user.lastSeen > 5000) {
+            users.delete(id)
+            const cube = otherCubes.get(id)
+            if (cube) {
+                scene.remove(cube)
+                otherCubes.delete(id)
+            }
+        }
+    })
+    
     userCountEl.textContent = users.size
     
     let listHtml = ''
@@ -183,19 +152,16 @@ function updateUserList() {
 
 // Broadcast position
 setInterval(() => {
-    const message = JSON.stringify({
-        id: myId,
-        color: material.color.getHex(),
-        x: cube.position.x,
-        y: cube.position.y,
-        z: cube.position.z
-    })
-    
-    peers.forEach(peer => {
-        if (peer.connection && peer.connection.connected) {
-            peer.connection.send(message)
-        }
-    })
+    if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+            id: myId,
+            color: material.color.getHex(),
+            x: cube.position.x,
+            y: cube.position.y,
+            z: cube.position.z
+        }))
+    }
+    updateUserList() // Clean up stale users
 }, 100)
 
 // Keyboard controls
