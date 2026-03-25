@@ -1,0 +1,795 @@
+
+
+<html>
+<head>
+  <title>star wars</title>
+  <meta name="viewport" content="width=device-width, user-scalable=no" />
+  <style>
+  @font-face {
+    font-family: 'glass_tty_vt220medium';
+    src: url('assets/glass_tty_vt220-webfont.woff2') format('woff2'), url('assets/glass_tty_vt220-webfont.woff') format('woff');
+    font-weight: normal;
+    font-style: normal;
+}
+body, button {    font-family: 'glass_tty_vt220medium', monospace;}
+
+
+  body { margin: 0; 
+    color: #fff;
+    font-family: 'glass_tty_vt220medium', monospace;
+    background-color: #000000;
+    background-image:
+    radial-gradient(
+      circle at center center,
+      #000000,
+      #111111 50%
+      );
+  }
+  #but {display: block; width: 50px; height: 50px; border-radius: 100%; outline: none; border: none; background: transparent; position: absolute; bottom: 0; left:0; right: 0; margin: 10px auto; color: #fff;
+    animation: pulse 2s infinite; opacity: 0.7; font-size: 1em;}
+    #but.on {border: rgba(255,255,255,0.1) 1px solid; color: #fff; animation: none;}
+    #but:hover {color: red; cursor: pointer; border: red 1px solid; }
+    #but.on:hover {color: red;}
+
+    @keyframes pulse {
+      0% {
+        border: red 1px solid;
+      }
+
+      70% {
+        border: black 1px solid;  }
+
+        100% {
+          border: red 1px solid;  }
+        }
+        #message {display: block; text-align: center;
+          position: absolute; width: 100%; user-select:none;}
+      </style>
+    </head>
+    <body>
+      <p id="message">press go</p>
+      <button id="but">GO</button>
+
+    <canvas id="hitcanvas" width="128" height="128" style="position: absolute; top:10px; right:10px; z-index: 4; opacity: 0.5; display: none;"></canvas>
+
+
+      <script src="js/three.min.js"></script>
+      <script type="text/javascript" src="js/tween.js"></script>
+      <!-- <script type="text/javascript" src="js/OrbitControls.min.js"></script> -->
+
+
+
+      <script>
+// hitcanvas
+var hitcanvas = document.getElementById("hitcanvas");
+var ctx = hitcanvas.getContext("2d");
+var hitimg = new Image();
+hitimg.src = 'assets/hitcanvas.png';
+ctx.fillStyle = "black";
+ctx.fillRect(0, 0, 128, 128);
+
+ctx.beginPath();
+ctx.arc(40, 40, 20, 0, 2 * Math.PI);
+ctx.fillStyle = "red";
+ctx.fill();
+ctx.beginPath();
+ctx.arc(70, 90, 30, 0, 2 * Math.PI);
+ctx.fillStyle = "red";
+ctx.fill();
+
+//
+function changeCanvas() {
+// make circle of black for ships paint brush
+ctx.beginPath();
+ctx.arc(xv, xu, 4, 0, 2 * Math.PI);
+ctx.fillStyle = "black";
+ctx.fill();
+// update texture
+shootplane.material.map.needsUpdate = true;
+}
+
+
+function resizePlane(e) {
+    const w = innerWidth;
+    const h = innerHeight;
+
+    camera.aspect = w / h;
+    renderer.setSize(w, h);
+
+    const dist = camera.position.z - plane.position.z;
+    const height = 1;
+    camera.fov = 2 * (180 / Math.PI) * Math.atan(height / (2 * dist));
+
+    if (w / h > 1) {
+      plane.scale.x = plane.scale.y = 1.0 * w / h;
+    }
+    
+    camera.updateProjectionMatrix();
+  }
+
+
+  var xu = 115;
+  var xv = 64;
+      var timerID;
+      var counter = 0;
+      // var pressHoldEvent = new CustomEvent("pressHold");
+      var pressHoldDuration = 60;
+
+      var freqdiv = 2;
+      var gobtn = document.getElementById("but");
+      gobtn.addEventListener("click",xbutton, false );
+      var xspeed = 0;
+      var stopwarp = true;
+      var shooting = false;
+      var shootswitch = false;
+      var date = new THREE.Clock();
+      var scene = new THREE.Scene();
+      var collidableMeshList = [];
+
+      var camera = new THREE.PerspectiveCamera( 75, window.innerWidth/window.innerHeight, 0.8, 1000 );
+      var renderer = new THREE.WebGLRenderer( { alpha: true, antialias: true } );
+      renderer.setSize( window.innerWidth, window.innerHeight );
+      document.body.appendChild( renderer.domElement );
+
+      scene.position.set(0,0,0);
+
+// lights
+var light = new THREE.PointLight( 0xffffff, 1, 40 );
+light.position.set( 10, 10, 10 );
+scene.add( light );
+
+// camera
+camera.position.x = 0;
+camera.position.y = 0;
+camera.position.z = 8;
+camera.lookAt(0,0,0);
+
+// var controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+// ambient
+var light = new THREE.AmbientLight( 0x666666 );
+light.intensity = 0.3;
+scene.add( light );
+
+// resize
+window.addEventListener( 'resize', onWindowResize, false );
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize( window.innerWidth, window.innerHeight );
+}
+
+// groups
+scenegroup = new THREE.Group();
+scene.add( scenegroup );
+scenegroup.rotation.x = Math.PI/2;
+
+
+backgroundgroup = new THREE.Group();
+scenegroup.add( backgroundgroup );
+
+
+rocks = new THREE.Group();
+backgroundgroup.add( rocks );
+rocks.rotation.z = Math.PI/2;
+
+stargroup = new THREE.Group();
+backgroundgroup.add( stargroup );
+
+
+selection = new THREE.Group();
+scene.add( selection );
+selection.scale.set(2,2,2)
+selection.position.y = -2.8;
+
+cursor = new THREE.Group();
+scene.add( cursor );
+cursor.position.y = -2.8;
+
+// // cursor paintbrush
+// var geometry = new THREE.BoxBufferGeometry( 1, 1, 1 );
+// var material = new THREE.MeshBasicMaterial( {color: 0x00ff00} );
+// var cube = new THREE.Mesh( geometry, material );
+// cube.position.z = -40;
+// cursor.add( cube );
+
+
+//
+fogColor = new THREE.Color(0x000000);
+scene.background = fogColor;
+scene.fog = new THREE.Fog(fogColor, 0.0025, 1000);
+
+
+
+// update touch
+let updateTouchCoordinates = function(evt) {
+  const touches = evt.targetTouches;
+  for (let i = 0; i < touches.length; i++) {
+    setcontrol(touches[i].pageX/freqdiv, touches[i].pageY/freqdiv)
+  }
+
+  mouse.x = ( evt.touches[0].pageX / window.innerWidth ) * 2 - 1;
+  mouse.y = - ( evt.touches[0].pageY / window.innerHeight ) * 2 + 1;
+  raycaster.setFromCamera( mouse, camera );
+  let intersects = raycaster.intersectObject( plane );
+  if (intersects.length > 0) { 
+    movehero(intersects[ 0 ].point.x, intersects[ 0 ].point.y);
+     }
+};
+
+
+// update mouse
+let updateMouseCoordinates = function(evt) {
+  evt.preventDefault();
+  if (stopwarp) {return}
+    setcontrol(evt.offsetX/freqdiv, evt.offsetY/freqdiv)
+
+//
+mouse.x = ( evt.clientX / window.innerWidth ) * 2 - 1;
+mouse.y = - ( evt.clientY / window.innerHeight ) * 2 + 1;
+raycaster.setFromCamera( mouse, camera );
+let intersects = raycaster.intersectObject( plane );
+if (intersects.length > 0) { 
+  movehero(intersects[ 0 ].point.x, intersects[ 0 ].point.y);
+    xv = Math.floor(intersects[0].uv.x*128);
+    xu = -(Math.floor(intersects[0].uv.y*128)-127);
+   }
+};
+
+// convert position to sound
+function setcontrol(x, y) {
+  if (typeof right_osc != "undefined") {
+    right_osc.frequency.value = x/2;
+    left_osc.frequency.value = x + y/2;
+
+// console.log(x,y)
+// xu = x * (window.innerWidth/128);
+// xv = y * (window.innerHeight/128);
+// xu = y/1.5;
+// xv = x/1.5;
+// plane.material.map.needsUpdate = true;
+  }
+}
+
+// move ship to position x y
+function movehero(x, y) {
+  cursor.position.x = x;
+  cursor.position.y = y;
+  resetbullet();
+}
+
+// ship touch/mouse controls
+window.addEventListener('touchstart', updateTouchCoordinates);
+window.addEventListener('touchmove', updateTouchCoordinates);
+window.addEventListener( 'mousemove', updateMouseCoordinates, false );
+//
+window.addEventListener("mousedown", pressingDown, false);
+window.addEventListener("mouseup", notPressingDown, false);
+window.addEventListener("touchstart", pressingDown, false);
+window.addEventListener("touchend", notPressingDown, false);
+
+
+
+// Start timer
+function pressingDown(e) {
+requestAnimationFrame(timer);
+e.preventDefault();
+}
+
+
+// Stop timer
+function notPressingDown(e) {
+cancelAnimationFrame(timerID);
+counter = 0;
+shooting = false;
+}
+
+// run timer
+function timer() {  
+  if (!shootswitch) {return}
+
+  flash.position.z = 0;
+  if (counter < pressHoldDuration) {
+    if (!stopwarp) {
+    timerID = requestAnimationFrame(timer);
+    counter++;
+    flash.scale.x = flash.scale.y = flash.scale.z =  counter/2;
+  }
+
+  } else {
+    shooting = true;
+    shootswitch = false;
+    // window.dispatchEvent(pressHoldEvent);
+    shoot();
+  }
+}
+
+
+// shoot
+var shoot = (function() {
+    return function(argument) {
+        if (!shootswitch) {
+            // do once
+
+
+  new TWEEN.Tween( flash.position ).to( {x: 0, y: 0, z: -10}, 300 )
+    .onComplete(function() {
+    shootswitch = true;
+    flash.position.z = 0;
+    flash.scale.x = flash.scale.y = flash.scale.z =  1;
+if (!shooting) {return}
+        new Audio("assets/shoot2.wav").play();
+        shootswitch = false;
+        // blast circle
+        ctx.beginPath();
+        ctx.arc(xv, xu, 20, 0, 2 * Math.PI);
+        ctx.fillStyle = "black";
+        ctx.fill();
+            }).start();
+        
+        }
+    };
+})();
+
+
+
+//raycaster
+let raycaster = new THREE.Raycaster();
+let mouse = new THREE.Vector2();
+let hittexture = new THREE.Texture(hitcanvas);
+hittexture.magFilter = THREE.NearestFilter;
+hittexture.minFilter = THREE.LinearMipMapLinearFilter;
+
+// grid
+// var size = 14;
+// var divisions = 1;
+// var gridHelper = new THREE.GridHelper(size, divisions);
+// backgroundgroup.add(gridHelper)
+// //
+// var bkgrid = gridHelper.clone();
+// bkgrid.position.y = -80;
+// bkgrid.scale.set(6,6,6);
+// backgroundgroup.add( bkgrid );
+
+
+
+//plane geometry
+let plgeometry = new THREE.PlaneBufferGeometry( 14, 14, 1 );
+
+//plane material
+let plmaterial = new THREE.MeshBasicMaterial();
+
+//plane object3D
+let plane = new THREE.Mesh( plgeometry, plmaterial );
+plane.name = 'plane';
+plane.rotation.set(-Math.PI/2,0,0);
+plane.name = 'plane';
+scenegroup.add( plane );
+plane.material.depthWrite = false;
+plane.material.colorWrite = false;
+
+
+// shooting plane
+let spgeometry = new THREE.PlaneBufferGeometry( 80, 80, 1 );
+shootplane = new THREE.Mesh( spgeometry, new THREE.MeshBasicMaterial( { map: hittexture,
+  blending:       THREE.AdditiveBlending,
+  transparent:    true
+} ) );
+shootplane.position.z = -150;
+plane.add( shootplane );
+
+
+
+// hero
+let bgeometry = new THREE.BoxGeometry( 0.8, 0.02, 0.1 );
+let mmaterial = new THREE.MeshLambertMaterial( { color: 0xff0000 } );
+wing1 = new THREE.Mesh( bgeometry, mmaterial );
+selection.add( wing1 );
+//
+wing2 = new THREE.Mesh( bgeometry, mmaterial );
+selection.add( wing2 );
+//
+var cgeometry = new THREE.ConeGeometry( 0.1, 2, 3 );
+var cmaterial = new THREE.MeshLambertMaterial( {color: 0xff0000} );
+var cone = new THREE.Mesh( cgeometry, cmaterial );
+cone.rotation.x = -Math.PI/2;
+cone.position.z = -0.8;
+selection.add( cone );
+
+
+// trail
+var loader = new THREE.TextureLoader();
+var grad = loader.load( 'assets/wgrad.png' );
+var geometry = new THREE.CylinderBufferGeometry( 0.05, 0.05, 3, 4, 1, true );
+trmaterial = new THREE.MeshBasicMaterial( { 
+  transparent : true, opacity : 0,
+  map:grad
+} );
+mtrail = new THREE.Mesh( geometry, trmaterial );
+mtrail.name='trail';
+mtrail.position.set(0,0,3/2)
+mtrail.rotation.set(Math.PI/2,0,0)
+selection.add( mtrail );
+
+// ship light
+shiplight = new THREE.PointLight( 0xffffff, 1, 50 );
+shiplight.position.set( 0, 0, 2 );
+selection.add( shiplight );
+
+// muzzle flash
+var geometry = new THREE.SphereBufferGeometry( 0.01, 8, 8 );
+var material = new THREE.MeshBasicMaterial( {color: 0xffff00} );
+flash = new THREE.Mesh( geometry, material );
+selection.add( flash );
+// flash trail
+var bullet = mtrail.clone();
+bullet.position.z = 0.3;
+bullet.scale.set(0.2,0.2,0.2);
+flash.add( bullet );
+
+
+// reset bullet to ship
+function resetbullet() {
+shootswitch = true;
+shooting = false;
+
+flash.position.z = 0;
+flash.scale.x = flash.scale.y = flash.scale.z =  1;
+}
+
+//
+function SquareEase(a,b,t) {
+  var s = t*t;
+  return a*(1-s)+b*s;
+}
+
+
+// randomise
+function randomFloat(a, b){
+  var r =  (Math.random() * (b - a) + a);
+  return r;
+}
+
+// make single star
+function Star(material, x, y, size){
+  this.size = size;
+
+  this.obj = new THREE.Geometry();
+  this.obj.vertices.push(new THREE.Vector3(0, 0, 0));
+  this.obj.vertices.push(new THREE.Vector3(0, 0, -size));
+  this.obj = new THREE.Line(this.obj, material);
+
+  this.speed = randomFloat(1, 20);
+
+  this.refresh = function(x, y){
+    this.obj.position.z = randomFloat(0, -1000);
+    this.obj.position.x = x;
+    this.obj.position.y = y;
+  }
+  this.refresh(x, y);
+}
+
+// make/update star field
+function Starfield(size, width, height){
+  this.stars = [];
+  this.obj = new THREE.Group();
+  this.obj.rotation.x = -Math.PI/2;
+  this.size = size;
+  this.width = width;
+  this.height = height;
+  this.material = new THREE.LineBasicMaterial({color: 0xffffff});
+  this.init = function(){
+    for(var i = 0; i < this.size; i++){
+      this.stars.push(new Star(this.material, randomFloat(-this.width, this.width), randomFloat(-this.width, this.width), randomFloat(5, 100)));
+      this.obj.add(this.stars[i].obj);
+    }
+    stargroup.add(this.obj);
+  }
+  this.init();
+  this.update = function(){
+    if (!stopwarp) {
+      for(var i = 0; i < this.size; i++){
+        if(this.stars[i].obj.position.z > 50){
+          this.stars[i].refresh(randomFloat(-this.width, this.width), randomFloat(-this.width, this.width));
+        }
+        this.stars[i].obj.position.z += this.stars[i].speed;
+      } 
+}//if not stopwarp
+
+
+
+}// update
+}
+
+
+//
+
+// button
+function xbutton() {
+  gobtn.classList.toggle('on');
+  if (gobtn.classList != "on") {
+    stopwarp = true; 
+    squash();
+    trmaterial.opacity = 0;
+    sndstop();
+    gobtn.innerHTML = 'go';
+    countPixels();
+  } else {
+    stopwarp = false;
+    stretch();
+    trmaterial.opacity = 0.2;
+    sndplay();
+    gobtn.innerHTML = 'stop';
+  }
+
+}
+//
+
+function squash() {
+  for ( var i = 0; i < stargroup.children[0].children.length; i ++ ) {
+    new TWEEN.Tween( stargroup.children[0].children[i].scale ).to( {x: 1, y: 1, z: 0.005}, 500 ).start();
+}//for
+
+new TWEEN.Tween( wing1.rotation ).to( {x: 0, y: 0, z: 0}, 500 ).start();
+new TWEEN.Tween( wing2.rotation ).to( {x: 0, y: 0, z: 0}, 500 ).start();
+
+
+new TWEEN.Tween( shiplight.position ).to( {x: 0, y: 0, z: 90}, 500 ).start();
+
+}
+
+
+function stretch() {
+  for ( var i = 0; i < stargroup.children[0].children.length; i ++ ) {
+    new TWEEN.Tween( stargroup.children[0].children[i].scale ).to( {x: 1, y: 1, z: 1}, 500 ).start();
+}//for
+new TWEEN.Tween( wing1.rotation ).to( {x: 0, y: 0, z: 0.4}, 500 ).start();
+new TWEEN.Tween( wing2.rotation ).to( {x: 0, y: 0, z: -0.4}, 500 ).start();
+
+new TWEEN.Tween( shiplight.position ).to( {x: 0, y: 0, z: 2}, 500 ).start();
+
+}
+
+
+
+// audio start settings / vars
+var carrier_freq = 10;
+var beat_freq = 3;
+var isPlaying = false;
+var left_osc, right_osc;
+var volume = 0.1;
+
+
+
+// audio js
+var AudioContext = window.AudioContext || window.webkitAudioContext;
+var cntx = new AudioContext();
+var merger = cntx.createChannelMerger(2);
+volumeNode = cntx.createGain();
+volumeNode.gain.value = volume;
+merger.connect(volumeNode);
+volumeNode.connect(cntx.destination);
+
+
+function sndstop () {
+// engine sound
+if (typeof source !== 'undefined') {
+  source.stop(0);
+}
+
+
+// js sound
+right_osc.stop();
+
+setTimeout(function () {
+  left_osc.stop();
+}, 50);
+
+setTimeout(function () {
+  isPlaying = false;
+}, 100);
+}
+
+
+function sndplay () {
+  audioCtx = new(window.AudioContext || window.webkitAudioContext)();
+  source = audioCtx.createBufferSource();
+  getData();
+  source.start(0);
+
+// play
+left_osc = cntx.createOscillator();
+right_osc = cntx.createOscillator();
+
+right_osc.connect(merger, 0, 0);
+left_osc.connect(merger, 0, 1);
+left_osc.start();
+
+setTimeout(function () {
+  right_osc.start();
+}, 10);
+
+setTimeout(function () {
+  isPlaying = true;
+}, 20);    
+
+
+if (typeof right_osc != "undefined") {
+  right_osc.frequency.value = 2;
+  left_osc.frequency.value = 2;
+} 
+
+}
+
+
+
+
+
+function colliders() {
+  var collgeo = new THREE.SphereBufferGeometry( 15, 9, 9 );
+  var xcol = new THREE.MeshBasicMaterial( {color: 0x000000});
+//
+  var bx2 = new THREE.Mesh(collgeo, xcol);
+  bx2.position.set(-80, 50, 20);
+  rocks.add(bx2);
+  collidableMeshList.push(bx2);
+//
+  var bx3 = new THREE.Mesh(collgeo, xcol);
+  bx3.position.set(50, -30, -10);
+  rocks.add(bx3);
+  collidableMeshList.push(bx3);
+
+}
+
+
+
+
+// animate loop
+var animate = function () {
+  TWEEN.update();
+  requestAnimationFrame( animate );
+  renderer.render(scene, camera);
+  changeCanvas();
+
+
+// selection lerp position to cursor
+selection.position.x = SquareEase(cursor.position.x,selection.position.x,0.95);
+selection.position.y = SquareEase(cursor.position.y,selection.position.y,0.95);
+
+selection.rotation.x = (cursor.position.y - selection.position.y) * 0.2;
+selection.rotation.z = (cursor.position.x - selection.position.x) * 0.2;
+
+stars.update();
+
+backgroundgroup.rotation.x = -(cursor.position.y - selection.position.y) * 0.1;
+backgroundgroup.rotation.z = (cursor.position.x - selection.position.x) * 0.1; 
+
+if (stopwarp) {return}
+
+// tube material
+    tubeMaterial.map.offset.x -= 0.005;
+    tubeMaterial.needsUpdate = true;
+
+  for ( var i = 0; i < collidableMeshList.length; i ++ ) { 
+    collidableMeshList[i].position.x += 10;
+    if (collidableMeshList[i].position.x > 20) {
+      collidableMeshList[i].position.y = randomFloat(-250, 250);
+      collidableMeshList[i].position.z = randomFloat(-250, 250);
+      collidableMeshList[i].position.x = randomFloat(-450, -600);;
+    }
+  }
+
+};
+
+
+//audio
+function getData() {
+  source = audioCtx.createBufferSource();
+  request = new XMLHttpRequest();
+
+  request.open('GET', 'assets/ngin.wav', true);
+
+  request.responseType = 'arraybuffer';
+  request.onload = function() {
+    var audioData = request.response;
+
+    audioCtx.decodeAudioData(audioData, function(buffer) {
+      myBuffer = buffer;
+      songLength = buffer.duration;
+      source.buffer = myBuffer;
+      source.playbackRate.value =  0.5;
+      source.loop = true;
+
+      var gainNode = audioCtx.createGain()
+gainNode.gain.value = 0.2 // 10% volume
+gainNode.connect(audioCtx.destination)
+source.connect(gainNode)
+
+},
+
+function(e) {
+  "Error with decoding audio data" + e.error
+});
+
+  }
+
+  request.send();
+}
+
+
+function tube() {
+spacetex = new THREE.TextureLoader().load( 'assets/galaxyTexture.jpg' );  
+
+
+  var points = [];
+  var i = 0;
+  var geometry = new THREE.Geometry();
+    for (i = 0; i < 3; i += 1) {
+    points.push(new THREE.Vector3(0, 0, i*20));
+  }
+  curve = new THREE.CatmullRomCurve3(points);
+  curve.type = "catmullrom";
+
+  geometry = new THREE.Geometry();
+  geometry.vertices = curve.getPoints(2);
+  splineMesh = new THREE.Line(geometry, new THREE.LineBasicMaterial());
+
+  tubeMaterial = new THREE.MeshBasicMaterial({
+    side: THREE.BackSide,
+    map: spacetex,
+    transparent:true,
+    opacity: 0.3
+  });
+  tubeMaterial.map.wrapS = THREE.MirroredRepeatWrapping;
+
+  tubeGeometry = new THREE.TubeGeometry(curve, 10, 2.5, 30, false);
+  tubeGeometry_o = tubeGeometry.clone();
+  tubeMesh = new THREE.Mesh(tubeGeometry, tubeMaterial);
+  tubeMesh.scale.set(100,100,100)
+  tubeMesh.position.set(0,-3000,0)
+  tubeMesh.rotation.x = -Math.PI/2;
+  tubeMesh.rotation.z = Math.PI;
+  backgroundgroup.add(tubeMesh);
+}
+
+// count pixel colours in canvas
+function countPixels() {
+  var nAlive = 0;
+  var p = ctx.getImageData(0,0,128,128).data;
+  for (var y = 0, i =0 ; y < 128; y++)
+      for (var x = 0; x < 128; x++, i+=4)
+      {
+          if (p[i+0]) //a pixel
+          {
+              nAlive++;
+          }
+      }
+
+
+// message
+    document.getElementById('message').innerHTML = 'red level: '+nAlive;
+
+
+  if (nAlive<10) {
+    new Audio("assets/shoot2.wav").play();
+    document.getElementById('message').innerHTML = 'clean';
+  }
+}
+
+
+// START >>>>>>>>>>>>>>>>>>>>>>>>>>>>
+setTimeout(function () {
+tube();
+  colliders();
+  stars = new Starfield(100, 200, 200);
+  squash();
+  // resizePlane();
+  animate();
+
+}, 200);
+
+
+
+</script>
+</body>
+</html>
