@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>3D Grid Movement with Path Tracking</title>
+	<style>
+		body { margin: 0; padding: 0; overflow: hidden; background: #ccc; }
+		#container { width: 100vw; height: 100vh; }
+		#percentage {
+			position: absolute;
+			top: 20px;
+			left: 20px;
+			font-family: Arial, sans-serif;
+			font-size: 24px;
+			font-weight: bold;
+			color: white;
+			background-color: rgba(0, 0, 0, 0.7);
+			padding: 10px 15px;
+			border-radius: 5px;
+			z-index: 100;
+		}
+	</style>
+</head>
+<body>
+	<div id="container"></div>
+	<div id="percentage">0%</div>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+	<script>
+		let scene, camera, renderer, hero;
+		let targetPosition = new THREE.Vector3();
+		let moveSpeed = 0.2;
+		let gridSize = 1;
+		let keys = {};
+		let isMoving = false;
+		let canvasTexture, canvas, ctx;
+		let visitedCells = new Set();
+		let collectables = new Set();
+		let npcs = new Map();
+		
+		let levelData = null;
+		let gridBounds = null;
+		let startPosition = null;
+
+		function init() {
+			scene = new THREE.Scene();
+			camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.01, 1000);
+			camera.position.set(0, 10, 5);
+			camera.lookAt(scene.position);
+			
+			renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+			renderer.setSize(window.innerWidth, window.innerHeight);
+			document.getElementById('container').appendChild(renderer.domElement);
+
+			loadLevel();
+		}
+
+		function loadLevel() {
+			const levelImage = new Image();
+			levelImage.src = 'min.png';
+			levelImage.onload = function() {
+				processLevelImage(this);
+				setupScene();
+				animate();
+			};
+		}
+
+		function processLevelImage(image) {
+			const tempCanvas = document.createElement('canvas');
+			const tempCtx = tempCanvas.getContext('2d');
+			tempCanvas.width = image.width;
+			tempCanvas.height = image.height;
+			tempCtx.drawImage(image, 0, 0);
+			
+			const imageData = tempCtx.getImageData(0, 0, image.width, image.height);
+			levelData = {};
+			
+			gridBounds = {
+				minX: 0,
+				maxX: image.width - 1,
+				minZ: 0,
+				maxZ: image.height - 1
+			};
+			
+			for (let z = 0; z < image.height; z++) {
+				for (let x = 0; x < image.width; x++) {
+					const index = (z * image.width + x) * 4;
+					const r = imageData.data[index];
+					const g = imageData.data[index + 1];
+					const b = imageData.data[index + 2];
+					
+					const key = `${x},${z}`;
+					
+					// White = walkable (0)
+					if (r > 200 && g > 200 && b > 200) {
+						levelData[key] = 0;
+						if (!startPosition) {
+							startPosition = { x: x, z: z };
+							targetPosition.set(x, 0, z);
+						}
+					}
+					// Red = collectable object (2)
+					else if (r > 200 && g < 100 && b < 100) {
+						levelData[key] = 2;
+						collectables.add(key);
+						if (!startPosition) {
+							startPosition = { x: x, z: z };
+							targetPosition.set(x, 0, z);
+						}
+					}
+					// Yellow = NPC (3)
+					else if (r > 200 && g > 200 && b < 100) {
+						levelData[key] = 3;
+						npcs.set(key, { x: x, z: z });
+						if (!startPosition) {
+							startPosition = { x: x, z: z };
+							targetPosition.set(x, 0, z);
+						}
+					}
+					// Black = wall (1)
+					else {
+						levelData[key] = 1;
+					}
+				}
+			}
+			
+			if (!startPosition) {
+				startPosition = { x: 0, z: 0 };
+				targetPosition.set(0, 0, 0);
+			}
+		}
+
+		function setupScene() {
+			createPathCanvas();
+			
+			const planeWidth = gridBounds.maxX - gridBounds.minX + 1;
+			const planeHeight = gridBounds.maxZ - gridBounds.minZ + 1;
+			const planeGeometry = new THREE.PlaneGeometry(planeWidth, planeHeight);
+			const planeMaterial = new THREE.MeshBasicMaterial({ 
+				map: canvasTexture,
+				transparent: true,
+				opacity: 0.9
+			});
+			planeMaterial.map.magFilter = planeMaterial.map.minFilter = THREE.NearestFilter;
+
+			const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+			plane.rotation.x = -Math.PI / 2;
+			plane.position.set(planeWidth / 2 - 0.5, -0.01, planeHeight / 2 - 0.5);
+			scene.add(plane);
+
+			createWalls();
+			createCollectables();
+			createNPCs();
+
+			hero = new THREE.Group();
+			scene.add(hero);
+			
+			const geometry = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+			const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+			const cube = new THREE.Mesh(geometry, material);
+			cube.position.y = 0.4;
+			hero.add(cube);
+
+			hero.position.copy(targetPosition);
+			markVisitedPosition(startPosition.x, startPosition.z);
+
+			window.addEventListener('resize', onWindowResize, false);
+			window.addEventListener('keydown', onKeyDown, false);
+			window.addEventListener('keyup', onKeyUp, false);
+		}
+
+		function createWalls() {
+			const wallGeometry = new THREE.BoxGeometry(1, 1, 1);
+			const wallMaterial = new THREE.MeshBasicMaterial({ color: 0x444444 });
+			
+			for (let z = gridBounds.minZ; z <= gridBounds.maxZ; z++) {
+				for (let x = gridBounds.minX; x <= gridBounds.maxX; x++) {
+					const key = `${x},${z}`;
+					if (levelData[key] === 1) {
+						const wall = new THREE.Mesh(wallGeometry, wallMaterial);
+						wall.position.set(x, 0.5, z);
+						scene.add(wall);
+					}
+				}
+			}
+		}
+
+		function createCollectables() {
+			const collectableGeometry = new THREE.SphereGeometry(0.3, 8, 8);
+			const collectableMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+			
+			collectables.forEach(key => {
+				const [x, z] = key.split(',').map(Number);
+				const collectable = new THREE.Mesh(collectableGeometry, collectableMaterial);
+				collectable.position.set(x, 0.3, z);
+				collectable.userData.type = 'collectable';
+				collectable.userData.key = key;
+				scene.add(collectable);
+			});
+		}
+
+		function createNPCs() {
+			const npcGeometry = new THREE.ConeGeometry(0.4, 1, 8);
+			const npcMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+			
+			npcs.forEach((npcData, key) => {
+				const npc = new THREE.Mesh(npcGeometry, npcMaterial);
+				npc.position.set(npcData.x, 0.5, npcData.z);
+				npc.rotation.x = Math.PI;
+				npc.userData.type = 'npc';
+				npc.userData.key = key;
+				scene.add(npc);
+			});
+		}
+
+		function createPathCanvas() {
+			canvas = document.createElement('canvas');
+			canvas.width = (gridBounds.maxX - gridBounds.minX + 1) * 10;
+			canvas.height = (gridBounds.maxZ - gridBounds.minZ + 1) * 10;
+			ctx = canvas.getContext('2d');
+			
+			ctx.fillStyle = 'rgba(200, 200, 200, 0.3)';
+			ctx.fillRect(0, 0, canvas.width, canvas.height);
+			
+			ctx.strokeStyle = 'rgba(100, 100, 100, 0.3)';
+			ctx.lineWidth = 1;
+			
+			const cellSize = 10;
+			for (let x = 0; x <= canvas.width; x += cellSize) {
+				ctx.beginPath();
+				ctx.moveTo(x, 0);
+				ctx.lineTo(x, canvas.height);
+				ctx.stroke();
+			}
+			for (let y = 0; y <= canvas.height; y += cellSize) {
+				ctx.beginPath();
+				ctx.moveTo(0, y);
+				ctx.lineTo(canvas.width, y);
+				ctx.stroke();
+			}
+			
+			// Draw walls, collectables, and NPCs on canvas
+			for (let z = gridBounds.minZ; z <= gridBounds.maxZ; z++) {
+				for (let x = gridBounds.minX; x <= gridBounds.maxX; x++) {
+					const key = `${x},${z}`;
+					const canvasX = (x - gridBounds.minX) * cellSize;
+					const canvasY = (z - gridBounds.minZ) * cellSize;
+					
+					if (levelData[key] === 1) {
+						ctx.fillStyle = 'rgba(100, 100, 100, 0.6)';
+						ctx.fillRect(canvasX, canvasY, cellSize, cellSize);
+					} else if (levelData[key] === 2) {
+						ctx.fillStyle = 'rgba(255, 0, 0, 0.6)';
+						ctx.fillRect(canvasX, canvasY, cellSize, cellSize);
+					} else if (levelData[key] === 3) {
+						ctx.fillStyle = 'rgba(255, 255, 0, 0.6)';
+						ctx.fillRect(canvasX, canvasY, cellSize, cellSize);
+					}
+				}
+			}
+			
+			canvasTexture = new THREE.CanvasTexture(canvas);
+			canvasTexture.needsUpdate = true;
+		}
+
+		function markVisitedPosition(x, z) {
+			const cellSize = 10;
+			const canvasX = (x - gridBounds.minX) * cellSize;
+			const canvasY = (z - gridBounds.minZ) * cellSize;
+			
+			ctx.fillStyle = 'rgba(255, 0, 0, 0.7)';
+			ctx.fillRect(canvasX, canvasY, cellSize, cellSize);
+			
+			ctx.strokeStyle = 'rgba(100, 100, 100, 0.5)';
+			ctx.lineWidth = 1;
+			ctx.strokeRect(canvasX, canvasY, cellSize, cellSize);
+			
+			const key = `${x},${z}`;
+			
+			// Collect objects when stepped on
+			if (collectables.has(key)) {
+				collectCollectable(key);
+			}
+			
+			// Interact with NPCs when stepped on
+			if (npcs.has(key)) {
+				interactWithNPC(key);
+			}
+			
+			canvasTexture.needsUpdate = true;
+			
+			if (!visitedCells.has(key)) {
+				visitedCells.add(key);
+				updatePercentage();
+			}
+		}
+
+		function collectCollectable(key) {
+			collectables.delete(key);
+			
+			// Remove from 3D scene
+			scene.children.forEach(child => {
+				if (child.userData && child.userData.type === 'collectable' && child.userData.key === key) {
+					scene.remove(child);
+				}
+			});
+			
+			console.log('Collected object at', key);
+		}
+
+		function interactWithNPC(key) {
+			console.log('Interacted with NPC at', key);
+		}
+
+		function updatePercentage() {
+			let totalWalkable = 0;
+			for (let z = gridBounds.minZ; z <= gridBounds.maxZ; z++) {
+				for (let x = gridBounds.minX; x <= gridBounds.maxX; x++) {
+					const key = `${x},${z}`;
+					if (levelData[key] === 0 || levelData[key] === 2 || levelData[key] === 3) {
+						totalWalkable++;
+					}
+				}
+			}
+			
+			const percentage = totalWalkable > 0 ? (visitedCells.size / totalWalkable) * 100 : 0;
+			const percentageElement = document.getElementById('percentage');
+			percentageElement.textContent = `${percentage.toFixed(1)}%`;
+			
+			if (percentage >= 100) {
+				percentageElement.style.backgroundColor = 'rgba(0, 150, 0, 0.8)';
+			} else if (percentage >= 50) {
+				percentageElement.style.backgroundColor = 'rgba(255, 165, 0, 0.8)';
+			}
+		}
+
+		function isPositionValid(x, z) {
+			if (x < gridBounds.minX || x > gridBounds.maxX || z < gridBounds.minZ || z > gridBounds.maxZ) {
+				return false;
+			}
+			const key = `${x},${z}`;
+			return levelData[key] !== 1; // Walkable if not a wall
+		}
+
+		function onKeyDown(event) {
+			if (!isMoving) {
+				keys[event.keyCode] = true;
+			}
+		}
+
+		function onKeyUp(event) {
+			keys[event.keyCode] = false;
+		}
+
+		function handleMovement() {
+			const distanceToTarget = hero.position.distanceTo(targetPosition);
+			if (distanceToTarget < 0.01) {
+				isMoving = false;
+				hero.position.copy(targetPosition);
+				
+				const currentX = Math.round(targetPosition.x);
+				const currentZ = Math.round(targetPosition.z);
+				markVisitedPosition(currentX, currentZ);
+				
+				if (keys[37]) {
+					const newX = targetPosition.x - gridSize;
+					if (isPositionValid(newX, targetPosition.z)) {
+						targetPosition.x = newX;
+						isMoving = true;
+					}
+				}
+				if (keys[39]) {
+					const newX = targetPosition.x + gridSize;
+					if (isPositionValid(newX, targetPosition.z)) {
+						targetPosition.x = newX;
+						isMoving = true;
+					}
+				}
+				if (keys[38]) {
+					const newZ = targetPosition.z - gridSize;
+					if (isPositionValid(targetPosition.x, newZ)) {
+						targetPosition.z = newZ;
+						isMoving = true;
+					}
+				}
+				if (keys[40]) {
+					const newZ = targetPosition.z + gridSize;
+					if (isPositionValid(targetPosition.x, newZ)) {
+						targetPosition.z = newZ;
+						isMoving = true;
+					}
+				}
+			}
+		}
+
+		function animate() {
+			camera.position.x = hero.position.x;
+			camera.position.z = hero.position.z + 5;
+			
+			requestAnimationFrame(animate);
+			handleMovement();
+			
+			if (isMoving) {
+				hero.position.lerp(targetPosition, moveSpeed);
+			}
+			
+			renderer.render(scene, camera);
+		}
+
+		function onWindowResize() {
+			camera.aspect = window.innerWidth / window.innerHeight;
+			camera.updateProjectionMatrix();
+			renderer.setSize(window.innerWidth, window.innerHeight);
+		}
+
+		init();
+	</script>
+</body>
+</html>
