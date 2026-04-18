@@ -1,0 +1,297 @@
+<style>
+* {margin: 0; padding: 0;}
+body { margin: 0; 
+background: #000; 
+color: #fff;
+font-family: monospace;
+}
+canvas {z-index:1; position: absolute; top: 0px; left: 0px;}
+#faceCanvas {z-index:2; position: absolute; top: 10px; left: 10px;}
+#bumpCanvas {z-index:2; position: absolute; top: 144px; left: 10px;}
+</style>
+<script type="module">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.120/build/three.module.js";
+import {OrbitControls} from 'https://cdn.jsdelivr.net/npm/three@0.120/examples/jsm/controls/OrbitControls.js';
+
+const TEX_SIZE = 128;
+const cx = TEX_SIZE;
+const cy = TEX_SIZE / 2 - 5;
+
+// ==================== CANVASES ====================
+const faceCanvas = document.createElement('canvas');
+faceCanvas.width = TEX_SIZE * 2;
+faceCanvas.height = TEX_SIZE;
+faceCanvas.id = 'faceCanvas';
+const ctx = faceCanvas.getContext('2d', { willReadFrequently: true });
+
+const bumpCanvas = document.createElement('canvas');
+bumpCanvas.width = TEX_SIZE * 2;
+bumpCanvas.height = TEX_SIZE;
+bumpCanvas.id = 'bumpCanvas';
+const bmpCtx = bumpCanvas.getContext('2d');
+
+document.body.appendChild(faceCanvas);
+document.body.appendChild(bumpCanvas);
+
+// Base colors
+ctx.fillStyle = '#ff0000';
+ctx.fillRect(0, 0, TEX_SIZE*2, TEX_SIZE);
+
+bmpCtx.fillStyle = '#ff0000';
+bmpCtx.fillRect(0, 0, TEX_SIZE*2, TEX_SIZE);
+
+// Three.js textures
+const faceTexture = new THREE.CanvasTexture(faceCanvas);
+const bumpTexture = new THREE.CanvasTexture(bumpCanvas);
+
+// ==================== SHAPE DRAWER ====================
+function createShape(targetCtx, x, y, type, params = {}) {
+    const { size = 20, rotation = 0, gradientOffsetX = 0, gradientOffsetY = -4, intensity = 0.75, isBump = false } = params;
+
+    targetCtx.save();
+    targetCtx.translate(x, y);
+    targetCtx.rotate(rotation * Math.PI / 180);
+
+    let grad;
+    if (isBump) {
+        grad = targetCtx.createRadialGradient(gradientOffsetX, gradientOffsetY, 2, 0, 0, size * 1.4);
+        grad.addColorStop(0, `rgba(255,255,255,${intensity})`);
+        grad.addColorStop(0.55, `rgba(200,200,200,${intensity*0.65})`);
+        grad.addColorStop(1, 'rgba(60,60,60,0)');
+    } else {
+        grad = targetCtx.createRadialGradient(gradientOffsetX, gradientOffsetY, 3, 0, 0, size * 1.6);
+        grad.addColorStop(0, `rgba(45,32,28,${intensity})`);
+        grad.addColorStop(0.65, `rgba(22,18,15,${intensity*0.7})`);
+        grad.addColorStop(1, 'rgba(0,0,0,0)');
+    }
+
+    targetCtx.shadowBlur = isBump ? 0 : 4;
+    targetCtx.shadowColor = 'rgba(0,0,0,0.5)';
+    targetCtx.fillStyle = grad;
+
+    targetCtx.beginPath();
+
+    switch(type) {
+        case 'circle':
+            targetCtx.arc(0, 0, size, 0, Math.PI * 2);
+            break;
+        case 'halfcircle':
+            targetCtx.arc(0, 0, size, 0, Math.PI);
+            targetCtx.lineTo(-size, 0);
+            targetCtx.closePath();
+            break;
+        case 'rect':
+        case 'rectangle':
+            targetCtx.rect(-size*0.75, -size*0.45, size*1.5, size*0.9);
+            break;
+        case 'triangle':
+            targetCtx.moveTo(0, -size * 1.05);
+            targetCtx.lineTo(-size * 0.9, size * 0.75);
+            targetCtx.lineTo(size * 0.9, size * 0.75);
+            targetCtx.closePath();
+            break;
+        case 'squircle':
+            const k = 0.88;
+            for(let i = 0; i <= 360; i += 3) {
+                const a = i * Math.PI / 180;
+                const px = size * Math.pow(Math.abs(Math.cos(a)), k) * Math.sign(Math.cos(a));
+                const py = size * Math.pow(Math.abs(Math.sin(a)), k) * Math.sign(Math.sin(a));
+                if(i === 0) targetCtx.moveTo(px, py);
+                else targetCtx.lineTo(px, py);
+            }
+            break;
+        default:
+            targetCtx.arc(0, 0, size, 0, Math.PI * 2);
+    }
+
+    targetCtx.fill();
+    targetCtx.restore();
+}
+
+// ==================== RANDOMIZED SHAPES CONFIG ====================
+function createRandomizedShapes() {
+    return [
+        // cheek
+        { 
+            type: 'squircle', baseX: -28, baseY: 18, baseSize: 38, baseRot: -8, baseIntensity: 0.65,
+            pulseSpeed: 0.55 + Math.random() * 0.45,
+            fadeSpeed: 0.85 + Math.random() * 0.75,
+            phase: Math.random() * Math.PI * 2,
+            undSpeed: 1.8 + Math.random() * 2.2,
+            undAmp: 0.8 + Math.random() * 1.2,
+            driftSpeed: 0.2 + Math.random() * 0.4,   // slow random drift
+            driftPhase: Math.random() * Math.PI * 2
+        },
+        // forehead
+        { 
+            type: 'rectangle', baseX: -12, baseY: -32, baseSize: 26, baseRot: 12, baseIntensity: 0.55,
+            pulseSpeed: 0.4 + Math.random() * 0.6,
+            fadeSpeed: 0.7 + Math.random() * 0.9,
+            phase: Math.random() * Math.PI * 2,
+            undSpeed: 1.2 + Math.random() * 1.8,
+            undAmp: 0.6 + Math.random() * 1.0,
+            driftSpeed: 0.15 + Math.random() * 0.35,
+            driftPhase: Math.random() * Math.PI * 2
+        },
+        // nose
+        { 
+            type: 'halfcircle', baseX: -6, baseY: 8, baseSize: 14, baseRot: 90, baseIntensity: 0.82,
+            pulseSpeed: 0.9 + Math.random() * 1.1,
+            fadeSpeed: 1.1 + Math.random() * 1.3,
+            phase: Math.random() * Math.PI * 2,
+            undSpeed: 2.5 + Math.random() * 3.5,
+            undAmp: 0.4 + Math.random() * 0.8,
+            driftSpeed: 0.25 + Math.random() * 0.45,
+            driftPhase: Math.random() * Math.PI * 2
+        },
+        // under eye
+        { 
+            type: 'circle', baseX: -22, baseY: -8, baseSize: 18, baseRot: 0, baseIntensity: 0.71,
+            pulseSpeed: 0.65 + Math.random() * 0.75,
+            fadeSpeed: 0.95 + Math.random() * 1.05,
+            phase: Math.random() * Math.PI * 2,
+            undSpeed: 1.6 + Math.random() * 2.4,
+            undAmp: 0.7 + Math.random() * 1.3,
+            driftSpeed: 0.18 + Math.random() * 0.38,
+            driftPhase: Math.random() * Math.PI * 2
+        },
+        // jaw
+        { 
+            type: 'triangle', baseX: -25, baseY: 38, baseSize: 22, baseRot: -35, baseIntensity: 0.62,
+            pulseSpeed: 0.5 + Math.random() * 0.7,
+            fadeSpeed: 0.75 + Math.random() * 0.85,
+            phase: Math.random() * Math.PI * 2,
+            undSpeed: 1.1 + Math.random() * 2.1,
+            undAmp: 1.0 + Math.random() * 1.8,
+            driftSpeed: 0.22 + Math.random() * 0.42,
+            driftPhase: Math.random() * Math.PI * 2
+        },
+        // extra cheek
+        { 
+            type: 'squircle', baseX: -35, baseY: 25, baseSize: 24, baseRot: 25, baseIntensity: 0.52,
+            pulseSpeed: 0.6 + Math.random() * 0.8,
+            fadeSpeed: 1.05 + Math.random() * 1.25,
+            phase: Math.random() * Math.PI * 2,
+            undSpeed: 2.0 + Math.random() * 2.8,
+            undAmp: 0.6 + Math.random() * 1.4,
+            driftSpeed: 0.2 + Math.random() * 0.4,
+            driftPhase: Math.random() * Math.PI * 2
+        }
+    ];
+}
+
+let shapes = createRandomizedShapes();
+
+// ==================== DRAW LEFT SIDE ====================
+function drawFaceSide(targetCtx, isBump, time) {
+    const sideX = TEX_SIZE;
+
+    shapes.forEach(s => {
+        // Extra slow random drift over time
+        const driftX = Math.sin(time * s.driftSpeed + s.driftPhase) * 2.5;
+        const driftY = Math.cos(time * s.driftSpeed * 0.7 + s.driftPhase) * 2.0;
+
+        const fade = 0.55 + Math.sin(time * s.fadeSpeed + s.phase) * 0.42;
+        const pulseScale = 1 + Math.sin(time * s.pulseSpeed + s.phase) * 0.11;
+
+        const undX = Math.sin(time * s.undSpeed + s.phase) * s.undAmp + driftX;
+        const undY = Math.cos(time * s.undSpeed * 0.68 + s.phase) * (s.undAmp * 0.68) + driftY;
+
+        const rotOffset = Math.sin(time * 1.6 + s.phase) * 4.2;
+
+        createShape(targetCtx, sideX + s.baseX + undX, cy + s.baseY + undY, s.type, {
+            size: s.baseSize * pulseScale,
+            rotation: s.baseRot + rotOffset,
+            intensity: s.baseIntensity * Math.max(0.08, fade),
+            isBump: isBump,
+            gradientOffsetX: undX * 0.35,
+            gradientOffsetY: -4 + undY * 0.25
+        });
+    });
+}
+
+// ==================== MIRROR ====================
+function mirrorToRight(targetCtx) {
+    const leftData = targetCtx.getImageData(0, 0, TEX_SIZE, TEX_SIZE);
+    const rightData = targetCtx.createImageData(TEX_SIZE, TEX_SIZE);
+
+    for (let y = 0; y < TEX_SIZE; y++) {
+        for (let x = 0; x < TEX_SIZE; x++) {
+            const leftIdx = (y * TEX_SIZE + x) * 4;
+            const rightIdx = (y * TEX_SIZE + (TEX_SIZE - 1 - x)) * 4;
+            for (let c = 0; c < 4; c++) {
+                rightData.data[rightIdx + c] = leftData.data[leftIdx + c];
+            }
+        }
+    }
+    targetCtx.putImageData(rightData, TEX_SIZE, 0);
+}
+
+// ==================== UPDATE TEXTURES ====================
+function updateTextures(time) {
+    ctx.fillStyle = '#ff0000';
+    ctx.fillRect(0, 0, TEX_SIZE*2, TEX_SIZE);
+    bmpCtx.fillStyle = '#404040';
+    bmpCtx.fillRect(0, 0, TEX_SIZE*2, TEX_SIZE);
+
+    drawFaceSide(ctx, false, time);
+    drawFaceSide(bmpCtx, true, time);
+
+    mirrorToRight(ctx);
+    mirrorToRight(bmpCtx);
+
+    faceTexture.needsUpdate = true;
+    bumpTexture.needsUpdate = true;
+}
+
+// ==================== THREE.JS SETUP ====================
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+camera.position.z = 7;
+const controls = new OrbitControls(camera, renderer.domElement);
+
+// Lights
+const lights = [];
+lights[0] = new THREE.PointLight(0xffffff, 0.95, 0); lights[0].position.set(80, 100, 120);
+lights[1] = new THREE.PointLight(0xffffff, 0.95, 0); lights[1].position.set(-50, 80, -90);
+lights[2] = new THREE.PointLight(0xffffff, 0.95, 0); lights[2].position.set(-10, -50, -30);
+lights.forEach(l => scene.add(l));
+
+const geometry = new THREE.SphereBufferGeometry(2, 240, 240);
+const material = new THREE.MeshStandardMaterial({
+    metalness: 0.02,
+    roughness: 0.82,
+    map: faceTexture,
+    displacementMap: bumpTexture,
+    displacementScale: 3,
+    // displacementBias: -4
+});
+
+const sphere = new THREE.Mesh(geometry, material);
+sphere.scale.set(1.4,1,1)
+sphere.rotation.y = -Math.PI / 2;
+scene.add(sphere);
+
+// ==================== ANIMATION LOOP ====================
+let startTime = Date.now();
+
+function animate() {
+    requestAnimationFrame(animate);
+    const elapsed = (Date.now() - startTime) / 1000;
+    updateTextures(elapsed);
+    renderer.render(scene, camera);
+}
+animate();
+
+// Resize
+window.addEventListener('resize', () => {
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+});
+
+</script>
