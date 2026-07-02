@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+  <meta charset="UTF-8">
+  <title>mama</title>
+  <style>
+    body {
+      user-select: none;
+      padding: 0;
+      margin: 0;
+      background: #000;
+      overflow: hidden;
+      height: 100vh;
+      position: relative;
+    }
+    
+    .nipple {display: none !important;}
+
+    #bumpcanvas,
+    #hitcanvas { 
+        display: none;
+        position: absolute;
+        top: -128px;
+        left: -128px;
+        transform: scale(0.5);
+    }
+    #bumpcanvas {
+        top: 128px;
+    }
+  </style>
+
+  <canvas id="bumpcanvas" width="512" height="512"></canvas>
+  <canvas id="hitcanvas" width="512" height="512"></canvas>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.9.0/nipplejs.min.js"></script>
+  <script src="js/three.min.js"></script>
+  <script src='js/inflate.min.js'></script>
+  <script src='js/FBXLoader.js'></script>
+  
+  <script>
+    const CANVAS_SIZE = 512;
+    const HALF_CANVAS = CANVAS_SIZE / 2;
+    const levelSize = 128;
+    const JOYSTICK_MAX_SPEED = 4;
+    
+    const bumpCanvas = document.getElementById("bumpcanvas");
+    const bmpCtx = bumpCanvas.getContext("2d");
+    bmpCtx.fillStyle = "#e60087";
+    bmpCtx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+    const hitCanvas = document.getElementById("hitcanvas");
+    const hitCtx = hitCanvas.getContext("2d", {
+      willReadFrequently: true,
+    });
+    hitCtx.fillStyle = "#e60087";
+    hitCtx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+    var images = [
+      {"src":"3d/lvl-bump.png"},
+      {"src":"3d/lvl-hit.png"}
+    ];
+
+    const imageArray = [];
+    var imageCount = 0;
+    
+    images.forEach(function(element, index){
+      const image = new Image();
+      image.src = element.src;
+      image.onload = ()=>{ 
+        imageCount += 1;
+        if(imageCount === images.length){ 
+          startLevel();
+        }
+      }
+      imageArray.push(image); 
+    });
+
+    function startLevel() {
+      bmpCtx.drawImage(imageArray[0], 0, 0);
+      hitCtx.drawImage(imageArray[1], 0, 0);
+    }
+
+    const CONFIG = {
+      ANIMATIONS: {
+        T_POSE: 0,
+        IDLE: 1,
+        WALK: 2
+      },
+      SPEEDS: {
+        WALK: 1.7
+      },
+      GROUND_Y_POSITION: -0.01,
+      DISPLACEMENT_SCALE: 4,
+      DISPLACEMENT_BIAS: -3,
+      HEIGHT_OFFSET: 0.5
+    };
+
+    class Environment {
+      constructor(scene, camera, renderer, characterObject) {
+        this.scene = scene;
+        this.camera = camera;
+        this.renderer = renderer;
+        this.characterObject = characterObject;
+        
+        this.allowMove = true;
+        this.moving = false;
+        this.posX = 0;
+        this.posZ = 0;
+        this.vx = 0;
+        this.vz = 0;
+        this.rotation = 0;
+        this.force = 0;
+        this.currentSpeed = CONFIG.SPEEDS.WALK;
+        
+        this.currentRotation = 0;
+        this.rotationSmoothing = 0.08;
+        
+        this.ground = null;
+        this.groundTexture = null;
+        this.sea = null;
+
+        this.joystick = null;
+        
+        this.worldGroup = new THREE.Group();
+        this.scene.add(this.worldGroup);
+
+        this.targetHeight = CONFIG.HEIGHT_OFFSET;
+        this.currentHeight = CONFIG.HEIGHT_OFFSET;
+        this.heightSmoothing = 0.5;
+        
+        this.bumpImageData = null;
+        
+
+        this.init();
+      }
+      
+      init() {
+        this.setupGround();
+        this.setupJoystick();
+      }
+      
+      setupGround() {
+        const geometry = new THREE.PlaneGeometry(levelSize, levelSize, 256, 256);
+        const textureLoader = new THREE.TextureLoader();
+        
+        this.groundTexture = textureLoader.load('3d/lvl-colour.png');
+        this.groundTexture.magFilter = this.groundTexture.minFilter = THREE.NearestFilter;
+
+        const groundMaterial = new THREE.MeshStandardMaterial({
+          map: this.groundTexture,
+          displacementMap: textureLoader.load("3d/lvl-bump.png"),
+          displacementScale: CONFIG.DISPLACEMENT_SCALE,
+          displacementBias: CONFIG.DISPLACEMENT_BIAS,
+          metalness: 0.01,
+          roughness: 0.9,
+          side: THREE.DoubleSide
+        });
+        
+        this.ground = new THREE.Mesh(geometry, groundMaterial);
+        this.ground.rotation.x = -Math.PI / 2;
+        this.ground.position.y = CONFIG.GROUND_Y_POSITION;
+        this.ground.receiveShadow = true;
+        
+        this.worldGroup.add(this.ground);
+
+        //
+        this.sea = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({color:0x000000}));
+        this.sea.rotation.set(-Math.PI/2,0,0)
+        this.sea.position.set(0,-2,0)
+        this.worldGroup.add(this.sea);  
+
+
+      }
+      
+      setupJoystick() {
+      
+        if (typeof nipplejs !== 'undefined') {
+          this.joystick = nipplejs.create({
+            zone: document.body,
+            dataonly:true
+          });
+          
+          this.joystick.on('move', (evt, data) => {
+            if (!data.force || data.force < 0.1) return;
+            this.force = data.force;
+            
+            const vx = data.force * Math.cos(data.angle.radian) * this.currentSpeed;
+            const vz = -data.force * Math.sin(data.angle.radian) * this.currentSpeed;
+            
+            const limited = this.limitVelocity(vx, vz, JOYSTICK_MAX_SPEED);
+            this.vx = limited.vx;
+            this.vz = limited.vz;
+            this.moving = true;
+            
+            this.rotation = Math.atan2(this.vz, this.vx) - Math.PI / 2;
+          });
+          
+          this.joystick.on('end', () => {
+            this.moving = false;
+            this.vx = this.vz = 0;
+            this.force = 0;
+          });
+        }
+      }
+      
+      getHeightFromBumpCanvas(worldX, worldZ) {
+        const u = HALF_CANVAS + Math.floor(worldX * (CANVAS_SIZE / levelSize));
+        const v = HALF_CANVAS + Math.floor(worldZ * (CANVAS_SIZE / levelSize));
+        
+        if (u < 0 || u >= CANVAS_SIZE || v < 0 || v >= CANVAS_SIZE) {
+          return CONFIG.HEIGHT_OFFSET;
+        }
+        
+        const pixelData = bmpCtx.getImageData(u, v, 1, 1).data;
+        
+        const normalizedValue = (pixelData[0] / 255) * 2 - 1;
+        const terrainHeight = (normalizedValue * CONFIG.DISPLACEMENT_SCALE) + CONFIG.DISPLACEMENT_BIAS;
+        
+        const worldY = CONFIG.GROUND_Y_POSITION + (terrainHeight/2);
+        
+        return worldY + CONFIG.HEIGHT_OFFSET;
+      }
+      
+      updateCharacterHeight(worldX, worldZ) {
+        if (!this.characterObject) return;
+        
+        this.targetHeight = this.getHeightFromBumpCanvas(worldX, worldZ);
+        
+        this.currentHeight += (this.targetHeight - this.currentHeight) * this.heightSmoothing;
+        
+        this.characterObject.position.y = this.currentHeight;
+      }
+      
+      checkCollision(worldX, worldZ) {
+        const u = HALF_CANVAS + Math.floor(worldX * (CANVAS_SIZE / levelSize));
+        const v = HALF_CANVAS + Math.floor(worldZ * (CANVAS_SIZE / levelSize));
+        
+        if (u < 0 || u >= CANVAS_SIZE || v < 0 || v >= CANVAS_SIZE) {
+          return false;
+        }
+        
+        const pixelData = hitCtx.getImageData(u, v, 1, 1).data;
+        const pixel = pixelData[0];
+
+        return pixel > 254;
+      }
+      
+      update(delta) {
+        if (this.moving && this.force > 0.2) {
+          const newPosX = this.posX + this.vx * delta;
+          const newPosZ = this.posZ + this.vz * delta;
+          
+          const hasCollision = this.checkCollision(newPosX, newPosZ);
+          
+          if (!hasCollision) {
+            this.posX = newPosX;
+            this.posZ = newPosZ;
+            this.allowMove = true;
+          } else {
+            this.allowMove = false;
+            
+            const slideXCollision = this.checkCollision(newPosX, this.posZ);
+            if (!slideXCollision) {
+              this.posX = newPosX;
+              this.vz = 0;
+              this.allowMove = true;
+            } else {
+              const slideZCollision = this.checkCollision(this.posX, newPosZ);
+              if (!slideZCollision) {
+                this.posZ = newPosZ;
+                this.vx = 0;
+                this.allowMove = true;
+              } else {
+                this.vx = this.vz = 0;
+              }
+            }
+          }
+          
+          this.worldGroup.position.x = -this.posX;
+          this.worldGroup.position.z = -this.posZ;
+          
+          this.updateCharacterHeight(this.posX, this.posZ);
+          
+          if (this.characterObject) {
+            this.targetRotation = -this.rotation;
+            let diff = this.targetRotation - this.currentRotation;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            this.currentRotation += diff * this.rotationSmoothing;
+            this.characterObject.rotation.y = this.currentRotation;
+          }
+          
+          return {
+            isMoving: true,
+            speed: Math.sqrt(this.vx * this.vx + this.vz * this.vz),
+            position: { x: this.posX, z: this.posZ },
+            height: this.currentHeight
+          };
+        } else {
+          this.updateCharacterHeight(this.posX, this.posZ);
+        }
+        
+        return {
+          isMoving: false,
+          speed: 0,
+          position: { x: this.posX, z: this.posZ },
+          height: this.currentHeight
+        };
+      }
+      
+      limitVelocity(vx, vz, max) {
+        const len = Math.hypot(vx, vz);
+        if (!len) return { vx: 0, vz: 0 };
+        const scale = Math.min(len, max) / len;
+        return { vx: vx * scale, vz: vz * scale };
+      }
+      
+      
+      dispose() {
+        if (this.joystick) {
+          this.joystick.destroy();
+        }
+        if (this.joystickContainer && this.joystickContainer.parentNode) {
+          this.joystickContainer.parentNode.removeChild(this.joystickContainer);
+        }
+      }
+    }
+
+    class Shabooboo {
+      constructor() {
+        this.state = 'idle';
+        this.environment = null;
+        this.scene = null;
+        this.camera = null;
+        this.renderer = null;
+        this.clock = null;
+        this.mixer = null;
+        this.actions = [];
+        this.currentAction = null;
+        this.characterObject = null;
+        this.bones = {
+          head: null
+        };
+        
+        this.textures = {};        
+        this.init();
+      }
+      
+      init() {
+        this.setupScene();
+        this.setupCamera();
+        this.setupRenderer();
+        this.setupLights();
+        this.loadCharacter();
+        this.setupEventListeners();
+        this.startAnimationLoop();
+      }
+      
+      setupScene() {
+        this.scene = new THREE.Scene();
+        this.clock = new THREE.Clock();
+      }
+      
+      setupCamera() {
+        this.camera = new THREE.PerspectiveCamera(
+          60,
+          window.innerWidth / window.innerHeight,
+          0.1,
+          1000
+        );
+        this.camera.position.set(0, 5, 10);
+        this.scene.add(this.camera);
+      }
+      
+      setupRenderer() {
+        this.renderer = new THREE.WebGLRenderer({
+          alpha: true,
+          antialias: true
+        });
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.shadowMap.enabled = true;
+        document.body.appendChild(this.renderer.domElement);
+      }
+      
+      setupLights() {
+        const ambient = new THREE.AmbientLight(0xcccccc, 0.8);
+        this.scene.add(ambient);
+        
+        const light1 = new THREE.PointLight(0xffefef, 0.9);
+        light1.position.set(0, 0.2, 2);
+        light1.lookAt(0, 0, 0);
+        this.scene.add(light1);
+        
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+        dirLight.position.set(-3, 15, -8);
+        dirLight.castShadow = true;
+        dirLight.shadow.camera.top = 4;
+        dirLight.shadow.camera.bottom = -4;
+        dirLight.shadow.camera.left = -4;
+        dirLight.shadow.camera.right = 4;
+        dirLight.shadow.camera.near = 0.1;
+        dirLight.shadow.camera.far = 40;
+        dirLight.shadow.radius = 8;
+        this.scene.add(dirLight);
+      }
+      
+      getTexture(path) {
+        if (!this.textures[path]) {
+          const texture = new THREE.TextureLoader().load(path);
+          texture.magFilter = THREE.NearestFilter;
+          texture.minFilter = THREE.NearestFilter;
+          this.textures[path] = texture;
+        }
+        return this.textures[path];
+      }
+      
+      loadCharacter() {
+        const loader = new THREE.FBXLoader();
+        
+        loader.load('chubby/chubby.fbx', (object) => {
+          this.characterObject = object;
+          this.mixer = new THREE.AnimationMixer(object);
+          this.cacheBoneReferences(object);
+          const tPoseAction = this.mixer.clipAction(object.animations[0]);
+          this.actions[CONFIG.ANIMATIONS.T_POSE] = tPoseAction;
+          
+          this.loadOtherAnimations();
+        }, undefined, (error) => {
+          console.error('Error loading character:', error);
+        });
+      }
+
+      cacheBoneReferences(object) {
+        this.bones.head = object.getObjectByName('mixamorigHead');
+      }
+      
+      loadOtherAnimations() {
+        const animFiles = [
+          { file: 'idle.fbx', index: CONFIG.ANIMATIONS.IDLE },
+          { file: 'walk.fbx', index: CONFIG.ANIMATIONS.WALK }
+        ];
+        
+        const loader = new THREE.FBXLoader();
+        let loadedCount = 0;
+        
+        animFiles.forEach(({ file, index }) => {
+          loader.load(`chubby/${file}`, (object) => {
+            const action = this.mixer.clipAction(object.animations[0]);
+            this.actions[index] = action;
+            loadedCount++;
+            
+            if (loadedCount === animFiles.length) {
+              this.finalizeCharacterSetup();
+            }
+          }, undefined, (error) => {
+            console.error(`Error loading ${file}:`, error);
+            loadedCount++;
+            
+            if (loadedCount === animFiles.length) {
+              this.finalizeCharacterSetup();
+            }
+          });
+        });
+      }
+      
+      finalizeCharacterSetup() {
+        this.setupMaterials();
+        // this.setupCharacterParts();
+        this.scene.add(this.characterObject);
+        
+        this.environment = new Environment(
+          this.scene,
+          this.camera,
+          this.renderer,
+          this.characterObject
+        );
+        
+        this.playAction(CONFIG.ANIMATIONS.IDLE);
+      }
+      
+      setupMaterials() {
+        if (!this.characterObject) return;
+        
+        const bodyTexture = this.getTexture('3d/shabody.png');
+        
+        this.characterObject.traverse(child => {
+          if (child.isMesh && child.material) {
+            child.material.shininess = 0;
+            child.material.map = bodyTexture;
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+      }
+
+      setupCharacterParts() {
+        if (!this.bones.head) return;
+
+        const sphereGeometry = new THREE.SphereGeometry(0.4, 40, 40);
+        const sphereMaterial = new THREE.MeshBasicMaterial({
+          // map: this.getTexture('3d/shabody.png'),
+        });
+
+        const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+        sphere.rotation.y = -Math.PI / 2;
+        sphere.position.set(0, 0.55, 0.0);
+        this.bones.head.add(sphere);
+
+      }
+
+      playAction(index) {
+        if (!this.actions[index] || this.actions[index] === this.currentAction) {
+          return;
+        }
+        
+        const newAction = this.actions[index];
+        
+        if (this.currentAction) {
+          this.currentAction.fadeOut(0.2);
+        }
+        
+        newAction.reset();
+        newAction.setEffectiveWeight(1);
+        newAction.fadeIn(0.2);
+        newAction.play();
+        
+        this.currentAction = newAction;
+        this.mixer.update(0);
+      }
+      
+      update(delta) {
+        if (this.environment) {
+          const envState = this.environment.update(delta);
+          const isActuallyMoving = envState.isMoving && this.environment.force > 0.2;
+          
+          if (isActuallyMoving) {
+            if (this.state !== 'walk') {
+              this.state = 'walk';
+              this.playAction(CONFIG.ANIMATIONS.WALK);
+            }
+          } else {
+            this.state = 'idle';
+            this.playAction(CONFIG.ANIMATIONS.IDLE);            
+          }
+        }
+
+        if (this.mixer) {
+          this.mixer.update(delta);
+        }
+        
+        if (this.environment) {
+          const characterHeight = this.environment.currentHeight;
+          this.camera.position.y = 4 + characterHeight;
+        }
+        
+        this.camera.lookAt(0, 0.9 + (this.environment ? this.environment.currentHeight : 0), 0);
+        this.renderer.render(this.scene, this.camera);
+      }
+      
+      startAnimationLoop() {
+        const animate = (time) => {
+          requestAnimationFrame(animate);
+          const delta = this.clock.getDelta();
+          this.update(delta);
+        };
+        animate();
+      }
+      
+      setupEventListeners() {
+        window.addEventListener('resize', () => {
+          this.camera.aspect = window.innerWidth / window.innerHeight;
+          this.camera.updateProjectionMatrix();
+          this.renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+      }
+    }
+    
+    window.addEventListener('DOMContentLoaded', () => {
+      new Shabooboo();
+    });
+  </script>
+</body>
+</html>
