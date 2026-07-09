@@ -1,0 +1,263 @@
+<html>
+<head>
+	<title>LandRover tims1</title>
+<link rel="preconnect" href="https://fonts.gstatic.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+	<style>
+	body { margin: 0; background-color: #47433e;
+	color: #eee; 
+	overflow: hidden; user-select:none;
+	font-family:'Bebas Neue', monospace;
+	border-right:#d16b21 4px solid;
+	}
+	canvas { width: 100%; height: 100% }
+	svg {display: block; width: 100px; height: auto;
+	position: absolute; top: 12px; right: 12px;}
+	#footer {font-size: 1.2em; letter-spacing: 0.1em; 
+	position: absolute; bottom: 0; right: 0;
+	padding: 1em; text-transform: uppercase;
+	text-align: right; line-height: 0.4em;
+	font-family:'Bebas Neue', monospace;
+	}
+</style>
+</head>
+<body onclick="tellme()">
+<svg height="1018" preserveAspectRatio="none" viewBox="0 0 1824 1018" width="1824" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><path fill="#ffffff" d="m369.15 228.45 75.7-2.15 16.1-96.85-324.15.4-15.65 94.55 73.5 3.6-50.3 297.5-.05 4.8q.3 5.9 2.1 11.35 5.65 17.4 23.95 23.75 13.4 4.65 77.05 3 31.85-.85 61-2.6zm255.55-94.7-128.15-2.35-14.6 94.7 128.1 2.3zm468.05 528.25q-8.9 7.75-14.3 19.7-5.4 11.95-5.4 27.5v136.05q0 15.95 5.4 27.7 5.35 11.7 14.3 19.5 8.9 7.85 19.9 11.8 10.95 3.95 22.25 3.95 11.3 0 22.25-3.95 11-3.95 19.9-11.8 8.95-7.8 14.3-19.5 5.45-11.9 5.45-27.7v-136.05q0-15.45-5.45-27.5-5.4-11.95-14.3-19.7-8.75-7.7-19.9-11.8-10.95-3.95-22.25-3.95-11.3 0-22.25 3.95-11.15 4.1-19.9 11.8m17.2 47.2q0-13.4 7.4-19.7 7.4-6.35 17.55-6.35 10.15 0 17.55 6.35 7.4 6.3 7.4 19.7v136.05q0 13.4-7.4 19.75-7.4 6.3-17.55 6.3-10.1 0-17.55-6.3-7.4-6.35-7.4-19.75zm-141.85-60.8h-35.85l-47 136.45h-.75l-47.4-136.45h-35.45v257.65h36.9v-156.7h.7l36.2 110.75h18.45l36.55-110.75h.75v156.7h36.9zm616.55 34.75q14.15 0 20.1 9.25 5.95 9.15 5.95 21.85v8.35h36.95v-18.1q0-10.85-4.35-21.15-4.35-10.35-12.5-18.65-8-8.25-19.55-13.4-11.45-5.05-25.15-5.05-16 0-27.85 5.6-12 5.65-19.7 15-7.8 9.45-11.75 22.45-4 12.9-4 27.5 0 24.25 8.15 40.35 8.05 16.05 32 25.85l26.45 10.85q7.1 3.05 11 5.45 4.2 2.55 6.5 6.5 2.35 3.85 3.1 10.5.7 6.1.7 16.65 0 9.2-.7 15.9-.75 7.3-3.45 12.15-2.7 4.9-7.95 7.6-5.25 2.7-14.65 2.7-14.1 0-20.1-8.15-5.95-8.15-5.95-18.25v-11.6h-36.9v13.75q0 13.15 4.85 24.25 5 11.4 13.25 19.35 8.4 8.25 19.9 12.85 11.5 4.7 24.95 4.7 17.75 0 30.05-5.75 12.35-5.85 19.7-15.75 7.45-10 10.65-23.9 3.3-13.95 3.3-30.2 0-13.95-1.45-25.15-1.4-11-5.65-19.55-4.1-8.45-11.7-14.85-7.75-6.4-19.95-11l-28.2-11.25q-7.1-2.8-11.4-5.75-4.15-2.9-6.35-6.7-2.2-3.85-2.7-9.05-.55-5.5-.55-12.85 0-6.65 1.1-12.5 1-5.75 3.8-10.5 2.65-4.45 7.6-7.4 4.85-2.9 12.45-2.9m-228.3-34.75h-54.65v257.65h51.4q32.85 0 50.45-17.2 17.6-17.25 17.6-53.35v-120.5q0-31.45-16.7-49.05-16.55-17.55-48.1-17.55m-17.75 34.75h17q16.3 0 22.45 8.3 6.15 8.35 6.15 23.55v124.1q0 16.7-6.5 24.45-6.55 7.75-22.1 7.75h-17zm30.65-417.2 43.75 46.05 49.45-82.85-62.45-24.75zm312.35 100.3-28.8-102.5-141.1-23.45-141.7 256.1q-8.7984375 5.2-17.1 5.2h-7.65q-2.7-4.5-.45-20.7 2.7-22.05 4.05-28.3l.9-5.4q3.55-15.1 6.75-30.55 3.6-18.45 3.6-31.05 0-43.15-30.15-77.3-23.4-26.1-62.1-37.8-30.15-9-58.45-9-76.05 0-125.55 56.2-15.3-29.2-51.25-44.5-31.05-13.5-68.85-13.5h-5.4q-50.45 0-98.5 27.9l8.6-54.75-185.85 38.55-51.75 254.95q-49.48339844-.14121094-57.45-2.25-5.8-1.6-10.3-8.8-3.4-5.45-3.4-7.35l10.35-67.1q6.65-32.85 19.4-98.3 11.8-60.95 14.85-75.65h-187.15q-25.2 124.55-33.3 166.8-4 20.9-4 40 0 35.15 9.1 60.95 10.8 30.7 32.7 41.4 28.05 13.9 206.25 14.15 77.35117188.13007813 150.45-1.85h21.2l.1-.65q.4078125.0125.8 0l-.7-.45 4.3-23.6q4.05-22.05 5.85-33.75l10.8-53.5q14.85-75.55 45.45-115.5 14.85-19.35 33.7-19.35 16.2 0 16.2 18.9 0 5.35-1.35 11.65l-20.7 106.1q-10.65 50.8-23.8 110.15h191.15q4.6-22.05 11.15-55.05 4.95-24.75 6.45-31.25 2.6-12.55 10.1-48 5.05-23.9 6.95-34.3 1.4-5.4 4.95-15.7 9.45-28.4 27-48.55 11.7-13.05 26.55-13.05 14.85 0 14.85 22.45 0 1.2-.65 6.2-.8 5.9-1.15 10.45-1.75 10.45-3.1 16.2-.9 3.35-1.6 8.2-1 6.7-1.15 7.55-2.75 11.45-4.65 23.6-.95 6.3-2.15 14.15-5.4 28.35-1.35 54.85 2.65 14.95 7.1 26.15 5.1 12.7 13.2 22.6 17.15 21 42.3 29.45 34.15 12.15 71.95 12.15 25.9 0 39.65-1.1 18.45-1.5 32.25-5.9 15.15-4.85 29.1-14.45 14.35-9.9 30.35-26.85 21.05-22.25 38.2-53.55.61523438-1.11972656 1.2-2.25 1.12421875-1.36777344.95-1.55 28.3-47.35 41.2-71.5l39.85-63.35q17.95 86.45 17.95 102.95 0 4.6-.9 8.55-3.6 18.8-22.4 29.65-15.0890625 8.61582031-34.7 9.4l-1.9 12.8q-1.85 15.35-1.5 28.15 1.05 40.9 23.6 40.9 56.3 0 104.35-19.75 66.5-26.95 76.95-82.3.9-4.95.9-11.7 0-30.5-21.6-108.35z" /></svg>
+
+<div id="footer">
+<p>GONGO FLEVA</p>
+<p>MODS@ECOTZ.COM</p>
+</div>
+
+
+	<script src="three.min.js"></script>
+	<script src="OrbitControls.min.js"></script>
+	<script>
+
+// player
+player = {
+  width:768,
+  size:256,
+  count:3,
+  fps:2
+};
+//
+	var num = 0;
+	var scene = new THREE.Scene();
+	var clock = new THREE.Clock();
+
+	var camera = new THREE.PerspectiveCamera( 85, window.innerWidth/window.innerHeight, 0.1, 1000 );
+
+	var renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+	renderer.setSize( window.innerWidth, window.innerHeight );
+	document.body.appendChild( renderer.domElement );
+	
+
+	// scene.position.x = -5;
+	// scene.position.y = -2;
+
+	camera.position.x = 3;
+	camera.position.y = 3;
+	camera.position.z = 3;
+
+	var controls	= new THREE.OrbitControls(camera);
+	controls.enablePan = false;
+	controls.enableDamping = true;
+	controls.dampingFactor = 0.9;
+	controls.maxPolarAngle = Math.PI * 0.49;
+	controls.maxDistance = 15;
+	controls.minDistance = 2;
+	// controls.target.set( -5, 0, 0 );
+
+
+
+	var light = new THREE.AmbientLight( 0xffffff );
+	light.intensity = 1;
+	scene.add( light );
+
+	// the background cubes
+	var bgcubes = [];
+	var tyres = [];
+
+	// the car
+	var loader = new THREE.BufferGeometryLoader();
+
+	loader.load(
+		'carbody.json', // or carbody.json
+		function ( geometry ) {
+			var material = new THREE.MeshBasicMaterial( { 
+				color: 0xE3D6C4,
+			 } );
+			var object = new THREE.Mesh( geometry, material );
+			scene.add( object );
+		},
+		function ( xhr ) {},
+		function ( xhr ) {console.log( 'An error happened' );}
+	);
+
+
+	loader.load(
+		'bars.json', // or carbody.json
+		function ( geometry ) {
+			var material = new THREE.MeshBasicMaterial( { 
+				color: 0x333333,
+			 } );
+			var object = new THREE.Mesh( geometry, material );
+			scene.add( object );
+		},
+		function ( xhr ) {},
+		function ( xhr ) {console.log( 'An error happened' );}
+	);
+
+
+// tyre
+var geometry = new THREE.RingBufferGeometry(0.18, 0.38, 26, 1)
+
+var material = new THREE.MeshBasicMaterial( { 
+	color: 0xbdb09d,
+ side: THREE.DoubleSide,
+ transparent:true,
+ opacity:0.3
+  } );
+
+var material2 = new THREE.MeshBasicMaterial( { 
+	color: 0xffffff,
+	 // side: THREE.DoubleSide
+  } );
+
+
+var mesh = new THREE.Mesh( geometry, material );
+mesh.position.set(1.168, 0.200, -0.846)
+
+scene.add( mesh );
+tyres.push(mesh);
+
+var tyre2 = mesh.clone();
+tyre2.position.set(1.168, 0.200, 0.846)
+scene.add( tyre2 );
+tyres.push(tyre2);
+
+var tyre3 = mesh.clone();
+tyre3.position.set(-0.987, 0.20, 0.846)
+scene.add( tyre3 );
+tyres.push(tyre3);
+
+var tyre4 = mesh.clone();
+tyre4.position.set(-0.987, 0.20, -0.846)
+scene.add( tyre4 );
+tyres.push(tyre4);
+
+var tyre5 = mesh.clone();
+tyre5.position.set(-1.8, 1, 0)
+tyre5.rotation.y = -Math.PI/2;
+tyre5.material = material2;
+scene.add( tyre5 );
+
+
+// groups
+cameragoal = new THREE.Group();
+scene.add( cameragoal );
+
+
+
+
+
+    makerocks();
+
+
+
+
+	// handle window resize
+	window.addEventListener('resize', function(){
+	camera.aspect = window.innerWidth / window.innerHeight;
+	camera.updateProjectionMatrix();
+	renderer.setSize( window.innerWidth, window.innerHeight );
+	}, false)
+
+
+	var animate = function () {
+		requestAnimationFrame( animate );
+		renderer.render( scene, camera );
+		animateBG()
+	};
+
+	animate();
+
+
+// rocks
+function makerocks() {
+for ( var i = 0; i < 100; i ++ ) {
+      var sc = Math.random()*0.4;
+      var material = new THREE.MeshLambertMaterial( {
+      	color: 0xa59e7a
+      } );
+      var geometry = new THREE.BoxGeometry( sc, sc, sc );
+      var mesh = new THREE.Mesh( geometry, material );
+          mesh.scale.set(sc, sc, sc);
+          mesh.position.x = ( Math.random() - 0.5 ) * 12;
+          mesh.position.z = ( Math.random() - 0.5 ) * 12;
+		
+		// leave space in center
+		if ( Math.abs( mesh.position.z ) < 2 && Math.abs( mesh.position.z ) < 13 ) continue;
+
+
+          mesh.position.y = sc/2;
+          scene.add( mesh );
+          bgcubes.push(mesh)
+
+  }
+
+// road
+var geometry = new THREE.PlaneBufferGeometry( 80, 2, 1 );
+var material = new THREE.MeshBasicMaterial( {
+	// color: 0xffff00
+	map : new THREE.TextureLoader().load( 'trans2.png' )
+	, transparent: true,
+	opacity:0.3
+	// ,alphaTest:true
+	, side: THREE.DoubleSide
+} );
+var plane = new THREE.Mesh( geometry, material );
+plane.rotation.x = -Math.PI/2;
+plane.position.x = -20;
+plane.position.y = -0.2;
+scene.add( plane );
+
+}// make rocks
+
+
+
+// make the cubes GOOOoooooo!!!
+function animateBG(){
+// helper.rotation.y += 0.01;
+
+for ( var i = 0; i < bgcubes.length; i ++ ) { 
+  bgcubes[i].position.x -= 0.1;
+  // console.log(bgcubes[3].position.x) 
+  if (bgcubes[i].position.x < -3) {
+    bgcubes[i].position.x = 3;
+  }
+}
+
+for ( var i = 0; i < tyres.length; i ++ ) { 
+  tyres[i].position.y = (Math.random()/20) + 0.2;
+}	
+
+// animate screen
+// var t = clock.getElapsedTime();
+// cameragoal.position.y = Math.floor( ( t * player.fps ) % player.count );
+//
+// cameragoal.position.y = Math.random()/10;
+// camera.position.y += (cameragoal.position.y - camera.position.y)*0.2;
+// camera.updateProjectionMatrix();
+}
+
+
+
+//
+function tellme(){
+console.log(camera.position)	
+}
+</script>
+</body>
+</html>
