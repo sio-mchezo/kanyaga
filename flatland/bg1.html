@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width">
+  <title>packing</title>
+  <style>
+  body {
+    font-family: monospace;
+    background: #4c3f2c;
+    color: #eee;
+    overflow: hidden;
+    margin:0;
+    user-select:none;
+  }
+  #canvas {position: absolute;} 
+  #canvas {display: none;}
+  #hitcanvas {
+    display: none;
+    position: absolute;
+    bottom: -128px; left: -128px;
+    z-index: 9;
+    transform: scale(0.5);
+  }
+  #hud {
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+  #hud button { padding: 10px; 
+    border: none;
+    background: transparent;
+    font-family: monospace;
+    color: #ccc;
+    text-transform: uppercase;
+    font-size: 20px;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+  
+  <div id="hud"><button id="reload">GENERATE</button></div>
+
+  <canvas id="canvas" width="512" height="512" >
+  <canvas id="hitcanvas" width="512" height="512" >
+
+      <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/build/three.min.js"></script>
+      <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/controls/OrbitControls.js"></script>
+
+      <script>
+  document.querySelector('#reload').addEventListener("mousedown", reload);
+  document.querySelector('#reload').addEventListener("touchstart", reload);
+
+
+  // btn
+  function reload(argument) {
+    circles = [];
+    // console.log(n)
+    for (var i = scenegroup.children.length - 1; i >= 0; i--) {
+      scenegroup.remove(scenegroup.children[i]);  
+    }
+
+  
+    // htx.fillStyle = '#fff';
+    // htx.fillRect(0, 0, hitcanvas.width, hitcanvas.width);
+    // htx.fillStyle = 'black';
+    // htx.beginPath();
+    // aliasedCircle(htx, 255, 255, 254);
+    // htx.fill();
+    context.clearRect(0, 0, hitcanvas.width, hitcanvas.width);
+    // plane.material.map.needsUpdate = true;
+
+    // 
+    n++;
+    if (n>lvls.length-1) {n = 0;}
+    htx.drawImage(images[n], 0, 0, 512, 512);
+
+    setTimeout(function () {
+      counter = 0;
+      draw();
+    }, 30)
+
+  }
+
+
+
+  // create pixellated circle
+  function aliasedCircle(ctx, xc, yc, r) {  
+    var x = r, y = 0, cd = 0;
+
+    // middle line
+    ctx.rect(xc - x, yc, r<<1, 1);
+
+    while (x > y) {
+      cd -= (--x) - (++y);
+      if (cd < 0) cd += x++;
+        ctx.rect(xc - y, yc - x, y<<1, 1);    // upper 1/4
+        ctx.rect(xc - x, yc - y, x<<1, 1);    // upper 2/4
+        ctx.rect(xc - x, yc + y, x<<1, 1);    // lower 3/4
+        ctx.rect(xc - y, yc + x, y<<1, 1);    // lower 4/4
+      }
+  }
+
+
+
+
+// images
+const lvls = ["level1.png", "level2.png", "level3.png", "level4.png", "level5.png"]
+const images = [];
+var imageCount = 0;
+var n = 0;
+
+// add images to loaded func
+lvls.forEach(src => { 
+     const image = new Image();
+     image.src = src;
+     image.onload = ()=>{ 
+         imageCount += 1;
+         if(imageCount === lvls.length){ 
+             ready();
+         }
+     }
+     images.push(image); 
+});
+
+
+// img
+var hitimg = new Image();
+hitimg.onload = ready;
+hitimg.src = lvls[3];
+
+// hit canvas
+var hitcanvas = document.getElementById("hitcanvas"),
+htx = hitcanvas.getContext("2d", { willReadFrequently: true });
+hitcanvas.id = "hitcanvas";
+hitcanvas.width = 512;
+hitcanvas.height = hitcanvas.width;
+document.body.appendChild(hitcanvas);
+
+
+// trees
+var canvas = document.getElementById("canvas"),
+context = canvas.getContext("2d");
+canvas.width = canvas.height = hitcanvas.width;
+
+// working circle
+context.fillStyle = 'white';
+context.beginPath();
+context.arc(256, 256, 255, 0, Math.PI*2);
+context.fill();
+
+
+// array
+var circles = [],
+min = 5,
+max = 30;
+var counter = 0;
+
+// draw circles
+function draw() {
+  // center circle
+  htx.fillStyle = 'white';
+  htx.beginPath();
+  htx.arc(256, 256, 50, 0, Math.PI*2);
+  htx.fill();
+
+  // outer circle
+  htx.beginPath();
+  htx.arc(256, 256, 240, 0, 2 * Math.PI);
+  htx.rect(512, 0, -512, 512);
+  htx.fill();
+
+  var c = createCircle();
+  counter = 0;
+  while(!isValid(c)) {
+    c.x = Math.random() * 512;
+    c.y = Math.random() * 512;
+    counter++;
+
+// end loop
+if(counter > 1000) {
+  return;
+}
+}
+
+// size of circles
+while(isValid(c)){
+  c.r++;
+}
+
+c.r -= 2;
+
+// alternatives
+// c.r = (c.x+c.y)/40;
+// c.r = Math.hypot(c.x,c.y)/20;
+
+circles.push(c);
+drawCircle(c);
+requestAnimationFrame(draw);
+}
+
+
+// check to place the next circle
+function isValid(c) {
+// over max size
+if (c.r > max) {
+  return false;
+}
+
+for (var i = 0; i < circles.length; i++) {
+  var c2 = circles[i],
+  dx = c2.x - c.x,
+  dy = c2.y - c.y,
+  dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist < c2.r + c.r) {
+    return false;
+  } 
+}
+
+
+// get hitcanvas red value + don't place on white
+xdata = htx.getImageData(c.x, c.y, 1, 1);
+if (xdata.data[0] > 5) {
+  return false;
+}
+
+return true;
+}
+
+
+// make circle object
+function createCircle() {
+  return {
+    x: Math.random() * 512,
+    y: Math.random() * 512,
+    r: min
+  };   
+}
+
+
+// draw it and colour it 
+function drawCircle(c) {
+if (c.r<=max*0.8) {context.fillStyle = '#111';}
+if (c.r<=max*0.6) {context.fillStyle = '#222';}
+if (c.r<=max*0.4) {context.fillStyle = '#333';}
+if (c.r<=max*0.2) {context.fillStyle = '#444';}
+
+context.beginPath();
+context.arc(c.x, c.y, c.r, 0, Math.PI*2);
+context.fill();
+
+//
+createobj(c.x-256,c.y-256,0,c.r/1.1)
+// plane.material.map.needsUpdate = true;
+}
+
+
+
+
+// 3D START
+
+function init3D() {
+    scene = new THREE.Scene();
+
+    camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 1, 2000 );
+
+    renderer = new THREE.WebGLRenderer({antialias:true, transparent:true, alpha:true});
+    renderer.setSize( window.innerWidth, window.innerHeight );
+    document.body.appendChild( renderer.domElement );
+
+    camera.position.z = 300;
+    camera.position.y = 200;
+    camera.lookAt(0,0,0)
+
+
+    var controls = new THREE.OrbitControls( camera, renderer.domElement );
+    controls.maxPolarAngle = Math.PI * 0.47;
+
+
+    scenegroup = new THREE.Group();
+    scene.add( scenegroup );
+    // scenegroup.rotation.set(-Math.PI/2,0,0)
+
+    treegroup = new THREE.Group();
+    scene.add( treegroup );
+
+    /* bush */
+    material = new THREE.MeshBasicMaterial( { 
+      color: 0xfff000,
+      side: THREE.DoubleSide,
+      transparent:true,
+      opacity:0.5,
+   } );
+    var geometry = new THREE.SphereGeometry(10, 32, 8, 0, 2*Math.PI, 0, Math.PI/2);
+    dome = new THREE.Mesh( geometry, material );
+    dome.scale.y = 0.5;
+
+    /* rock */
+    // var rockgeometry = new THREE.SphereGeometry(10, 4, 3, 0, 2*Math.PI, 0, Math.PI/2);
+    // var rock = new THREE.Mesh( rockgeometry, 
+    // new THREE.MeshBasicMaterial( { color: 0x333333 } )
+    //  );
+    // // rock.position.set(x,y,z);
+    // rock.scale.y = 2;
+    // scene.add( rock );
+
+    // rock
+    // var rkgeometry = new THREE.SphereGeometry( 20, 2, 1, 0, 3 );
+    // var mesh = new THREE.Mesh( rkgeometry, 
+    //   new THREE.MeshBasicMaterial( { color: 0x111111 } ) );
+    // mesh.rotation.x = -Math.PI/2;
+    // mesh.rotation.z = Math.PI*Math.random();
+    // mesh.position.y = -4;    
+    // scene.add( mesh );
+
+
+}
+
+
+//
+function createobj(x,y,z,s) {
+  if (s>=15) {
+    // console.log(s)
+    createtree(x,z,y,s)
+  } else {
+    createbush(x,z,y,s)
+  }
+}
+
+//
+function createbush(x,y,z,s) {
+  var bushclone = dome.clone();
+  bushclone.scale.set( s/10, s/20, s/10 );
+  bushclone.position.set(x,y,z);
+  scenegroup.add( bushclone );
+}
+
+//
+function createtree(x,y,z,s) {
+  var treeclones = treegroup.clone();
+  treeclones.position.set(x,5,z);
+  // treeclones.rotation.set(Math.PI/2,0,Math.random()*10);
+  treeclones.material = new THREE.MeshBasicMaterial({
+  color: 0xff0000, side: THREE.BackSide
+  });
+  var distance = treeclones.position.distanceTo( {x:0,y:0,z:0} );
+  xvar = (s/5)-(distance/60);
+  if (xvar < 1.7){xvar = 1.7;}
+  treeclones.scale.set( xvar, xvar, xvar );
+  // treeclones.scale.set( s/5, s/5, s/5 );
+  // treeclones.position.y = 5;
+  scenegroup.add( treeclones );
+  // treeclones.lookAt(0,5,0)
+}
+
+// window resize
+window.addEventListener('resize', function(){
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  camera.updateProjectionMatrix();
+  renderer.setSize( window.innerWidth, window.innerHeight );
+}, false)
+
+
+
+//
+function create3Dtree(argument) {
+  //tree
+  geometry = new THREE.CylinderGeometry( 1, 2, 50, 8, 1 );
+  material = new THREE.MeshBasicMaterial({
+    color: 0xa46d49
+  });
+  treetrunk = new THREE.Mesh(geometry, material);
+  treetrunk.position.set( 0, 10, 0 );
+  treetrunk.scale.set( 0.3, 0.52, 0.3 );
+  treetrunk.radiusTop = 1;
+  treetrunk.openEnded = false;
+  treegroup.add( treetrunk );
+  //branches
+  var branch1 = treetrunk.clone();
+  branch1.position.set (0, 20, 1.3);
+  branch1.scale.set (0.2, 0.08, 0.2);
+  branch1.name = "branch1";
+  branch1.rotation.set (1, 0, 0);
+  treegroup.add( branch1 );
+  var branch2 = treetrunk.clone();
+  branch2.position.set (0, 20, -1.3);
+  branch2.scale.set (0.2, 0.08, 0.2);
+  branch2.name = "branch2";
+  branch2.rotation.set (-0.73, 0, 0);
+  treegroup.add( branch2 );
+  //treetop
+  geometry = new THREE.SphereGeometry( 14, 14, 14 );
+  material = new THREE.MeshBasicMaterial({
+  color: 0x88eb91, side: THREE.BackSide,
+  transparent:true,
+  opacity:0.9
+});
+  treegreen = new THREE.Mesh(geometry, material);
+  treegreen.scale.set(0.5,0.5,0.5);
+  treegreen.position.set (0, 25, 0);
+  treegreen.name = "treegrn";
+  scene.remove( treegroup );
+  treegroup.add( treegreen );
+}
+
+
+function createground() {
+  // var plgeometry = new THREE.PlaneGeometry(512, 512);
+  var plgeometry = new THREE.CircleGeometry( 256, 100 );
+
+  var plmaterial = new THREE.MeshBasicMaterial({ 
+  // map : new THREE.CanvasTexture(canvas),
+  color:0x4d3728,
+  // transparent:true,
+  // opacity:0.3,
+  side: THREE.DoubleSide
+  });
+  plane = new THREE.Mesh( plgeometry, plmaterial );
+  plane.rotation.set(-Math.PI/2,0,0);
+  scene.add( plane );
+  // plane.material.map.magFilter = THREE.NearestFilter;
+  // plane.material.map.minFilter = THREE.NearestFilter;
+}
+
+
+function animate() {
+  requestAnimationFrame( animate );
+  renderer.render( scene, camera );
+};
+
+// img loaded > start   
+function ready() {
+  htx.drawImage(hitimg, 0, 0, 512, 512);
+  draw();
+}
+  // START <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+  init3D();
+  createground();
+  create3Dtree();
+  
+  animate();
+
+
+</script>
+</body>
+</html>
