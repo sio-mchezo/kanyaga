@@ -63,8 +63,8 @@
     hitCtx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
 
     var images = [
-      {"src":"textures/lvl-bump.png"},
-      {"src":"textures/lvl-hit.png"}
+      {"src":"3d/lvl-bump.png"},
+      {"src":"3d/lvl-hit.png"}
     ];
 
     const imageArray = [];
@@ -273,9 +273,9 @@
         const geometry = new THREE.PlaneGeometry(levelSize, levelSize, 256, 256);
         const textureLoader = new THREE.TextureLoader();
         
-        const colorMap = textureLoader.load('textures/lvl-colour.png');
+        const colorMap = textureLoader.load('3d/lvl-colour.png');
         colorMap.magFilter = colorMap.minFilter = THREE.NearestFilter;
-        const bumpMap = textureLoader.load("textures/lvl-bump.png");
+        const bumpMap = textureLoader.load("3d/lvl-bump.png");
 
         const groundMaterial = new THREE.MeshStandardMaterial({
           map: colorMap,
