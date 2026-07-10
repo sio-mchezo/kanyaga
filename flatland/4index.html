@@ -145,7 +145,7 @@
       // Load all 6 grass textures
       const grassTextures = [];
       for (let i = 0; i < 6; i++) {
-        const tex = textureLoader.load(`textures/sprites/painterly_${i}.png`);
+        const tex = textureLoader.load(`3d/painterly_${i}.png`);
         tex.wrapS = THREE.ClampToEdgeWrapping;
         tex.wrapT = THREE.ClampToEdgeWrapping;
         grassTextures.push(tex);
@@ -275,9 +275,9 @@
         const geometry = new THREE.PlaneGeometry(levelSize, levelSize, 256, 256);
         const textureLoader = new THREE.TextureLoader();
         
-        const colorMap = textureLoader.load('textures/lvl-colour.png');
+        const colorMap = textureLoader.load('3d/lvl-colour.png');
         colorMap.magFilter = colorMap.minFilter = THREE.NearestFilter;
-        const bumpMap = textureLoader.load("textures/lvl-bump.png");
+        const bumpMap = textureLoader.load("3d/lvl-bump.png");
 
         const groundMaterial = new THREE.MeshStandardMaterial({
           // map: colorMap,
