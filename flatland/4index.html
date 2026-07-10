@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+  <meta charset="UTF-8">
+  <title>box on terrain with grass</title>
+  <style>
+    body {
+      user-select: none;
+      padding: 0;
+      margin: 0;
+      background: #000;
+      overflow: hidden;
+      height: 100vh;
+      position: relative;
+    }
+    .nipple { display: none !important; }
+    #bumpcanvas, #hitcanvas { 
+        display: none;
+        position: absolute;
+        top: -128px;
+        left: -128px;
+        transform: scale(0.5);
+    }
+    #bumpcanvas {
+        top: 128px;
+    }
+    #fps {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      color: #fff;
+      font-family: monospace;
+      font-size: 14px;
+      background: rgba(0,0,0,0.5);
+      padding: 5px 8px;
+      border-radius: 3px;
+      z-index: 10;
+    }
+  </style>
+  <canvas id="bumpcanvas" width="512" height="512"></canvas>
+  <canvas id="hitcanvas" width="512" height="512"></canvas>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.9.0/nipplejs.min.js"></script>
+  <script src="js/three.min.js"></script>
+  
+  <script>
+    // ----- constants & canvas setup -----
+    const CANVAS_SIZE = 512;
+    const HALF_CANVAS = CANVAS_SIZE / 2;
+    const levelSize = 128;
+    const JOYSTICK_MAX_SPEED = 8;
+    const SAMPLE_DISTANCE = 0.5;
+    
+    const bumpCanvas = document.getElementById("bumpcanvas");
+    const bmpCtx = bumpCanvas.getContext("2d");
+    bmpCtx.fillStyle = "#e60087";
+    bmpCtx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+    const hitCanvas = document.getElementById("hitcanvas");
+    const hitCtx = hitCanvas.getContext("2d", { willReadFrequently: true });
+    hitCtx.fillStyle = "#e60087";
+    hitCtx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+    var images = [
+      {"src":"textures/lvl-bump.png"},
+      {"src":"textures/lvl-hit.png"}
+    ];
+
+    const imageArray = [];
+    var imageCount = 0;
+    
+    images.forEach(function(element, index){
+      const image = new Image();
+      image.src = element.src;
+      image.onload = ()=>{ 
+        imageCount += 1;
+        if(imageCount === images.length){ 
+          startLevel();
+        }
+      }
+      imageArray.push(image); 
+    });
+
+    function startLevel() {
+      bmpCtx.drawImage(imageArray[0], 0, 0);
+      hitCtx.drawImage(imageArray[1], 0, 0);
+    }
+
+    // ----- config -----
+    const CONFIG = {
+      GROUND_Y_POSITION: -0.01,
+      DISPLACEMENT_SCALE: 5,
+      DISPLACEMENT_BIAS: -4,
+      HEIGHT_OFFSET: 0.5,
+      WALK_SPEED: 3
+    };
+
+    // ----- Luma Alpha Shader -----
+    function applyLumaAlphaShader(material, cacheKey) {
+        material.onBeforeCompile = (shader) => {
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <map_fragment>',
+                `
+                #ifdef USE_MAP
+                    vec4 sampledTexel = texture2D(map, vUv);
+                    float strokeLuma = dot(sampledTexel.rgb, vec3(0.299, 0.587, 0.114));
+                    diffuseColor.a *= strokeLuma;
+                #endif
+                `
+            );
+
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <alphatest_fragment>',
+                `
+                if (diffuseColor.a < 0.003) discard;
+                `
+            );
+        };
+        material.customProgramCacheKey = () => cacheKey;
+    }
+
+    // ----- Create sprite material with shader -----
+    function createSpriteMaterial(map) {
+        const material = new THREE.SpriteMaterial({
+            map: map,
+            transparent: true,
+            // depthTest: false,
+            // depthWrite: false,
+            sizeAttenuation: true,
+            toneMapped: false,  // Disable tone mapping to preserve colors
+            opacity: 1,
+            blending: THREE.NormalBlending
+        });
+        material.color.setRGB(1, 1, 1);
+        applyLumaAlphaShader(material, 'sprite-luma-alpha');
+        return material;
+    }
+
+    // ----- Grass generation -----
+    function createGrassSprites(count, scene) {
+      const group = new THREE.Group();
+      const textureLoader = new THREE.TextureLoader();
+      
+      // Load all 6 grass textures
+      const grassTextures = [];
+      for (let i = 0; i < 6; i++) {
+        const tex = textureLoader.load(`textures/sprites/painterly_${i}.png`);
+        tex.wrapS = THREE.ClampToEdgeWrapping;
+        tex.wrapT = THREE.ClampToEdgeWrapping;
+        grassTextures.push(tex);
+      }
+
+      // Helper to get height from bump map
+      function getHeight(worldX, worldZ) {
+        const u = HALF_CANVAS + Math.floor(worldX * (CANVAS_SIZE / levelSize));
+        const v = HALF_CANVAS + Math.floor(worldZ * (CANVAS_SIZE / levelSize));
+        
+        if (u < 0 || u >= CANVAS_SIZE || v < 0 || v >= CANVAS_SIZE) {
+          return CONFIG.HEIGHT_OFFSET;
+        }
+        
+        const pixelData = bmpCtx.getImageData(u, v, 1, 1).data;
+        const normalizedValue = (pixelData[0] / 255) * 2 - 1;
+        const terrainHeight = (normalizedValue * CONFIG.DISPLACEMENT_SCALE) + CONFIG.DISPLACEMENT_BIAS;
+        const worldY = CONFIG.GROUND_Y_POSITION + (terrainHeight/2);
+        return worldY + CONFIG.HEIGHT_OFFSET;
+      }
+
+      // Helper to pick random color from palette
+      function pickGrassColor(x, z) {
+        const palette = [
+          [0.12, 0.48, 0.16], [0.14, 0.52, 0.20], [0.16, 0.55, 0.22], [0.18, 0.58, 0.24],
+          [0.20, 0.60, 0.26], [0.22, 0.58, 0.28], [0.24, 0.55, 0.26], [0.26, 0.52, 0.28],
+          [0.28, 0.50, 0.24], [0.30, 0.48, 0.26], [0.32, 0.55, 0.30], [0.34, 0.52, 0.28],
+          [0.17, 0.62, 0.22], [0.21, 0.65, 0.24], [0.25, 0.68, 0.28], [0.19, 0.42, 0.18],
+          [0.23, 0.45, 0.20], [0.27, 0.40, 0.22], [0.31, 0.38, 0.24], [0.15, 0.50, 0.32],
+          [0.29, 0.46, 0.34], [0.33, 0.44, 0.30], [0.11, 0.55, 0.18], [0.13, 0.58, 0.26],
+          [0.35, 0.60, 0.22], [0.37, 0.48, 0.20], [0.09, 0.52, 0.14], [0.38, 0.42, 0.32]
+        ];
+        const index = Math.floor(Math.random() * palette.length);
+        return palette[index];
+      }
+
+      // Pre-create base materials with shader applied
+      const baseMaterials = grassTextures.map((tex) => {
+        return createSpriteMaterial(tex);
+      });
+
+      // Create sprites
+      for (let i = 0; i < count; i++) {
+        const x = (Math.random() - 0.5) * levelSize;
+        const z = (Math.random() - 0.5) * levelSize;
+        const y = getHeight(x, z);
+        
+        // Skip if height is too low
+        if (y < -2) continue;
+        
+        // Select a base material
+        const baseMat = baseMaterials[Math.floor(Math.random() * baseMaterials.length)];
+        
+        // Clone the material and re-apply the shader
+        const material = baseMat.clone();
+        material.color.setHSL(...pickGrassColor(x, z));
+        material.rotation = Math.random() * Math.PI * 2;
+        // Re-apply shader to the cloned material
+        applyLumaAlphaShader(material, 'sprite-luma-alpha');
+        
+        const sprite = new THREE.Sprite(material);
+        const size = 1 + Math.random() * 2;
+        sprite.center.set(0.5, 0.5);
+        sprite.position.set(x, y, z);
+        sprite.scale.set(size, size , 1);
+        sprite.renderOrder = 2;
+        group.add(sprite);
+      }
+
+      return group;
+    }
+
+    // ----- Environment (terrain + movement) -----
+    class Environment {
+      constructor(scene, camera, renderer, boxGroup) {
+        this.scene = scene;
+        this.camera = camera;
+        this.renderer = renderer;
+        this.boxGroup = boxGroup;
+        
+        this.allowMove = true;
+        this.moving = false;
+        this.posX = 0;
+        this.posZ = 0;
+        this.vx = 0;
+        this.vz = 0;
+        this.rotation = 0;
+        this.force = 0;
+        this.currentSpeed = CONFIG.WALK_SPEED;
+        
+        this.currentRotation = 0;
+        this.rotationSmoothing = 0.8;
+        
+        this.ground = null;
+        this.sea = null;
+        this.joystick = null;
+        this.grassGroup = null;
+        
+        this.worldGroup = new THREE.Group();
+        this.scene.add(this.worldGroup);
+
+        this.targetHeight = CONFIG.HEIGHT_OFFSET;
+        this.currentHeight = CONFIG.HEIGHT_OFFSET;
+        this.heightSmoothing = 0.3;
+        
+        this.targetQuaternion = new THREE.Quaternion();
+        this.currentQuaternion = new THREE.Quaternion();
+        this.rotationSlerpFactor = 0.2;
+        
+        this.init();
+      }
+      
+      init() {
+        this.setupGround();
+        this.setupGrass();
+        this.setupJoystick();
+        if (this.boxGroup) {
+          this.boxGroup.position.set(0, CONFIG.HEIGHT_OFFSET, 0);
+          this.boxGroup.rotation.set(0, Math.PI, 0);
+          this.currentQuaternion.copy(this.boxGroup.quaternion);
+        }
+      }
+      
+      setupGround() {
+        const geometry = new THREE.PlaneGeometry(levelSize, levelSize, 256, 256);
+        const textureLoader = new THREE.TextureLoader();
+        
+        const colorMap = textureLoader.load('textures/lvl-colour.png');
+        colorMap.magFilter = colorMap.minFilter = THREE.NearestFilter;
+        const bumpMap = textureLoader.load("textures/lvl-bump.png");
+
+        const groundMaterial = new THREE.MeshStandardMaterial({
+          map: colorMap,
+          displacementMap: bumpMap,
+          displacementScale: CONFIG.DISPLACEMENT_SCALE,
+          displacementBias: CONFIG.DISPLACEMENT_BIAS,
+          metalness: 0.01,
+          roughness: 0.9,
+          side: THREE.DoubleSide
+        });
+        
+        this.ground = new THREE.Mesh(geometry, groundMaterial);
+        this.ground.rotation.x = -Math.PI / 2;
+        this.ground.position.y = CONFIG.GROUND_Y_POSITION;
+        this.ground.receiveShadow = true;
+        this.worldGroup.add(this.ground);
+
+        this.sea = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({color:0x000000}));
+        this.sea.rotation.set(-Math.PI/2,0,0);
+        this.sea.position.set(0,-2,0);
+        this.worldGroup.add(this.sea);  
+      }
+      
+      setupGrass() {
+        this.grassGroup = createGrassSprites(12000, this.scene);
+        this.worldGroup.add(this.grassGroup);
+      }
+      
+      setupJoystick() {
+        if (typeof nipplejs !== 'undefined') {
+          this.joystick = nipplejs.create({
+            zone: document.body,
+            dataonly: true
+          });
+          
+          this.joystick.on('move', (evt, data) => {
+            if (!data.force || data.force < 0.1) return;
+            this.force = data.force;
+            
+            const vx = data.force * Math.cos(data.angle.radian) * this.currentSpeed;
+            const vz = -data.force * Math.sin(data.angle.radian) * this.currentSpeed;
+            
+            const limited = this.limitVelocity(vx, vz, JOYSTICK_MAX_SPEED);
+            this.vx = limited.vx;
+            this.vz = limited.vz;
+            this.moving = true;
+            
+            this.rotation = Math.atan2(this.vz, this.vx) - Math.PI / 2;
+          });
+          
+          this.joystick.on('end', () => {
+            this.moving = false;
+            this.vx = this.vz = 0;
+            this.force = 0;
+          });
+        }
+      }
+      
+      getHeightFromBumpCanvas(worldX, worldZ) {
+        const u = HALF_CANVAS + Math.floor(worldX * (CANVAS_SIZE / levelSize));
+        const v = HALF_CANVAS + Math.floor(worldZ * (CANVAS_SIZE / levelSize));
+        
+        if (u < 0 || u >= CANVAS_SIZE || v < 0 || v >= CANVAS_SIZE) {
+          return CONFIG.HEIGHT_OFFSET;
+        }
+        
+        const pixelData = bmpCtx.getImageData(u, v, 1, 1).data;
+        const normalizedValue = (pixelData[0] / 255) * 2 - 1;
+        const terrainHeight = (normalizedValue * CONFIG.DISPLACEMENT_SCALE) + CONFIG.DISPLACEMENT_BIAS;
+        const worldY = CONFIG.GROUND_Y_POSITION + (terrainHeight/2);
+        return worldY + CONFIG.HEIGHT_OFFSET;
+      }
+      
+      getTerrainNormal(worldX, worldZ) {
+        const heightRight = this.getHeightFromBumpCanvas(worldX + SAMPLE_DISTANCE, worldZ);
+        const heightLeft = this.getHeightFromBumpCanvas(worldX - SAMPLE_DISTANCE, worldZ);
+        const heightForward = this.getHeightFromBumpCanvas(worldX, worldZ + SAMPLE_DISTANCE);
+        const heightBack = this.getHeightFromBumpCanvas(worldX, worldZ - SAMPLE_DISTANCE);
+        
+        const dx = (heightRight - heightLeft) / (2 * SAMPLE_DISTANCE);
+        const dz = (heightForward - heightBack) / (2 * SAMPLE_DISTANCE);
+        
+        const tangentX = new THREE.Vector3(1, dx, 0).normalize();
+        const tangentZ = new THREE.Vector3(0, dz, 1).normalize();
+        
+        const normal = new THREE.Vector3();
+        normal.crossVectors(tangentZ, tangentX).normalize();
+        
+        if (normal.y < 0) {
+          normal.negate();
+        }
+        
+        return normal;
+      }
+      
+      updateBoxGroup(worldX, worldZ) {
+        if (!this.boxGroup) return;
+        
+        this.targetHeight = this.getHeightFromBumpCanvas(worldX, worldZ);
+        this.currentHeight += (this.targetHeight - this.currentHeight) * this.heightSmoothing;
+        this.boxGroup.position.y = this.currentHeight;
+        
+        const terrainNormal = this.getTerrainNormal(worldX, worldZ);
+        
+        const upVector = new THREE.Vector3(0, 1, 0);
+        const terrainQuat = new THREE.Quaternion();
+        terrainQuat.setFromUnitVectors(upVector, terrainNormal);
+        
+        const forwardDir = new THREE.Vector3(
+          Math.sin(this.currentRotation),
+          0,
+          Math.cos(this.currentRotation)
+        );
+        
+        const worldForward = forwardDir.clone().applyQuaternion(terrainQuat);
+        const lookAtTarget = new THREE.Vector3().copy(this.boxGroup.position).add(worldForward);
+        
+        const targetMatrix = new THREE.Matrix4();
+        targetMatrix.lookAt(this.boxGroup.position, lookAtTarget, terrainNormal);
+        
+        this.targetQuaternion.setFromRotationMatrix(targetMatrix);
+        this.currentQuaternion.slerp(this.targetQuaternion, this.rotationSlerpFactor);
+        this.boxGroup.quaternion.copy(this.currentQuaternion);
+      }
+      
+      checkCollision(worldX, worldZ) {
+        const u = HALF_CANVAS + Math.floor(worldX * (CANVAS_SIZE / levelSize));
+        const v = HALF_CANVAS + Math.floor(worldZ * (CANVAS_SIZE / levelSize));
+        if (u < 0 || u >= CANVAS_SIZE || v < 0 || v >= CANVAS_SIZE) return false;
+        const pixelData = hitCtx.getImageData(u, v, 1, 1).data;
+        return pixelData[0] > 254;
+      }
+      
+      update(delta) {
+        if (this.moving && this.force > 0.2) {
+          const newPosX = this.posX + this.vx * delta;
+          const newPosZ = this.posZ + this.vz * delta;
+          
+          const hasCollision = this.checkCollision(newPosX, newPosZ);
+          
+          if (!hasCollision) {
+            this.posX = newPosX;
+            this.posZ = newPosZ;
+            this.allowMove = true;
+          } else {
+            this.allowMove = false;
+            const slideXCollision = this.checkCollision(newPosX, this.posZ);
+            if (!slideXCollision) {
+              this.posX = newPosX;
+              this.vz = 0;
+              this.allowMove = true;
+            } else {
+              const slideZCollision = this.checkCollision(this.posX, newPosZ);
+              if (!slideZCollision) {
+                this.posZ = newPosZ;
+                this.vx = 0;
+                this.allowMove = true;
+              } else {
+                this.vx = this.vz = 0;
+              }
+            }
+          }
+          
+          this.worldGroup.position.x = -this.posX;
+          this.worldGroup.position.z = -this.posZ;
+          
+          const targetRotation = -this.rotation;
+          let diff = targetRotation - this.currentRotation;
+          while (diff > Math.PI) diff -= Math.PI * 2;
+          while (diff < -Math.PI) diff += Math.PI * 2;
+          this.currentRotation += diff * this.rotationSmoothing;
+          
+          this.updateBoxGroup(this.posX, this.posZ);
+          
+          return { isMoving: true, speed: Math.hypot(this.vx, this.vz) };
+        } else {
+          this.updateBoxGroup(this.posX, this.posZ);
+          return { isMoving: false, speed: 0 };
+        }
+      }
+      
+      limitVelocity(vx, vz, max) {
+        const len = Math.hypot(vx, vz);
+        if (!len) return { vx: 0, vz: 0 };
+        const scale = Math.min(len, max) / len;
+        return { vx: vx * scale, vz: vz * scale };
+      }
+      
+      dispose() {
+        if (this.joystick) this.joystick.destroy();
+      }
+    }
+
+    // ----- Main app -----
+    class BoxApp {
+      constructor() {
+        this.scene = null;
+        this.camera = null;
+        this.renderer = null;
+        this.clock = null;
+        this.environment = null;
+        this.boxGroup = null;
+        this.init();
+      }
+      
+      init() {
+        this.setupScene();
+        this.setupCamera();
+        this.setupRenderer();
+        this.setupLights();
+        this.createBoxGroup();
+        this.setupEventListeners();
+        this.startAnimationLoop();
+      }
+      
+      setupScene() {
+        this.scene = new THREE.Scene();
+        this.clock = new THREE.Clock();
+      }
+      
+      setupCamera() {
+        this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        this.camera.position.set(0, 5, 10);
+        this.scene.add(this.camera);
+      }
+      
+      setupRenderer() {
+        this.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.toneMappingExposure = 1.0;
+        document.body.appendChild(this.renderer.domElement);
+      }
+      
+      setupLights() {
+        const ambient = new THREE.AmbientLight(0xcccccc, 0.8);
+        this.scene.add(ambient);
+        
+        const light1 = new THREE.PointLight(0xffefef, 0.9);
+        light1.position.set(0, 0.2, 2);
+        this.scene.add(light1);
+        
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+        dirLight.position.set(-3, 15, -8);
+        dirLight.castShadow = true;
+        dirLight.shadow.camera.top = 4;
+        dirLight.shadow.camera.bottom = -4;
+        dirLight.shadow.camera.left = -4;
+        dirLight.shadow.camera.right = 4;
+        dirLight.shadow.camera.near = 0.1;
+        dirLight.shadow.camera.far = 40;
+        dirLight.shadow.radius = 8;
+        this.scene.add(dirLight);
+      }
+      
+      createBoxGroup() {
+        this.boxGroup = new THREE.Group();
+        
+        const boxGeometry = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+        const boxMaterial = new THREE.MeshStandardMaterial({ 
+          color: 0xffaa44,
+          roughness: 0.4,
+          metalness: 0.1
+        });
+        const mainBox = new THREE.Mesh(boxGeometry, boxMaterial);
+        mainBox.position.set(0, 0.4, 0);
+        mainBox.castShadow = true;
+        mainBox.receiveShadow = true;
+        this.boxGroup.add(mainBox);
+        
+        const indicatorGeometry = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+        const indicatorMaterial = new THREE.MeshStandardMaterial({ 
+          color: 0xff3333,
+          roughness: 0.3,
+          metalness: 0.2,
+          emissive: 0x330000
+        });
+        const indicatorBox = new THREE.Mesh(indicatorGeometry, indicatorMaterial);
+        indicatorBox.position.set(0, 0, -0.55);
+        indicatorBox.castShadow = true;
+        mainBox.add(indicatorBox);
+        
+        this.boxGroup.position.set(0, CONFIG.HEIGHT_OFFSET, 0);
+        this.scene.add(this.boxGroup);
+        
+        this.environment = new Environment(
+          this.scene,
+          this.camera,
+          this.renderer,
+          this.boxGroup
+        );
+      }
+      
+      update(delta) {
+        if (this.environment) {
+          this.environment.update(delta);
+        }
+        if (this.environment && this.boxGroup) {
+          const h = this.environment.currentHeight || CONFIG.HEIGHT_OFFSET;
+          this.camera.position.y = 4 + h;
+          this.camera.lookAt(0, 0.9 + h, 0);
+        }
+        this.renderer.render(this.scene, this.camera);
+      }
+      
+      startAnimationLoop() {
+        const animate = () => {
+          requestAnimationFrame(animate);
+          const delta = this.clock.getDelta();
+          this.update(delta);
+          
+          // Update FPS
+          frameCount++;
+          const currentTime = performance.now();
+          if (currentTime - lastTime >= 1000) {
+            const fps = Math.round(frameCount * 1000 / (currentTime - lastTime));
+            fpsDiv.textContent = `FPS: ${fps}`;
+            frameCount = 0;
+            lastTime = currentTime;
+          }
+        };
+        animate();
+      }
+      
+      setupEventListeners() {
+        window.addEventListener('resize', () => {
+          this.camera.aspect = window.innerWidth / window.innerHeight;
+          this.camera.updateProjectionMatrix();
+          this.renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+      }
+    }
+    
+    // FPS counter
+    let frameCount = 0;
+    let lastTime = performance.now();
+    const fpsDiv = document.createElement('div');
+    fpsDiv.id = 'fps';
+    document.body.appendChild(fpsDiv);
+    
+    // start when DOM ready
+    window.addEventListener('DOMContentLoaded', () => {
+      if (imageCount === images.length) {
+        new BoxApp();
+      } else {
+        const checkInterval = setInterval(() => {
+          if (imageCount === images.length) {
+            clearInterval(checkInterval);
+            new BoxApp();
+          }
+        }, 100);
+      }
+    });
+  </script>
+</body>
+</html>
