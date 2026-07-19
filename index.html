@@ -1,57 +1,747 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width">
-<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-<title>KANYAGA</title>
-<meta name="description" content="uni 05_64 WebFont" />
-<meta name="keywords" content="uni 05_64 WebFont" />
-<style type="text/css">
-@font-face {
-  font-family: 'uni-05_64';
-    src:  url('font/uni-05_64.ttf.woff') format('woff'),
-    url('font/uni-05_64.ttf.svg#uni-05_64') format('svg'),
-    url('font/uni-05_64.ttf.eot'),
-    url('font/uni-05_64.eot?#iefix') format('embedded-opentype'); 
-    font-weight: normal;
-    font-style: normal;
-}
-html, body {
-  font-family: 'uni-05_64';  
-  color: white;
-  background: black;
-}
-#content {
-  padding: 10px;
-  display: block;
-  max-width: 400px;
-  margin: 0 auto;
-}
-#logo {	
-	display:block; 
-	max-width: 400px;
-	margin: 20px 0;
-}
-#content a {color: red; text-decoration: none;}
-.item {}
-.container {
-    height: 98vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terrain game</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            background: #222; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+            font-family: monospace;
+        }
+        #terrainCanvas {
+            display: none;
+        }
+        #renderCanvas {
+            display: block;
+            width: 512px;
+            height: 512px;
+            image-rendering: pixelated;
+            position: relative;
+            z-index: 0;
+        }
+        #joystickContainer {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 150px;
+            height: 150px;
+            z-index: 10;
+        }
+    </style>
 </head>
 <body>
-	
-<div class="container">
-  <div id="content" class="item">
-    <img src="logo.svg" id="logo" width="400" height="112" alt="kanyaga logo" fetchpriority=high >
-  </div>
-</div>
+    <canvas id="terrainCanvas" width="256" height="256"></canvas>
+    <div id="joystickContainer"></div>
 
-	<script defer src="https://cloud.umami.is/script.js" data-website-id="8f77e0aa-6a49-4635-9af0-214a3f359aae"></script>
-	
+    <script src="js/nipplejs.min.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+        // Movement state
+        let vx = 0;
+        let vz = 0;
+        let moving = false;
+        const JOYSTICK_MAX_SPEED = 1.2;
+        const MOVE_SPEED = 1.2;
+
+        function setupJoystick() {
+            const joystickContainer = document.getElementById('joystickContainer');
+            
+            if (typeof nipplejs !== 'undefined') {
+                const joystick = nipplejs.create({
+                    dataOnly: true,
+                });
+
+                joystick.on('move', (evt, data) => {
+                    if (!data.force || data.force < 0.1) return;
+                    
+                    const speed = JOYSTICK_MAX_SPEED * Math.min(data.force, 1.0);
+                    vx = speed * Math.cos(data.angle.radian);
+                    vz = speed * Math.sin(data.angle.radian);
+                    moving = true;
+                });
+
+                joystick.on('end', () => {
+                    moving = false;
+                    vx = 0;
+                    vz = 0;
+                });
+            } else {
+                console.warn('nipplejs not loaded');
+            }
+        }
+
+        // ---- 1. Setup WebGL for terrain generation ----
+        const canvas = document.getElementById('terrainCanvas');
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+        if (!gl) { alert('WebGL not supported'); throw new Error('WebGL not supported'); }
+
+        const vsSource = `
+            attribute vec2 a_position;
+            varying vec2 v_texCoord;
+            void main() {
+                v_texCoord = a_position * 0.5 + 0.5;
+                gl_Position = vec4(a_position, 0.0, 1.0);
+            }
+        `;
+
+        // Common noise functions shared between shaders
+        const COMMON_FUNCTIONS = `
+            #define PI 3.14159265358979
+            
+            vec2 hash(in vec2 x) {
+                const vec2 k = vec2(0.3183099, 0.3678794);
+                x = x * k + k.yx;
+                return -1.0 + 2.0 * fract(16.0 * k * fract(x.x * x.y * (x.x + x.y)));
+            }
+            
+            vec3 noised(in vec2 p) {
+                vec2 i = floor(p);
+                vec2 f = fract(p);
+                
+                vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+                vec2 du = 30.0 * f * f * (f * (f - 2.0) + 1.0);
+                
+                vec2 ga = hash(i + vec2(0.0, 0.0));
+                vec2 gb = hash(i + vec2(1.0, 0.0));
+                vec2 gc = hash(i + vec2(0.0, 1.0));
+                vec2 gd = hash(i + vec2(1.0, 1.0));
+                
+                float va = dot(ga, f - vec2(0.0, 0.0));
+                float vb = dot(gb, f - vec2(1.0, 0.0));
+                float vc = dot(gc, f - vec2(0.0, 1.0));
+                float vd = dot(gd, f - vec2(1.0, 1.0));
+                
+                return vec3(va + u.x * (vb - va) + u.y * (vc - va) + u.x * u.y * (va - vb - vc + vd),
+                            ga + u.x * (gb - ga) + u.y * (gc - ga) + u.x * u.y * (ga - gb - gc + gd) +
+                            du * (u.yx * (va - vb - vc + vd) + vec2(vb, vc) - va));
+            }
+            
+            vec3 erosion(in vec2 p, vec2 dir) {
+                vec2 ip = floor(p);
+                vec2 fp = fract(p);
+                float f = 2.0 * PI;
+                vec3 va = vec3(0.0);
+                float wt = 0.0;
+                for (int i = -2; i <= 1; i++) {
+                    for (int j = -2; j <= 1; j++) {
+                        vec2 o = vec2(float(i), float(j));
+                        vec2 h = hash(ip - o) * 0.5;
+                        vec2 pp = fp + o - h;
+                        float d = dot(pp, pp);
+                        float w = exp(-d * 2.0);
+                        wt += w;
+                        float mag = dot(pp, dir);
+                        va += vec3(cos(mag * f), -sin(mag * f) * (pp + dir)) * w;
+                    }
+                }
+                return va / wt;
+            }
+            
+            vec3 mountain(vec2 p, float s) {
+                vec3 n = vec3(0.0);
+                float nf = 1.0;
+                float na = 0.6;
+                for (int i = 0; i < 2; i++) {
+                    n += noised(p * s * nf) * na * vec3(1.0, nf, nf);
+                    na *= 0.5;
+                    nf *= 2.0;
+                }
+                
+                vec2 dir = n.zy * vec2(1.0, -1.0);
+                
+                vec3 h = vec3(0.0);
+                float a = 0.7 * (smoothstep(0.3, 0.5, n.x * 0.5 + 0.5));
+                float freq = 1.0;
+                for (int i = 0; i < 5; i++) {
+                    h += erosion(p * freq, dir + h.zy * vec2(1.0, -1.0)) * a * vec3(1.0, freq, freq);
+                    a *= 0.4;
+                    freq *= 2.0;
+                }
+                return vec3(smoothstep(-1.0, 1.0, n.x) + h.x * 0.05, (n.yz + h.yz) * 0.5 + 0.5);
+            }
+        `;
+
+        const terrainFsSource = `
+            precision highp float;
+            uniform vec2 u_resolution;
+            uniform float u_time;
+            uniform vec2 u_offset;
+            varying vec2 v_texCoord;
+            
+            ${COMMON_FUNCTIONS}
+            
+            void main() {
+                vec2 uv = gl_FragCoord.xy / u_resolution.xy * 4.0;
+                uv.x += u_offset.x;
+                uv.y += u_offset.y;
+                
+                float s = 0.1;
+                vec3 h = mountain(uv * 4.0, s);
+                
+                float height = clamp(h.x, 0.0, 1.0);
+                height = pow(height, 0.8);
+                
+                gl_FragColor = vec4(height, height, height, 1.0);
+            }
+        `;
+
+        const colourFsSource = `
+            precision highp float;
+            uniform vec2 u_resolution;
+            uniform float u_time;
+            uniform vec2 u_offset;
+            varying vec2 v_texCoord;
+            
+            ${COMMON_FUNCTIONS}
+            
+            float voronoiDistance(vec2 p, float seed) {
+                vec2 i = floor(p);
+                vec2 f = fract(p);
+                
+                float minDist = 1.0;
+                float secondMinDist = 1.0;
+                
+                for (int y = -1; y <= 1; y++) {
+                    for (int x = -1; x <= 1; x++) {
+                        vec2 neighbor = vec2(float(x), float(y));
+                        vec2 point = hash(i + neighbor + seed);
+                        point = 0.5 + 0.5 * sin(seed * 6.28318 + point * 6.28318);
+                        vec2 diff = neighbor + point - f;
+                        float d = dot(diff, diff);
+                        
+                        if (d < minDist) {
+                            secondMinDist = minDist;
+                            minDist = d;
+                        } else if (d < secondMinDist) {
+                            secondMinDist = d;
+                        }
+                    }
+                }
+                
+                return sqrt(secondMinDist) - sqrt(minDist);
+            }
+            
+            void main() {
+                vec2 pixelatedUV = floor(gl_FragCoord.xy / 2.0) * 2.0;
+                vec2 uv = pixelatedUV / u_resolution.xy * 4.0;
+                uv.x += u_offset.x;
+                uv.y += u_offset.y;
+                
+                float s = 0.1;
+                vec3 h = mountain(uv * 4.0, s);
+                
+                float height = clamp(h.x, 0.0, 1.0);
+                height = pow(height, 0.8);
+                
+                float voronoiScale = 0.2;
+                float edgeDist = voronoiDistance(uv * voronoiScale, 42.0);
+                float roadWidth = 0.01;
+                float road = step(abs(edgeDist), roadWidth);
+                
+                float colourValue = mix(height, 1.0, road);
+                
+                gl_FragColor = vec4(colourValue, colourValue, colourValue, 1.0);
+            }
+        `;
+
+        function compileShader(gl, source, type) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error(gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        function createFramebuffer(gl, width, height) {
+            const framebuffer = gl.createFramebuffer();
+            const texture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+            return { framebuffer, texture };
+        }
+
+        // Compile shaders and create programs
+        const vs = compileShader(gl, vsSource, gl.VERTEX_SHADER);
+        const terrainFs = compileShader(gl, terrainFsSource, gl.FRAGMENT_SHADER);
+        const terrainProgram = gl.createProgram();
+        gl.attachShader(terrainProgram, vs);
+        gl.attachShader(terrainProgram, terrainFs);
+        gl.linkProgram(terrainProgram);
+
+        const colourFs = compileShader(gl, colourFsSource, gl.FRAGMENT_SHADER);
+        const colourProgram = gl.createProgram();
+        gl.attachShader(colourProgram, vs);
+        gl.attachShader(colourProgram, colourFs);
+        gl.linkProgram(colourProgram);
+
+        // Create framebuffers
+        const terrainFB = createFramebuffer(gl, canvas.width, canvas.height);
+        const colourFB = createFramebuffer(gl, canvas.width, canvas.height);
+
+        const positions = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
+        const positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+
+        let time = 0;
+        let offsetX = 0;
+        let offsetZ = 0;
+
+        let currentHeightData = null;
+
+        function renderToFramebuffer(program, framebuffer) {
+            gl.useProgram(program);
+            
+            const posLoc = gl.getAttribLocation(program, 'a_position');
+            gl.enableVertexAttribArray(posLoc);
+            gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+            
+            const resolutionLoc = gl.getUniformLocation(program, 'u_resolution');
+            const timeLoc = gl.getUniformLocation(program, 'u_time');
+            const offsetLoc = gl.getUniformLocation(program, 'u_offset');
+            
+            gl.uniform2f(resolutionLoc, canvas.width, canvas.height);
+            gl.uniform1f(timeLoc, time);
+            gl.uniform2f(offsetLoc, offsetX, offsetZ);
+            
+            gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+            gl.viewport(0, 0, canvas.width, canvas.height);
+            gl.clearColor(0.0, 0.0, 0.0, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+            
+            const pixels = new Uint8Array(canvas.width * canvas.height * 4);
+            gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+            
+            const width = canvas.width;
+            const height = canvas.height;
+            const values = new Float32Array(width * height);
+            
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const srcIdx = ((height - 1 - y) * width + x) * 4;
+                    values[y * width + x] = pixels[srcIdx] / 255.0;
+                }
+            }
+            
+            return values;
+        }
+
+        function createHeightmapCanvas(heights, width, height) {
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.imageSmoothingEnabled = false;
+            const imageData = ctx.createImageData(width, height);
+            const data = imageData.data;
+            
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const idx = (y * width + x) * 4;
+                    const value = heights[y * width + x] * 255;
+                    data[idx] = value;
+                    data[idx+1] = value;
+                    data[idx+2] = value;
+                    data[idx+3] = 255;
+                }
+            }
+            ctx.putImageData(imageData, 0, 0);
+            return canvas;
+        }
+
+        function createFilteredTexture(values, width, height) {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = width;
+            tempCanvas.height = height;
+            const ctx = tempCanvas.getContext('2d');
+            ctx.imageSmoothingEnabled = false;
+            const imageData = ctx.createImageData(width, height);
+            const data = imageData.data;
+            
+            const brightness = 0.7;
+            const contrast = 1.8;
+            
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const idx = (y * width + x) * 4;
+                    let filtered = values[y * width + x] * brightness;
+                    filtered = (filtered - 0.5) * contrast + 0.5;
+                    filtered = Math.max(0, Math.min(1, filtered));
+                    
+                    const pixelValue = Math.round(filtered * 255);
+                    data[idx] = pixelValue;
+                    data[idx+1] = pixelValue;
+                    data[idx+2] = pixelValue;
+                    data[idx+3] = 255;
+                }
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+            return tempCanvas;
+        }
+
+        function createCanvasTexture(canvas) {
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.wrapS = THREE.ClampToEdgeWrapping;
+            texture.wrapT = THREE.ClampToEdgeWrapping;
+            texture.minFilter = THREE.NearestFilter;
+            texture.magFilter = THREE.NearestFilter;
+            texture.generateMipmaps = false;
+            texture.colorSpace = THREE.SRGBColorSpace;
+            return texture;
+        }
+
+        // ---- Three.js Setup ----
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a0a1a);
+
+        const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
+        camera.position.set(0, 10, 20);
+        camera.lookAt(0, 0, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: false });
+        renderer.setSize(512, 512);
+        renderer.setPixelRatio(1);
+        renderer.domElement.id = 'renderCanvas';
+        document.body.appendChild(renderer.domElement);
+
+        // Lighting
+        const keyLight = new THREE.DirectionalLight(0xffffff, 1.6);
+        keyLight.position.set(4, 8, 6);
+        scene.add(keyLight);
+
+        const fillLight = new THREE.DirectionalLight(0xffffff, 0.9);
+        fillLight.position.set(-5, 3, 2);
+        scene.add(fillLight);
+
+        const rimLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        rimLight.position.set(-2, 1, -8);
+        scene.add(rimLight);
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+        scene.add(new THREE.HemisphereLight(0xffffff, 0x223322, 0.6));
+
+        const DISPLACEMENT_SCALE = 12;
+        const DISPLACEMENT_BIAS = -6;
+        const GROUND_Y = 0;
+        
+        const geometry = new THREE.PlaneGeometry(20, 20, 256, 256);
+        geometry.rotateX(-Math.PI / 2);
+
+        const material = new THREE.MeshStandardMaterial({
+            roughness: 0.99,
+            metalness: 0.01,
+            color: 0xffffff,
+            displacementScale: DISPLACEMENT_SCALE,
+            displacementBias: DISPLACEMENT_BIAS,
+            side: THREE.DoubleSide,
+        });
+
+        const plane = new THREE.Mesh(geometry, material);
+        plane.position.y = GROUND_Y;
+        scene.add(plane);
+
+        // ---- BOX ON TERRAIN ----
+        const boxGroup = new THREE.Group();
+        
+        const boxGeometry = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+        const boxMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x44ff44,
+            roughness: 0.4,
+            metalness: 0.1
+        });
+        const mainBox = new THREE.Mesh(boxGeometry, boxMaterial);
+        mainBox.position.set(0, 0.4, 0);
+        mainBox.castShadow = true;
+        mainBox.receiveShadow = true;
+        boxGroup.add(mainBox);
+        
+        const indicatorGeometry = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+        const indicatorMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0xff3333,
+            roughness: 0.3,
+            metalness: 0.2,
+            emissive: 0x330000
+        });
+        const indicatorBox = new THREE.Mesh(indicatorGeometry, indicatorMaterial);
+        indicatorBox.position.set(0, 0, -0.55);
+        indicatorBox.castShadow = true;
+        mainBox.add(indicatorBox);
+        
+        boxGroup.position.set(0, 0, 0);
+        scene.add(boxGroup);
+
+        const SAMPLE_DISTANCE = 0.5;
+        let currentHeight = 0.5;
+        let targetHeight = 0.5;
+        const heightSmoothing = 0.3;
+        let currentQuaternion = new THREE.Quaternion();
+        let targetQuaternion = new THREE.Quaternion();
+        const rotationSlerpFactor = 0.2;
+
+        function getTerrainHeight() {
+            if (!currentHeightData) return 0;
+            
+            const centerU = Math.floor(canvas.width / 2);
+            const centerV = Math.floor(canvas.height / 2);
+            
+            const rawHeight = currentHeightData[centerV * canvas.width + centerU];
+            const displacement = rawHeight * DISPLACEMENT_SCALE + DISPLACEMENT_BIAS;
+            const worldY = GROUND_Y + displacement;
+            
+            return worldY + 0.5;
+        }
+
+        function getTerrainNormal() {
+            if (!currentHeightData) return new THREE.Vector3(0, 1, 0);
+            
+            const centerU = Math.floor(canvas.width / 2);
+            const centerV = Math.floor(canvas.height / 2);
+            const pixelDist = Math.floor(SAMPLE_DISTANCE * (canvas.width / 20));
+            
+            const getHeightAt = (u, v) => {
+                if (u < 0 || u >= canvas.width || v < 0 || v >= canvas.height) return 0;
+                const rawHeight = currentHeightData[v * canvas.width + u];
+                return GROUND_Y + (rawHeight * DISPLACEMENT_SCALE + DISPLACEMENT_BIAS);
+            };
+            
+            const heightCenter = getHeightAt(centerU, centerV);
+            const heightRight = getHeightAt(centerU + pixelDist, centerV);
+            const heightLeft = getHeightAt(centerU - pixelDist, centerV);
+            const heightDown = getHeightAt(centerU, centerV + pixelDist);
+            const heightUp = getHeightAt(centerU, centerV - pixelDist);
+            
+            const dx = (heightRight - heightLeft) / (2 * SAMPLE_DISTANCE);
+            const dz = (heightUp - heightDown) / (2 * SAMPLE_DISTANCE);
+            
+            const tangentX = new THREE.Vector3(1, dx, 0).normalize();
+            const tangentZ = new THREE.Vector3(0, dz, 1).normalize();
+            
+            const normal = new THREE.Vector3();
+            normal.crossVectors(tangentZ, tangentX).normalize();
+            
+            if (normal.y < 0) normal.negate();
+            return normal;
+        }
+
+        function updateBoxOnTerrain() {
+            targetHeight = getTerrainHeight();
+            currentHeight += (targetHeight - currentHeight) * heightSmoothing;
+            boxGroup.position.set(0, currentHeight - 3.5, 0);
+            
+            const terrainNormal = getTerrainNormal();
+            
+            const upVector = new THREE.Vector3(0, 1, 0);
+            const terrainQuat = new THREE.Quaternion();
+            terrainQuat.setFromUnitVectors(upVector, terrainNormal);
+            
+            targetQuaternion.copy(terrainQuat);
+            currentQuaternion.slerp(targetQuaternion, rotationSlerpFactor);
+            boxGroup.quaternion.copy(currentQuaternion);
+        }
+
+        // Dithering Shader
+        const ditheringShader = {
+            uniforms: {
+                tDiffuse: { value: null },
+                resolution: { value: new THREE.Vector2(512, 512) },
+                gridSize: { value: 4.0 },
+                pixelSizeRatio: { value: 1.0 },
+                ditheringEnabled: { value: 1.0 },
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                precision highp float;
+                uniform sampler2D tDiffuse;
+                uniform vec2 resolution;
+                uniform float gridSize;
+                uniform float pixelSizeRatio;
+                uniform float ditheringEnabled;
+                varying vec2 vUv;
+
+                const float[16] ditherMatrix = float[16](
+                    16.0, 5.0, 13.0, 1.0,
+                    8.0, 12.0, 4.0, 9.0,
+                    14.0, 2.0, 15.0, 3.0,
+                    6.0, 10.0, 7.0, 11.0
+                );
+
+                bool getValue(float brightness, vec2 pos) {
+                    if (brightness > 16.0 / 17.0) return false;
+                    if (brightness < 1.0 / 17.0) return true;
+                    
+                    vec2 pixel = floor(mod(pos.xy / gridSize, 4.0));
+                    int index = int(pixel.y) * 4 + int(pixel.x);
+                    return brightness < ditherMatrix[index] / 17.0;
+                }
+
+                void main() {
+                    vec2 fragCoord = vUv * resolution;
+                    vec3 baseColor = texture2D(tDiffuse, vUv).rgb;
+                    
+                    if (ditheringEnabled > 0.5) {
+                        float pixelSize = gridSize * pixelSizeRatio;
+                        vec2 pixelatedUV = floor(fragCoord / pixelSize) * pixelSize / resolution;
+                        vec3 pixelatedColor = texture2D(tDiffuse, pixelatedUV).rgb;
+                        float pixelLum = dot(pixelatedColor, vec3(1.0, 1.0, 1.0));
+                        
+                        bool dithered = getValue(pixelLum, fragCoord);
+                        baseColor = dithered ? vec3(0.0) : pixelatedColor;
+                    }
+
+                    gl_FragColor = vec4(baseColor, 1.0);
+                }
+            `
+        };
+
+        // Post-processing
+        const composer = new EffectComposer(renderer);
+        composer.addPass(new RenderPass(scene, camera));
+
+        const ditherPass = new ShaderPass(ditheringShader);
+        ditherPass.renderToScreen = true;
+        composer.addPass(ditherPass);
+
+        // Textures
+        let displacementTexture = null;
+        let colourTexture = null;
+        let textureReady = false;
+
+        function updateTextures() {
+            if (!textureReady) return;
+            
+            const heights = renderToFramebuffer(terrainProgram, terrainFB.framebuffer);
+            currentHeightData = heights;
+            
+            const dispCanvas = createHeightmapCanvas(heights, canvas.width, canvas.height);
+            displacementTexture.image = dispCanvas;
+            displacementTexture.needsUpdate = true;
+            
+            const colours = renderToFramebuffer(colourProgram, colourFB.framebuffer);
+            const colourCanvas = createFilteredTexture(colours, canvas.width, canvas.height);
+            colourTexture.image = colourCanvas;
+            colourTexture.needsUpdate = true;
+        }
+
+        function initTextures() {
+            const heights = renderToFramebuffer(terrainProgram, terrainFB.framebuffer);
+            currentHeightData = heights;
+            
+            const dispCanvas = createHeightmapCanvas(heights, canvas.width, canvas.height);
+            
+            const colours = renderToFramebuffer(colourProgram, colourFB.framebuffer);
+            const colourCanvas = createFilteredTexture(colours, canvas.width, canvas.height);
+            
+            displacementTexture = createCanvasTexture(dispCanvas);
+            colourTexture = createCanvasTexture(colourCanvas);
+            
+            material.displacementMap = displacementTexture;
+            material.map = colourTexture;
+            material.needsUpdate = true;
+            
+            textureReady = true;
+        }
+
+        // Keyboard controls
+        const keyMap = {
+            'w': 'up', 'W': 'up',
+            'a': 'left', 'A': 'left',
+            's': 'down', 'S': 'down',
+            'd': 'right', 'D': 'right',
+            'ArrowUp': 'up',
+            'ArrowDown': 'down',
+            'ArrowLeft': 'left',
+            'ArrowRight': 'right'
+        };
+
+        const moveState = { up: false, down: false, left: false, right: false };
+
+        window.addEventListener('keydown', (e) => {
+            const dir = keyMap[e.key];
+            if (dir) {
+                e.preventDefault();
+                moveState[dir] = true;
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            const dir = keyMap[e.key];
+            if (dir) {
+                e.preventDefault();
+                moveState[dir] = false;
+            }
+        });
+
+        setupJoystick();
+
+        let lastTime = performance.now();
+        initTextures();
+
+        function animate() {
+            const now = performance.now();
+            let delta = Math.min(0.033, (now - lastTime) / 1000);
+            if (delta <= 0) delta = 0.016;
+            lastTime = now;
+
+            if (moveState.left) offsetX -= MOVE_SPEED * delta;
+            if (moveState.right) offsetX += MOVE_SPEED * delta;
+            if (moveState.up) offsetZ += MOVE_SPEED * delta;
+            if (moveState.down) offsetZ -= MOVE_SPEED * delta;
+
+            if (moving) {
+                offsetX += vx * delta;
+                offsetZ += vz * delta;
+            }
+
+            time += delta;
+            updateTextures();
+            updateBoxOnTerrain();
+            composer.render();
+            requestAnimationFrame(animate);
+        }
+
+        animate();
+
+        console.log('Terrain with Fullscreen Dithering Shader applied!');
+        console.log('Controls: WASD / Arrows / Joystick to move');
+    </script>
 </body>
 </html>

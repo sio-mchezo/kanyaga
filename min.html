@@ -1,318 +1,593 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-<title>SAM</title>
-<style>
-body {
-    max-width: 15cm;
-    margin: 2% auto;
-    font-family: sans-serif;
-}
-canvas { 
-    position: absolute; top: 0; left: 0; 
-}
-ul, li {list-style-type: none; padding: 0; margin: 0;}
-textarea {margin-top: 1em; padding: 12px;}
-#hud {position: absolute; top: 12px; left: 12px; z-index: 2;}
-
-button {padding: 4px; cursor: pointer;}
-
-#hud, button {
-    width: 200px;
-    display: block;
-    margin: 2px auto;
-}
-
-#botface {
-    display: block;
-    height: auto;
-    width: 120px;
-    height: 28px;
-    text-align: center; 
-    z-index: 999;
-    user-select: none;
-    font-family: monospace;
-    transform-origin: bottom;
-    transform: scale(1);
-    font-size: 28px;
-    color: #000;
-    margin: 0 auto;
-}
-
-#botface div {display: inline; }
-
-#botmouth {
-    display: block;
-    margin: 0 auto;
-    width: 20px; height: 20px; 
-    line-height: 20px;
-    font-weight: lighter;
-    transform-origin: center;
-    transform: rotate(90deg); 
-    text-align: center;
-    position: absolute;
-    top: 8px;
-    left: 45%;
-}
-
-#botLeye, #botReye,
-#botLside, #botRside {
-    position: absolute;
-}
-
-#botLeye {left: 12px;}
-#botReye {right: 12px;}
-
-#botLside {left: 0;}
-#botRside {right: 0;}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terrain Displacement - Fullscreen Dithering Shader</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            background: #222; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+            font-family: monospace;
+        }
+        #terrainCanvas {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            width: 256px;
+            height: 256px;
+            z-index: 2;
+            image-rendering: pixelated;
+        }
+        #renderCanvas {
+            display: block;
+            width: 512px;
+            height: 512px;
+            image-rendering: pixelated;
+            position: relative;
+            z-index: 0;
+        }
+    </style>
 </head>
-
 <body>
-<div id="hud">
-    <ul>
-        <li><button onclick="setvoice(0)">Elf</button></li>
-        <li><button onclick="setvoice(1)">Little Robot</button></li>
-        <li><button onclick="setvoice(2)">Stuffy Guy</button></li>
-        <li><button onclick="setvoice(3)">Little Old Lady</button></li>
-        <li><button onclick="setvoice(4)">Extra-Terrestrial</button></li>
-        <li><button onclick="setvoice(5)">SAM</button></li>
-    </ul>
-    <textarea id="textarea">All your base are belong to us.</textarea>
-    <p><button id="start">TALK</button></p>
-</div>
+    <canvas id="terrainCanvas" width="256" height="256" ></canvas>
 
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
 
-<div id="bothead">
-    <p id="output"></p>
-</div>
+    <script type="module">
+        import * as THREE from 'three';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
-<script src="js/SAM.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.122.0/build/three.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.122.0/examples/js/controls/OrbitControls.js"></script>
+        // ---- 1. Setup WebGL for terrain generation ----
+        const canvas = document.getElementById('terrainCanvas');
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+        if (!gl) { alert('WebGL not supported'); throw new Error('WebGL not supported'); }
 
+        const vsSource = `
+            attribute vec2 a_position;
+            varying vec2 v_texCoord;
+            void main() {
+                v_texCoord = a_position * 0.5 + 0.5;
+                gl_Position = vec4(a_position, 0.0, 1.0);
+            }
+        `;
 
-<script>
-    var voices = [
-        {pitch: 64, speed: 122, mouth: 160, throat: 110},
-        {pitch: 60, speed: 92, mouth: 190, throat: 190},
-        {pitch: 72, speed: 82, mouth: 105, throat: 110},
-        {pitch: 32, speed: 82, mouth: 145, throat: 145},
-        {pitch: 64, speed: 100, mouth: 200, throat: 150},
-        {pitch: 64, speed: 72, mouth: 128, throat: 128},
-    ];
+        // Common noise functions shared between shaders
+        const COMMON_FUNCTIONS = `
+            #define PI 3.14159265358979
+            
+            vec2 hash(in vec2 x) {
+                const vec2 k = vec2(0.3183099, 0.3678794);
+                x = x * k + k.yx;
+                return -1.0 + 2.0 * fract(16.0 * k * fract(x.x * x.y * (x.x + x.y)));
+            }
+            
+            vec3 noised(in vec2 p) {
+                vec2 i = floor(p);
+                vec2 f = fract(p);
+                
+                vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+                vec2 du = 30.0 * f * f * (f * (f - 2.0) + 1.0);
+                
+                vec2 ga = hash(i + vec2(0.0, 0.0));
+                vec2 gb = hash(i + vec2(1.0, 0.0));
+                vec2 gc = hash(i + vec2(0.0, 1.0));
+                vec2 gd = hash(i + vec2(1.0, 1.0));
+                
+                float va = dot(ga, f - vec2(0.0, 0.0));
+                float vb = dot(gb, f - vec2(1.0, 0.0));
+                float vc = dot(gc, f - vec2(0.0, 1.0));
+                float vd = dot(gd, f - vec2(1.0, 1.0));
+                
+                return vec3(va + u.x * (vb - va) + u.y * (vc - va) + u.x * u.y * (va - vb - vc + vd),
+                            ga + u.x * (gb - ga) + u.y * (gc - ga) + u.x * u.y * (ga - gb - gc + gd) +
+                            du * (u.yx * (va - vb - vc + vd) + vec2(vb, vc) - va));
+            }
+            
+            vec3 erosion(in vec2 p, vec2 dir) {
+                vec2 ip = floor(p);
+                vec2 fp = fract(p);
+                float f = 2.0 * PI;
+                vec3 va = vec3(0.0);
+                float wt = 0.0;
+                for (int i = -2; i <= 1; i++) {
+                    for (int j = -2; j <= 1; j++) {
+                        vec2 o = vec2(float(i), float(j));
+                        vec2 h = hash(ip - o) * 0.5;
+                        vec2 pp = fp + o - h;
+                        float d = dot(pp, pp);
+                        float w = exp(-d * 2.0);
+                        wt += w;
+                        float mag = dot(pp, dir);
+                        va += vec3(cos(mag * f), -sin(mag * f) * (pp + dir)) * w;
+                    }
+                }
+                return va / wt;
+            }
+            
+            vec3 mountain(vec2 p, float s) {
+                vec3 n = vec3(0.0);
+                float nf = 1.0;
+                float na = 0.6;
+                for (int i = 0; i < 2; i++) {
+                    n += noised(p * s * nf) * na * vec3(1.0, nf, nf);
+                    na *= 0.5;
+                    nf *= 2.0;
+                }
+                
+                vec2 dir = n.zy * vec2(1.0, -1.0);
+                
+                vec3 h = vec3(0.0);
+                float a = 0.7 * (smoothstep(0.3, 0.5, n.x * 0.5 + 0.5));
+                float freq = 1.0;
+                for (int i = 0; i < 5; i++) {
+                    h += erosion(p * freq, dir + h.zy * vec2(1.0, -1.0)) * a * vec3(1.0, freq, freq);
+                    a *= 0.4;
+                    freq *= 2.0;
+                }
+                return vec3(smoothstep(-1.0, 1.0, n.x) + h.x * 0.05, (n.yz + h.yz) * 0.5 + 0.5);
+            }
+        `;
 
-    var sam = new SamJs(voices[0]);
-    var thisvoice = 0;
-    var talking = false;
-    var textcheck = 'x';
-    var text = 'x';
-    var speed = 0;
-    var speechspeed = 80;
+        const terrainFsSource = `
+            precision highp float;
+            uniform vec2 u_resolution;
+            uniform float u_time;
+            uniform vec2 u_offset;
+            varying vec2 v_texCoord;
+            
+            ${COMMON_FUNCTIONS}
+            
+            void main() {
+                vec2 uv = gl_FragCoord.xy / u_resolution.xy * 4.0;
+                uv.x += u_offset.x;
+                uv.y += u_offset.y;
+                
+                float s = 0.1;
+                vec3 h = mountain(uv * 4.0, s);
+                
+                float height = clamp(h.x, 0.0, 1.0);
+                height = pow(height, 0.8);
+                
+                gl_FragColor = vec4(height, height, height, 1.0);
+            }
+        `;
 
-    // voices
-    function setvoice(argument) {
-        thisvoice = argument;
-    }
+        const colourFsSource = `
+            precision highp float;
+            uniform vec2 u_resolution;
+            uniform float u_time;
+            uniform vec2 u_offset;
+            varying vec2 v_texCoord;
+            
+            ${COMMON_FUNCTIONS}
+            
+            float voronoiDistance(vec2 p, float seed) {
+                vec2 i = floor(p);
+                vec2 f = fract(p);
+                
+                float minDist = 1.0;
+                float secondMinDist = 1.0;
+                
+                for (int y = -1; y <= 1; y++) {
+                    for (int x = -1; x <= 1; x++) {
+                        vec2 neighbor = vec2(float(x), float(y));
+                        vec2 point = hash(i + neighbor + seed);
+                        point = 0.5 + 0.5 * sin(seed * 6.28318 + point * 6.28318);
+                        vec2 diff = neighbor + point - f;
+                        float d = dot(diff, diff);
+                        
+                        if (d < minDist) {
+                            secondMinDist = minDist;
+                            minDist = d;
+                        } else if (d < secondMinDist) {
+                            secondMinDist = d;
+                        }
+                    }
+                }
+                
+                return sqrt(secondMinDist) - sqrt(minDist);
+            }
+            
+            void main() {
+                vec2 pixelatedUV = floor(gl_FragCoord.xy / 2.0) * 2.0;
+                vec2 uv = pixelatedUV / u_resolution.xy * 4.0;
+                uv.x += u_offset.x;
+                uv.y += u_offset.y;
+                
+                float s = 0.1;
+                vec3 h = mountain(uv * 4.0, s);
+                
+                float height = clamp(h.x, 0.0, 1.0);
+                height = pow(height, 0.8);
+                
+                float voronoiScale = 0.2;
+                float edgeDist = voronoiDistance(uv * voronoiScale, 42.0);
+                float roadWidth = 0.01;
+                float road = step(abs(edgeDist), roadWidth);
+                
+                float colourValue = mix(height, 1.0, road);
+                
+                gl_FragColor = vec4(colourValue, colourValue, colourValue, 1.0);
+            }
+        `;
 
-    // talk button
-    start.onclick = () => {
-        if (talking) {return}
+        function compileShader(gl, source, type) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error(gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
 
-        talking = true;
-        sam = new SamJs(voices[thisvoice]);
-        sam.speak(textarea.value);
-        
-        // lips
-        text = textarea.value;
-        speed = voices[thisvoice].speed;
-        mouthshape(text);
+        function createFramebuffer(gl, width, height) {
+            const framebuffer = gl.createFramebuffer();
+            const texture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+            return { framebuffer, texture };
+        }
 
-        // stop talking
-        setTimeout(function () {
-            talking = false;
-        }, textarea.value.length*70)
-    }
+        // Compile shaders and create programs
+        const vs = compileShader(gl, vsSource, gl.VERTEX_SHADER);
+        const terrainFs = compileShader(gl, terrainFsSource, gl.FRAGMENT_SHADER);
+        const terrainProgram = gl.createProgram();
+        gl.attachShader(terrainProgram, vs);
+        gl.attachShader(terrainProgram, terrainFs);
+        gl.linkProgram(terrainProgram);
 
+        const colourFs = compileShader(gl, colourFsSource, gl.FRAGMENT_SHADER);
+        const colourProgram = gl.createProgram();
+        gl.attachShader(colourProgram, vs);
+        gl.attachShader(colourProgram, colourFs);
+        gl.linkProgram(colourProgram);
 
+        // Create framebuffers
+        const terrainFB = createFramebuffer(gl, canvas.width, canvas.height);
+        const colourFB = createFramebuffer(gl, canvas.width, canvas.height);
 
-    // create botface
-    function addFace () { 
-      const bothead = document.getElementById('bothead');
-      botface = document.createElement("div"); 
-      botface.id = 'botface';
-      botface.style.left = (window.innerWidth/2)-(botface.clientWidth/2)+'px';
-      botface.style.top = (window.innerHeight/2)-(botface.clientHeight/2)+'px';
+        const positions = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
+        const positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
 
-      const botLside = document.createElement("div");
-      botLside.id = 'botLside';
-      botLside.innerHTML = '(';
-      botface.appendChild(botLside);  
+        let time = 0;
+        let offsetX = 0;
+        let offsetZ = 0;
 
-      botLeye = document.createElement("div");
-      botLeye.id = 'botLeye';
-      botLeye.innerHTML = 'o';
-      botface.appendChild(botLeye);  
+        function renderToFramebuffer(program, framebuffer) {
+            gl.useProgram(program);
+            
+            const posLoc = gl.getAttribLocation(program, 'a_position');
+            gl.enableVertexAttribArray(posLoc);
+            gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+            
+            const resolutionLoc = gl.getUniformLocation(program, 'u_resolution');
+            const timeLoc = gl.getUniformLocation(program, 'u_time');
+            const offsetLoc = gl.getUniformLocation(program, 'u_offset');
+            
+            gl.uniform2f(resolutionLoc, canvas.width, canvas.height);
+            gl.uniform1f(timeLoc, time);
+            gl.uniform2f(offsetLoc, offsetX, offsetZ);
+            
+            gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+            gl.viewport(0, 0, canvas.width, canvas.height);
+            gl.clearColor(0.0, 0.0, 0.0, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+            
+            const pixels = new Uint8Array(canvas.width * canvas.height * 4);
+            gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+            
+            const width = canvas.width;
+            const height = canvas.height;
+            const values = new Float32Array(width * height);
+            
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const srcIdx = ((height - 1 - y) * width + x) * 4;
+                    values[y * width + x] = pixels[srcIdx] / 255.0;
+                }
+            }
+            
+            return values;
+        }
 
-      botmouth = document.createElement("div");
-      botmouth.id = 'botmouth';
-      botmouth.innerHTML = ')';
-      botface.appendChild(botmouth);  
+        function createHeightmapCanvas(heights, width, height) {
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.imageSmoothingEnabled = false;
+            const imageData = ctx.createImageData(width, height);
+            const data = imageData.data;
+            
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const idx = (y * width + x) * 4;
+                    const value = heights[y * width + x] * 255;
+                    data[idx] = value;
+                    data[idx+1] = value;
+                    data[idx+2] = value;
+                    data[idx+3] = 255;
+                }
+            }
+            ctx.putImageData(imageData, 0, 0);
+            return canvas;
+        }
 
-      botReye = document.createElement("div");
-      botReye.id = 'botReye';
-      botReye.innerHTML = 'o';
-      botface.appendChild(botReye);  
+        function createFilteredTexture(values, width, height) {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = width;
+            tempCanvas.height = height;
+            const ctx = tempCanvas.getContext('2d');
+            ctx.imageSmoothingEnabled = false;
+            const imageData = ctx.createImageData(width, height);
+            const data = imageData.data;
+            
+            const brightness = 0.7;
+            const contrast = 1.8;
+            
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const idx = (y * width + x) * 4;
+                    let filtered = values[y * width + x] * brightness;
+                    filtered = (filtered - 0.5) * contrast + 0.5;
+                    filtered = Math.max(0, Math.min(1, filtered));
+                    
+                    const pixelValue = Math.round(filtered * 255);
+                    data[idx] = pixelValue;
+                    data[idx+1] = pixelValue;
+                    data[idx+2] = pixelValue;
+                    data[idx+3] = 255;
+                }
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+            return tempCanvas;
+        }
 
-      botRside = document.createElement("div");
-      botRside.id = 'botRside';
-      botRside.innerHTML = ')';
-      botface.appendChild(botRside);  
+        function createCanvasTexture(canvas) {
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.wrapS = THREE.ClampToEdgeWrapping;
+            texture.wrapT = THREE.ClampToEdgeWrapping;
+            texture.minFilter = THREE.NearestFilter;
+            texture.magFilter = THREE.NearestFilter;
+            texture.generateMipmaps = false;
+            texture.colorSpace = THREE.SRGBColorSpace;
+            return texture;
+        }
 
-      // add botface
-      document.body.insertBefore(botface, bothead); 
+        // ---- Three.js Setup ----
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a0a1a);
 
-      oldmouth = botmouth.innerHTML;
-      oldeye = botLeye.innerHTML;
-        
-    }// end addFace
+        const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
+        camera.position.set(0, 10, 20);
+        camera.lookAt(0, 0, 0);
 
+        const renderer = new THREE.WebGLRenderer({ antialias: false });
+        renderer.setSize(512, 512);
+        renderer.setPixelRatio(1);
+        renderer.domElement.id = 'renderCanvas';
+        document.body.appendChild(renderer.domElement);
 
-    // lip sync to letters
-    function mouthshape(text) {
-        for (let i = 0, len = text.length; i < len; i++) {
-            setTimeout( (function( i ) {
-              return function() {
-                lipsync(text[i]);
-              };
-            }( i )), (speed * i) );
-        } //for
-    } // end mouthshape
+        // Lighting
+        const keyLight = new THREE.DirectionalLight(0xffffff, 1.6);
+        keyLight.position.set(4, 8, 6);
+        scene.add(keyLight);
 
+        const fillLight = new THREE.DirectionalLight(0xffffff, 0.9);
+        fillLight.position.set(-5, 3, 2);
+        scene.add(fillLight);
 
-    // shapes
-    function lipsync(arg) {
-      if (arg == ' ' || arg == '.') { botmouth.innerHTML = oldmouth; setmouth(1);}
-      if (arg == 'a' || arg == 'A') { botmouth.innerHTML = 'D'; setmouth(1); }
-      if (arg == 'b' || arg == 'B') { botmouth.innerHTML = '|'; setmouth(0); }
-      if (arg == 'c' || arg == 'C') { botmouth.innerHTML = 'D'; setmouth(1); }
-      if (arg == 'd' || arg == 'D') { botmouth.innerHTML = '|'; setmouth(0); }
-      if (arg == 'e' || arg == 'E') { botmouth.innerHTML = 'D'; setmouth(1); }
-      if (arg == 'f' || arg == 'F') { botmouth.innerHTML = '|'; setmouth(0); }
-      if (arg == 'g' || arg == 'G') { botmouth.innerHTML = 'D'; setmouth(1); }
-      if (arg == 'h' || arg == 'H') { botmouth.innerHTML = '|'; setmouth(0); }
-      if (arg == 'i' || arg == 'I') { botmouth.innerHTML = 'D'; setmouth(1); }
-      if (arg == 'j' || arg == 'J') { botmouth.innerHTML = '|'; setmouth(0); }
-      if (arg == 'k' || arg == 'K') { botmouth.innerHTML = '|'; setmouth(0); }
-      if (arg == 'l' || arg == 'L') { botmouth.innerHTML = '|'; setmouth(2); }
-      if (arg == 'm' || arg == 'M') { botmouth.innerHTML = '|'; setmouth(2); }
-      if (arg == 'n' || arg == 'N') { botmouth.innerHTML = ')'; setmouth(2); }
-      if (arg == 'o' || arg == 'O') { botmouth.innerHTML = 'o'; setmouth(3); }
-      if (arg == 'p' || arg == 'P') { botmouth.innerHTML = '|'; setmouth(0); }
-      if (arg == 'q' || arg == 'Q') { botmouth.innerHTML = 'D'; setmouth(0); }
-      if (arg == 'r' || arg == 'R') { botmouth.innerHTML = 'o'; setmouth(3); }
-      if (arg == 's' || arg == 'S') { botmouth.innerHTML = 'D'; setmouth(1); }
-      if (arg == 't' || arg == 'T') { botmouth.innerHTML = '|'; setmouth(0); }
-      if (arg == 'u' || arg == 'U') { botmouth.innerHTML = 'o'; setmouth(1); }
-      if (arg == 'v' || arg == 'V') { botmouth.innerHTML = '/'; setmouth(0); }
-      if (arg == 'w' || arg == 'W') { botmouth.innerHTML = 'o'; setmouth(3); }
-      if (arg == 'x' || arg == 'X') { botmouth.innerHTML = 'x'; setmouth(0); }
-      if (arg == 'y' || arg == 'Y') { botmouth.innerHTML = 'D'; setmouth(0); }
-      if (arg == 'z' || arg == 'Z') { botmouth.innerHTML = '/'; setmouth(0); }
-    }
+        const rimLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        rimLight.position.set(-2, 1, -8);
+        scene.add(rimLight);
 
+        scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+        scene.add(new THREE.HemisphereLight(0xffffff, 0x223322, 0.6));
 
+        // Plane with displacement
+        const geometry = new THREE.PlaneGeometry(20, 20, 256, 256);
+        geometry.rotateX(-Math.PI / 2);
 
+        const material = new THREE.MeshStandardMaterial({
+            roughness: 0.99,
+            metalness: 0.01,
+            color: 0xffffff,
+            displacementScale: 12,
+            displacementBias: -6,
+            side: THREE.DoubleSide,
+        });
 
-    //
-    function init(){  
-    window.scene = new THREE.Scene();
-    window.camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 1000 );
+        const plane = new THREE.Mesh(geometry, material);
+        scene.add(plane);
 
-    window.renderer = new THREE.WebGLRenderer({alpha: true, antialias: true, tranparent:true});
-    renderer.setSize( window.innerWidth, window.innerHeight );
-    document.body.appendChild( renderer.domElement );
+        // Dithering Shader
+        const ditheringShader = {
+            uniforms: {
+                tDiffuse: { value: null },
+                resolution: { value: new THREE.Vector2(512, 512) },
+                gridSize: { value: 4.0 },
+                pixelSizeRatio: { value: 1.0 },
+                ditheringEnabled: { value: 1.0 },
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                precision highp float;
+                uniform sampler2D tDiffuse;
+                uniform vec2 resolution;
+                uniform float gridSize;
+                uniform float pixelSizeRatio;
+                uniform float ditheringEnabled;
+                varying vec2 vUv;
 
-    camera.position.z = 3;
+                const float[16] ditherMatrix = float[16](
+                    16.0, 5.0, 13.0, 1.0,
+                    8.0, 12.0, 4.0, 9.0,
+                    14.0, 2.0, 15.0, 3.0,
+                    6.0, 10.0, 7.0, 11.0
+                );
 
-    // controls
-    controls = new THREE.OrbitControls(camera, renderer.domElement);
-    // controls.enablePan = false;
-    // controls.enableZoom = false;
-    // controls.maxDistance = 50;
-    // controls.minDistance = 1;
+                bool getValue(float brightness, vec2 pos) {
+                    if (brightness > 16.0 / 17.0) return false;
+                    if (brightness < 1.0 / 17.0) return true;
+                    
+                    vec2 pixel = floor(mod(pos.xy / gridSize, 4.0));
+                    int index = int(pixel.y) * 4 + int(pixel.x);
+                    return brightness < ditherMatrix[index] / 17.0;
+                }
 
-    // light
-    var light = new THREE.AmbientLight( 0xcccccc );
-    light.intensity = 1;
-    scene.add( light );
+                void main() {
+                    vec2 fragCoord = vUv * resolution;
+                    vec3 baseColor = texture2D(tDiffuse, vUv).rgb;
+                    
+                    if (ditheringEnabled > 0.5) {
+                        float pixelSize = gridSize * pixelSizeRatio;
+                        vec2 pixelatedUV = floor(fragCoord / pixelSize) * pixelSize / resolution;
+                        vec3 pixelatedColor = texture2D(tDiffuse, pixelatedUV).rgb;
+                        float pixelLum = dot(pixelatedColor, vec3(1.0, 1.0, 1.0));
+                        
+                        bool dithered = getValue(pixelLum, fragCoord);
+                        baseColor = dithered ? vec3(0.0) : pixelatedColor;
+                    }
 
-    var directionalLight = new THREE.DirectionalLight( 0xffffff, 1 );
-    directionalLight.position.set(0,200,100)
-    directionalLight.rotation.set(-Math.PI/2,0,0)
-    scene.add( directionalLight );
+                    gl_FragColor = vec4(baseColor, 1.0);
+                }
+            `
+        };
 
-    // plane
-    bgtexture = new THREE.TextureLoader().load( 'mouthshapes2.png' );
-    bgtexture.magFilter = THREE.NearestFilter;
-    bgtexture.minFilter = THREE.NearestFilter;
-    bgtexture.repeat.x = 1 / 5;
-    bgtexture.wrapS = THREE.RepeatWrapping;
-    bgtexture.wrapT = THREE.RepeatWrapping;
+        // Post-processing
+        const composer = new EffectComposer(renderer);
+        composer.addPass(new RenderPass(scene, camera));
 
-    bgmaterial = new THREE.MeshLambertMaterial({
-    map: bgtexture
-    ,transparent:true
-    });  
+        const ditherPass = new ShaderPass(ditheringShader);
+        ditherPass.renderToScreen = true;
+        composer.addPass(ditherPass);
 
-    bggeometry = new THREE.PlaneGeometry(1, 1);
+        // Textures
+        let displacementTexture = null;
+        let colourTexture = null;
+        let textureReady = false;
 
-    window.bg = new THREE.Mesh(bggeometry, bgmaterial);
-    bg.renderOrder = 1;
-    bg.castShadow = true;
-    scene.add(bg);
+        function updateTextures() {
+            if (!textureReady) return;
+            
+            const heights = renderToFramebuffer(terrainProgram, terrainFB.framebuffer);
+            const dispCanvas = createHeightmapCanvas(heights, canvas.width, canvas.height);
+            displacementTexture.image = dispCanvas;
+            displacementTexture.needsUpdate = true;
+            
+            const colours = renderToFramebuffer(colourProgram, colourFB.framebuffer);
+            const colourCanvas = createFilteredTexture(colours, canvas.width, canvas.height);
+            colourTexture.image = colourCanvas;
+            colourTexture.needsUpdate = true;
+        }
 
-} // end init
+        function initTextures() {
+            const heights = renderToFramebuffer(terrainProgram, terrainFB.framebuffer);
+            const dispCanvas = createHeightmapCanvas(heights, canvas.width, canvas.height);
+            
+            const colours = renderToFramebuffer(colourProgram, colourFB.framebuffer);
+            const colourCanvas = createFilteredTexture(colours, canvas.width, canvas.height);
+            
+            displacementTexture = createCanvasTexture(dispCanvas);
+            colourTexture = createCanvasTexture(colourCanvas);
+            
+            material.displacementMap = displacementTexture;
+            material.map = colourTexture;
+            material.needsUpdate = true;
+            
+            textureReady = true;
+        }
 
+        // Keyboard controls
+        const keyMap = {
+            'w': 'up', 'W': 'up',
+            'a': 'left', 'A': 'left',
+            's': 'down', 'S': 'down',
+            'd': 'right', 'D': 'right',
+            'ArrowUp': 'up',
+            'ArrowDown': 'down',
+            'ArrowLeft': 'left',
+            'ArrowRight': 'right'
+        };
 
+        const moveState = { up: false, down: false, left: false, right: false };
+        const MOVE_SPEED = 1.2;
 
+        window.addEventListener('keydown', (e) => {
+            const dir = keyMap[e.key];
+            if (dir) {
+                e.preventDefault();
+                moveState[dir] = true;
+            }
+        });
 
+        window.addEventListener('keyup', (e) => {
+            const dir = keyMap[e.key];
+            if (dir) {
+                e.preventDefault();
+                moveState[dir] = false;
+            }
+        });
 
+        // Animation loop
+        let lastTime = performance.now();
+        initTextures();
 
+        function animate() {
+            const now = performance.now();
+            let delta = Math.min(0.033, (now - lastTime) / 1000);
+            if (delta <= 0) delta = 0.016;
+            lastTime = now;
 
-window.addEventListener( 'resize', resize, false);
-// resize
-function resize(){
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize( window.innerWidth, window.innerHeight );
-}
+            if (moveState.left) offsetX -= MOVE_SPEED * delta;
+            if (moveState.right) offsetX += MOVE_SPEED * delta;
+            if (moveState.up) offsetZ += MOVE_SPEED * delta;
+            if (moveState.down) offsetZ -= MOVE_SPEED * delta;
 
+            time += delta;
+            updateTextures();
+            composer.render();
+            requestAnimationFrame(animate);
+        }
 
-// set mouth shape on plane
-function setmouth(argument) {
-    var ms = argument*(1/5);
-    bg.material.map.offset.x = ms;
-}
+        animate();
 
-
-
-function animate() {
-    requestAnimationFrame( animate );
-    renderer.render( scene, camera );
-};
-
-
-//  >>>>>>>>>>>>>>> START <<<<<<<<<<<<<<<<<
-document.body.onload = addFace;
-init();
-setmouth(1);
-animate();
-
-
-</script>
+        console.log('Terrain with Fullscreen Dithering Shader applied!');
+        console.log('Controls: WASD / Arrows to move');
+    </script>
 </body>
-
 </html>
