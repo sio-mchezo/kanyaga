@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>UV Test</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, user-scalable=no">
+<style type="text/css">
+  * {margin: 0;}
+  #bmpmap, #colmap { display: none; }
+</style>
+</head>
+<body>
+  <canvas id="bmpmap" width="256" height="256"></canvas>
+  <canvas id="colmap" width="256" height="256"></canvas>
+
+<script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.126.0/build/three.module.js"
+        }
+    }
+</script>
+<script type="module">
+    import * as THREE from 'three';
+    
+    const zoom = 6;
+    const planeSize = 4;
+    const clipHalf = 2;
+    const displacementscale = 2;
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 6, 6);
+    camera.lookAt(0, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.localClippingEnabled = true;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    const images = [
+      { "src": "col.png"},
+      { "src": "normal.png"},
+      { "src": "displacement.png" },
+      { "src": "hit.png" },
+    ];
+    const imageArray = [];
+    let imageCount = 0;
+    let coltexture, normaltexture, bmptexture, plane, stage, base, npc;
+
+    images.forEach(function(element){
+      const image = new Image();
+      image.src = element.src;
+      image.onload = ()=>{ 
+        imageCount += 1;
+        if(imageCount === images.length) startLevel();
+      }
+      imageArray.push(image); 
+    });
+
+    function startLevel() {
+      const bmpmap = document.getElementById("bmpmap");
+      const bmpctx = bmpmap.getContext("2d");
+      const colmap = document.getElementById("colmap");
+      const colctx = colmap.getContext("2d");
+      const normalmap = document.createElement('canvas');
+      normalmap.width = 256;
+      normalmap.height = 256;
+      const normalctx = normalmap.getContext('2d');
+
+      bmpctx.drawImage(imageArray[2], 0, 0);
+      colctx.drawImage(imageArray[0], 0, 0);
+      normalctx.drawImage(imageArray[1], 0, 0);
+
+      coltexture = new THREE.CanvasTexture(colmap);
+      bmptexture = new THREE.CanvasTexture(bmpmap);
+      normaltexture = new THREE.CanvasTexture(normalmap);
+      
+      coltexture.minFilter = coltexture.magFilter = THREE.NearestFilter;
+      bmptexture.minFilter = bmptexture.magFilter = THREE.NearestFilter;
+      normaltexture.minFilter = normaltexture.magFilter = THREE.NearestFilter;
+      
+      coltexture.needsUpdate = true;
+      bmptexture.needsUpdate = true;
+      normaltexture.needsUpdate = true;
+
+      plane = new THREE.Mesh(
+          new THREE.PlaneGeometry(planeSize, planeSize, 128, 128).rotateX(-Math.PI / 2),
+          new THREE.MeshStandardMaterial({ 
+            map: coltexture,
+            side: THREE.DoubleSide,
+            displacementMap: bmptexture,
+            displacementScale: displacementscale/2,
+            normalMap: normaltexture,
+            normalScale: new THREE.Vector2(1, 1),
+            metalness: 0.0,
+            roughness: 0.8,
+          })
+      );
+      plane.position.x = -planeSize - 0.1;
+      plane.castShadow = true;
+      plane.receiveShadow = true;
+      scene.add(plane);
+
+      const clipPlanes = [
+          new THREE.Plane(new THREE.Vector3(0, 0, -1), clipHalf),
+          new THREE.Plane(new THREE.Vector3(0, 0, 1), clipHalf),
+          new THREE.Plane(new THREE.Vector3(-1, 0, 0), clipHalf),
+          new THREE.Plane(new THREE.Vector3(1, 0, 0), clipHalf)
+      ];
+
+      stage = new THREE.Mesh(
+          new THREE.PlaneGeometry(planeSize * zoom, planeSize * zoom, 256, 256).rotateX(-Math.PI / 2),
+          new THREE.MeshStandardMaterial({ 
+            map: coltexture, 
+            side: THREE.DoubleSide, 
+            clippingPlanes: clipPlanes,
+            displacementMap: bmptexture,
+            displacementScale: displacementscale*2,
+            normalMap: normaltexture,
+            normalScale: new THREE.Vector2(1, 1),
+            metalness: 0.0,
+            roughness: 0.8,
+          })
+      );
+      stage.castShadow = true;
+      stage.receiveShadow = true;
+      scene.add(stage);
+
+      base = new THREE.Mesh(
+          new THREE.PlaneGeometry(planeSize, planeSize, 32, 32).rotateX(-Math.PI / 2),
+          new THREE.MeshBasicMaterial({ 
+            map:new THREE.TextureLoader().load( 'hit.png' ),
+          })
+      );
+      base.position.x = planeSize + 0.1;
+      base.castShadow = true;
+      base.receiveShadow = true;
+      scene.add(base);
+
+      npc = new THREE.Mesh(
+          new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
+          new THREE.MeshBasicMaterial({ 
+            // map:new THREE.TextureLoader().load( 'hit.png' ),
+            color: 'red',
+            side: THREE.DoubleSide, 
+            clippingPlanes: clipPlanes,
+          })
+      );
+      npc.position.set(0,2,0)
+      npc.castShadow = true;
+      npc.receiveShadow = true;
+      base.add(npc);
+
+
+      setupLights();
+
+      // Grid helper for minimap
+      const gridHelper = new THREE.GridHelper(0.4, 1, '#ffffff', '#ffffff');
+      gridHelper.material.transparent = true;
+      gridHelper.material.opacity = 0.8;
+      
+
+      scene.add(gridHelper);
+
+
+      const raycaster = new THREE.Raycaster();
+      const pointer = new THREE.Vector2();
+      let isMouseDown = false;
+
+      function getPointer(event) {
+          const rect = renderer.domElement.getBoundingClientRect();
+          let cx, cy;
+          if (event.touches) {
+              cx = event.touches[0].clientX;
+              cy = event.touches[0].clientY;
+              event.preventDefault();
+          } else {
+              cx = event.clientX;
+              cy = event.clientY;
+          }
+          return {
+              x: ((cx - rect.left) / rect.width) * 2 - 1,
+              y: -((cy - rect.top) / rect.height) * 2 + 1
+          };
+      }
+
+      function updateUV(event) {
+          const pos = getPointer(event);
+          pointer.x = pos.x;
+          pointer.y = pos.y;
+          
+          raycaster.setFromCamera(pointer, camera);
+          
+          const minimapIntersects = raycaster.intersectObject(plane);
+          const stageIntersects = raycaster.intersectObject(stage);
+          
+          if (minimapIntersects.length > 0 && isMouseDown) {
+              const uv = minimapIntersects[0].uv;
+              const point = minimapIntersects[0].point;
+
+              gridHelper.position.set(point.x, 0.3, point.z);
+              gridHelper.visible = true;
+
+              const offset = (0.5 - uv.x) * (planeSize * zoom * 0.85);
+              const offsetZ = -(0.5 - uv.y) * (planeSize * zoom * 0.85);
+              stage.position.x += (offset - stage.position.x) * 0.3;
+              stage.position.z += (offsetZ - stage.position.z) * 0.3;
+              
+
+          } else if (stageIntersects.length > 0 && isMouseDown) {
+              const uv = stageIntersects[0].uv;
+              const point = stageIntersects[0].point;
+
+          } else if (!isMouseDown) {
+              
+
+          }
+      }
+      
+      renderer.domElement.addEventListener('pointerdown', (e) => { isMouseDown = true; updateUV(e); });
+      renderer.domElement.addEventListener('pointerup', () => { isMouseDown = false; 
+         });
+      renderer.domElement.addEventListener('pointermove', updateUV);
+      renderer.domElement.addEventListener('touchmove', updateUV, { passive: false });
+
+      window.addEventListener('resize', () => {
+          camera.aspect = window.innerWidth / window.innerHeight;
+          camera.updateProjectionMatrix();
+          renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+
+      animate();
+    }
+
+    function setupLights() {
+        const ambient = new THREE.AmbientLight(0x333333, 0.2);
+        scene.add(ambient);
+
+        const keyLight = new THREE.DirectionalLight(0xffeedd, 1.8);
+        keyLight.position.set(4, 12, 2);
+        keyLight.castShadow = true;
+        keyLight.shadow.camera.top = 6;
+        keyLight.shadow.camera.bottom = -6;
+        keyLight.shadow.camera.left = -6;
+        keyLight.shadow.camera.right = 6;
+        keyLight.shadow.camera.near = 0.1;
+        keyLight.shadow.camera.far = 40;
+        keyLight.shadow.radius = 8;
+        scene.add(keyLight);
+
+        const fillLight = new THREE.DirectionalLight(0x6688cc, 0.6);
+        fillLight.position.set(-4, 6, -8);
+        scene.add(fillLight);
+
+        const rimLight = new THREE.DirectionalLight(0xffffff, 0.3);
+        rimLight.position.set(0, -2, -10);
+        scene.add(rimLight);
+    }
+
+    function animate() {
+        requestAnimationFrame(animate);
+        renderer.render(scene, camera);
+    }
+</script>
+</body>
+</html>

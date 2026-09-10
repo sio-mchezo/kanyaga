@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>3D Packing Paint</title>
+    <style>
+        body { 
+            margin: 0; 
+            background: #000; 
+            overflow: hidden;
+            font-family: monospace;
+            touch-action: none;
+        }
+        canvas { display: block; }
+        #slider-container {
+            position: fixed;
+            bottom: 0;
+            right: 0;
+            margin: 15px;
+            z-index: 100;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+        input[type="range"] {
+            writing-mode: vertical-lr;
+            direction: rtl;
+            width: 30px;
+            height: 150px;
+            cursor: pointer;
+            accent-color: #ff4444;
+        }
+        #brush-size {
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        #slider-container button {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: none;
+            background: #000;
+            color: #fff;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 30;
+            text-align: center;
+            position: relative;
+        }
+        #eraser-btn.active {
+            background: #fff;
+        }
+        #eraser-btn::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 2px solid #fff;
+            opacity: 0.5;
+        }
+        #eraser-btn.active::after {
+            border-color: #000;
+        }
+        #reset-btn {
+            position: absolute;
+            top: 0;
+        }
+    </style>
+</head>
+<body>
+<div id="slider-container">
+    <button id="reset-btn" title="clear canvas">x</button>
+    <button id="eraser-btn" title="Toggle Eraser"></button>
+    <input type="range" id="brushSlider" min="10" max="150" value="70">
+    <div id="brush-size">70</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+// Configuration
+const CANVAS_SIZE = 512;
+const PLANE_SIZE = 10;
+const MIN_RADIUS = 2;
+
+// Three.js setup
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x333333);
+
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+camera.position.set(0, 6, 7);
+camera.lookAt(0, 0, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// Painting canvas
+const paintCanvas = document.createElement('canvas');
+paintCanvas.width = CANVAS_SIZE;
+paintCanvas.height = CANVAS_SIZE;
+const context = paintCanvas.getContext('2d');
+context.fillStyle = '#ffffff';
+context.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+// Texture
+const texture = new THREE.CanvasTexture(paintCanvas);
+texture.minFilter = THREE.LinearFilter;
+texture.magFilter = THREE.LinearFilter;
+
+// Plane
+const planeGeometry = new THREE.PlaneGeometry(PLANE_SIZE, PLANE_SIZE);
+const planeMaterial = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
+const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+plane.rotation.x = Math.PI / 2;
+scene.add(plane);
+
+// Brush cursor
+const cursor = new THREE.Group();
+scene.add(cursor);
+
+let brushSize = 70;
+let brushWorldSize = (brushSize / CANVAS_SIZE) * PLANE_SIZE;
+let maxRadius = Math.max(brushSize * 0.4, MIN_RADIUS + 1);
+let isEraserMode = false;
+const SEGMENTS = 64;
+
+function createBrushRing() {
+    const points = [];
+    for (let i = 0; i <= SEGMENTS; i++) {
+        const angle = (i / SEGMENTS) * Math.PI * 2;
+        points.push(new THREE.Vector3(Math.cos(angle) * brushWorldSize, 0.01, Math.sin(angle) * brushWorldSize));
+    }
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const material = new THREE.LineBasicMaterial({ color: isEraserMode ? 0x3333ff : 0xff0000 });
+    return new THREE.Line(geometry, material);
+}
+
+let brushRing = createBrushRing();
+cursor.add(brushRing);
+
+// State
+const circles = [];
+let painting = false;
+let showBrushPreview = false;
+let previewTimeout = null;
+
+// Raycaster
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+function getPointOnPlane(event) {
+    const clientX = event.touches ? event.touches[0].clientX : event.clientX;
+    const clientY = event.touches ? event.touches[0].clientY : event.clientY;
+    
+    const rect = renderer.domElement.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    
+    mouse.x = (x / rect.width) * 2 - 1;
+    mouse.y = -(y / rect.height) * 2 + 1;
+    
+    raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObject(plane);
+    
+    if (intersects.length > 0) {
+        const point = intersects[0].point;
+        const canvasX = ((point.x + PLANE_SIZE/2) / PLANE_SIZE) * CANVAS_SIZE;
+        const canvasY = ((PLANE_SIZE/2 - point.z) / PLANE_SIZE) * CANVAS_SIZE;
+        return { x: canvasX, y: canvasY, worldX: point.x, worldZ: point.z };
+    }
+    return null;
+}
+
+function isValidCircle(circle) {
+    if (circle.r > maxRadius) return false;
+    
+    for (const other of circles) {
+        const dx = other.x - circle.x;
+        const dy = other.y - circle.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < other.r + circle.r) return false;
+    }
+    return true;
+}
+
+function findCircleAt(x, y) {
+    // Find circle that contains the point
+    for (let i = circles.length - 1; i >= 0; i--) {
+        const circle = circles[i];
+        const dx = circle.x - x;
+        const dy = circle.y - y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist <= circle.r) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+function eraseCircleAt(x, y) {
+    const index = findCircleAt(x, y);
+    if (index !== -1) {
+        const circle = circles[index];
+        // Remove from array
+        circles.splice(index, 1);
+        // Paint white circle on canvas
+        context.fillStyle = '#ffffff';
+        context.beginPath();
+        context.arc(circle.x, circle.y, circle.r + 1, 0, Math.PI * 2);
+        context.fill();
+        texture.needsUpdate = true;
+        return true;
+    }
+    return false;
+}
+
+function addCircle(x, y) {
+    const circle = { x, y, r: MIN_RADIUS };
+    let counter = 0;
+    
+    circle.r = MIN_RADIUS + Math.random() * Math.max(1, (maxRadius - MIN_RADIUS) * 0.3);
+    
+    while (!isValidCircle(circle) && circle.r > MIN_RADIUS) {
+        circle.r--;
+        counter++;
+        if (counter > 50) return false;
+    }
+    
+    if (circle.r < MIN_RADIUS) return false;
+    
+    const maxGrowth = maxRadius * (0.4 + Math.random() * 0.6);
+    while (isValidCircle(circle) && circle.r < maxGrowth) {
+        circle.r++;
+    }
+    
+    circle.r -= 1;
+    if (circle.r < MIN_RADIUS) circle.r = MIN_RADIUS;
+    
+    circles.push(circle);
+    drawCircle(circle);
+    return true;
+}
+
+function sprayCircles(x, y) {
+    if (isEraserMode) {
+        // Eraser mode: erase circles in brush area
+        const attempts = Math.max(10, Math.floor(brushSize / 5));
+        let erased = 0;
+        
+        for (let i = 0; i < attempts; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const distance = Math.random() * brushSize;
+            const newX = x + Math.cos(angle) * distance;
+            const newY = y + Math.sin(angle) * distance;
+            
+            if (eraseCircleAt(newX, newY)) erased++;
+        }
+        return erased;
+    } else {
+        // Paint mode: add circles
+        const attempts = Math.max(8, Math.floor(brushSize / 8));
+        let added = 0;
+        
+        for (let i = 0; i < attempts; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const distance = Math.random() * brushSize;
+            const newX = x + Math.cos(angle) * distance;
+            const newY = y + Math.sin(angle) * distance;
+            
+            if (addCircle(newX, newY)) added++;
+        }
+        
+        return added;
+    }
+}
+
+function drawCircle(circle) {
+    context.fillStyle = '#000';
+    context.beginPath();
+    context.arc(circle.x, circle.y, circle.r, 0, Math.PI * 2);
+    context.fill();
+    texture.needsUpdate = true;
+}
+
+function updateBrushRing() {
+    cursor.remove(brushRing);
+    brushRing.geometry.dispose();
+    brushRing.material.dispose();
+    brushRing = createBrushRing();
+    cursor.add(brushRing);
+}
+
+function updateBrushSize(newSize) {
+    brushSize = newSize;
+    brushWorldSize = (brushSize / CANVAS_SIZE) * PLANE_SIZE;
+    maxRadius = Math.max(brushSize * 0.4, MIN_RADIUS + 1);
+    document.getElementById('brushSlider').value = brushSize;
+    document.getElementById('brush-size').textContent = brushSize;
+    updateBrushRing();
+    
+    // Show brush preview in center
+    showBrushPreview = true;
+    cursor.position.set(0, 0.01, 0);
+    cursor.visible = true;
+    
+    // Hide preview after 1 second
+    clearTimeout(previewTimeout);
+    previewTimeout = setTimeout(() => {
+        showBrushPreview = false;
+        if (!painting) {
+            cursor.visible = false;
+        }
+    }, 1000);
+}
+
+function toggleEraserMode() {
+    isEraserMode = !isEraserMode;
+    const eraserBtn = document.getElementById('eraser-btn');
+    
+    if (isEraserMode) {
+        eraserBtn.classList.add('active');
+    } else {
+        eraserBtn.classList.remove('active');
+    }
+    
+    updateBrushRing();
+}
+
+function resetCanvas() {
+    circles.splice(0,circles.length)
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    texture.needsUpdate = true;
+}
+
+// Event listeners
+renderer.domElement.addEventListener('mousedown', (e) => {
+    painting = true;
+    const point = getPointOnPlane(e);
+    if (point) {
+        cursor.position.set(point.worldX, 0.01, point.worldZ);
+        sprayCircles(point.x, point.y);
+    }
+});
+
+renderer.domElement.addEventListener('mouseup', () => {
+    painting = false;
+    console.log('Number of circles:', circles.length);
+});
+
+renderer.domElement.addEventListener('mousemove', (e) => {
+    const point = getPointOnPlane(e);
+    if (point) {
+        cursor.position.set(point.worldX, 0.01, point.worldZ);
+        cursor.visible = true;
+        if (painting) sprayCircles(point.x, point.y);
+    } else {
+        cursor.visible = showBrushPreview;
+    }
+});
+
+renderer.domElement.addEventListener('mouseleave', () => {
+    if (!showBrushPreview) {
+        cursor.visible = false;
+    }
+});
+
+renderer.domElement.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    painting = true;
+    const point = getPointOnPlane(e);
+    if (point) {
+        cursor.position.set(point.worldX, 0.01, point.worldZ);
+        sprayCircles(point.x, point.y);
+    }
+});
+
+renderer.domElement.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    painting = false;
+    console.log('Number of circles:', circles.length);
+});
+
+renderer.domElement.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    const point = getPointOnPlane(e);
+    if (point) {
+        cursor.position.set(point.worldX, 0.01, point.worldZ);
+        if (painting) sprayCircles(point.x, point.y);
+    }
+});
+
+document.getElementById('brushSlider').addEventListener('input', (e) => {
+    updateBrushSize(parseInt(e.target.value));
+});
+
+document.getElementById('eraser-btn').addEventListener('click', toggleEraserMode);
+
+document.getElementById('reset-btn').addEventListener('click', resetCanvas);
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === ',') {
+        updateBrushSize(Math.max(10, brushSize - 10));
+    } else if (e.key === '.') {
+        updateBrushSize(Math.min(150, brushSize + 10));
+    } else if (e.key === 'e') {
+        toggleEraserMode();
+    }
+});
+
+// Animation
+function animate() {
+    requestAnimationFrame(animate);
+    renderer.render(scene, camera);
+}
+animate();
+
+// Resize
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
