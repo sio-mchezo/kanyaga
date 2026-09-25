@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Three.js – Bayer 8x8 dithering (shader)</title>
+  <style>
+    body { margin: 0; overflow: hidden; font-family: sans-serif; background: #000; touch-action: none; }
+    #moveJoystick {
+      position: absolute; bottom: 40px; left: 40px; width: 140px; height: 140px;
+      z-index: 30; opacity: 0.7; touch-action: none;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="moveJoystick"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.9.0/nipplejs.min.js"></script>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+    // ==== DITHERING SETTINGS ====
+    const LEVELS = 10;
+    const RENDER_SCALE = 4;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x11151c);
+
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 1.1, 10);
+
+    let yaw = Math.PI;
+    let pitch = 0;
+    const lookTarget = new THREE.Vector3();
+
+    function updateCameraLook() {
+      pitch = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, pitch));
+      const dir = new THREE.Vector3(
+        Math.sin(yaw) * Math.cos(pitch),
+        Math.sin(pitch),
+        Math.cos(yaw) * Math.cos(pitch)
+      );
+      lookTarget.copy(camera.position).add(dir.multiplyScalar(5));
+      camera.lookAt(lookTarget);
+    }
+    updateCameraLook();
+
+    // Renderer
+    const renderer = new THREE.WebGLRenderer({ antialias: false });
+    renderer.setPixelRatio(1);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Composer with explicit 8-bit target
+    const rtWidth = Math.max(1, Math.floor(window.innerWidth / RENDER_SCALE));
+    const rtHeight = Math.max(1, Math.floor(window.innerHeight / RENDER_SCALE));
+
+    const composerTarget = new THREE.WebGLRenderTarget(rtWidth, rtHeight, {
+      minFilter: THREE.NearestFilter,
+      magFilter: THREE.NearestFilter,
+      format: THREE.RGBAFormat,
+      type: THREE.UnsignedByteType,
+    });
+    const composer = new EffectComposer(renderer, composerTarget);
+    composer.setSize(rtWidth, rtHeight);
+
+    composer.addPass(new RenderPass(scene, camera));
+
+    // 8×8 Bayer dither shader
+    const ditherShader = {
+      uniforms: {
+        tDiffuse: { value: null },
+        resolution: { value: new THREE.Vector2(rtWidth, rtHeight) },
+        levels: { value: LEVELS },
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        precision highp float;
+
+        uniform sampler2D tDiffuse;
+        uniform vec2 resolution;
+        uniform float levels;
+
+        varying vec2 vUv;
+
+        // 8×8 Bayer matrix values 0..63 — same as the CPU array
+        const float BAYER[64] = float[64](
+           0.0, 32.0,  8.0, 40.0,  2.0, 34.0, 10.0, 42.0,
+          48.0, 16.0, 56.0, 24.0, 50.0, 18.0, 58.0, 26.0,
+          12.0, 44.0,  4.0, 36.0, 14.0, 46.0,  6.0, 38.0,
+          60.0, 28.0, 52.0, 20.0, 62.0, 30.0, 54.0, 22.0,
+           3.0, 35.0, 11.0, 43.0,  1.0, 33.0,  9.0, 41.0,
+          51.0, 19.0, 59.0, 27.0, 49.0, 17.0, 57.0, 25.0,
+          15.0, 47.0,  7.0, 39.0, 13.0, 45.0,  5.0, 37.0,
+          63.0, 31.0, 55.0, 23.0, 61.0, 29.0, 53.0, 21.0
+        );
+
+        float bayerValue(vec2 pixel) {
+          int x = int(mod(pixel.x, 8.0));
+          int y = int(mod(pixel.y, 8.0));
+          return BAYER[y * 8 + x];
+        }
+
+        void main() {
+          vec3 color = texture2D(tDiffuse, vUv).rgb;
+
+          // Pixel coordinate in the low-res buffer (matches CPU x/y)
+          vec2 pixel = floor(vUv * resolution);
+
+          // STEP = 255 / (levels - 1), but we work in 0..1 range so STEP = 1 / (levels - 1)
+          float step1 = 1.0 / (levels - 1.0);
+
+          // threshold = (bayer / 64 - 0.5) * step1
+          float bv = bayerValue(pixel) / 64.0;
+          float threshold = (bv - 0.5) * step1;
+
+          vec3 adjusted = color + threshold;
+          vec3 quantized = floor(adjusted / step1 + 0.5) * step1;
+
+          gl_FragColor = vec4(clamp(quantized, 0.0, 1.0), 1.0);
+        }
+      `
+    };
+
+    const ditherPass = new ShaderPass(ditherShader);
+    ditherPass.renderToScreen = true;
+    composer.addPass(ditherPass);
+
+    // Pointer drag to look
+    let lookPointerId = null;
+    let prevPointer = { x: 0, y: 0 };
+
+    function isJoystickTarget(e) {
+      return e.target && e.target.closest && e.target.closest('#moveJoystick');
+    }
+
+    window.addEventListener('pointerdown', (e) => {
+      if (lookPointerId !== null) return;
+      if (isJoystickTarget(e)) return;
+      lookPointerId = e.pointerId;
+      prevPointer.x = e.clientX;
+      prevPointer.y = e.clientY;
+    });
+
+    window.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== lookPointerId) return;
+      yaw -= (e.clientX - prevPointer.x) * 0.004;
+      pitch -= (e.clientY - prevPointer.y) * 0.004;
+      pitch = Math.max(-1.2, Math.min(0.25, pitch));
+      prevPointer.x = e.clientX;
+      prevPointer.y = e.clientY;
+      updateCameraLook();
+    });
+
+    function endLook(e) {
+      if (e.pointerId === lookPointerId) lookPointerId = null;
+    }
+    window.addEventListener('pointerup', endLook);
+    window.addEventListener('pointercancel', endLook);
+    window.addEventListener('pointerleave', endLook);
+
+    // Lighting & floor
+    scene.add(new THREE.AmbientLight(0xffffff, 1.2));
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    keyLight.position.set(5, 12, 8);
+    scene.add(keyLight);
+
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(200, 200),
+      new THREE.MeshLambertMaterial({ color: 0x3a3f47 })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    scene.add(floor);
+
+    // Hitmap
+    const HITMAP_SIZE = 17.1;
+    const HITMAP_CENTER_X = 0;
+    const HITMAP_CENTER_Z = -4.85;
+    const HITMAP_ROTATION = Math.PI;
+    const HITMAP_RES = 512;
+
+    const hitCanvas = document.createElement('canvas');
+    hitCanvas.width = HITMAP_RES;
+    hitCanvas.height = HITMAP_RES;
+    const hitCtx = hitCanvas.getContext('2d', { willReadFrequently: true });
+
+    const hitmapTexture = new THREE.TextureLoader().load('house.png', (tex) => {
+      hitCtx.drawImage(tex.image, 0, 0, HITMAP_RES, HITMAP_RES);
+    });
+
+    const hitmapPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(HITMAP_SIZE, HITMAP_SIZE),
+      new THREE.MeshBasicMaterial({ map: hitmapTexture, transparent: true, opacity: 0.5 })
+    );
+    hitmapPlane.rotation.x = -Math.PI / 2;
+    hitmapPlane.position.set(HITMAP_CENTER_X, 0.05, HITMAP_CENTER_Z);
+    scene.add(hitmapPlane);
+
+    function isWall(worldX, worldZ) {
+      const dx = worldX - HITMAP_CENTER_X;
+      const dz = worldZ - HITMAP_CENTER_Z;
+      const c = Math.cos(-HITMAP_ROTATION);
+      const s = Math.sin(-HITMAP_ROTATION);
+      let rx = dx * c - dz * s;
+      const rz = dx * s + dz * c;
+      rx = -rx;
+      const u = rx / HITMAP_SIZE + 0.5;
+      const v = rz / HITMAP_SIZE + 0.5;
+      if (u < 0 || u > 1 || v < 0 || v > 1) return false;
+      const data = hitCtx.getImageData(
+        Math.floor(u * HITMAP_RES),
+        Math.floor((1 - v) * HITMAP_RES), 1, 1
+      ).data;
+      return data[0] > 128;
+    }
+
+    // GLTF
+    new GLTFLoader().load('scene.gltf', (gltf) => {
+      gltf.scene.traverse(child => {
+        if (child.isLight) gltf.scene.remove(child);
+        if (child.isMesh && child.material.map
+          && child.material.map.name === "textures/material_12_baseColor.png") {
+          child.visible = false;
+        }
+      });
+      gltf.scene.scale.set(0.2, 0.2, 0.2);
+      gltf.scene.position.set(0, -0.48, 5);
+      scene.add(gltf.scene);
+    });
+
+    // Keyboard (WASD + Arrows)
+    const moveState = { forward: false, backward: false, left: false, right: false };
+    const moveSpeed = 0.12;
+
+    function setKey(code, pressed) {
+      switch(code) {
+        case 'KeyW': case 'ArrowUp':    moveState.forward  = pressed; break;
+        case 'KeyS': case 'ArrowDown':  moveState.backward = pressed; break;
+        case 'KeyA': case 'ArrowLeft':  moveState.left     = pressed; break;
+        case 'KeyD': case 'ArrowRight': moveState.right    = pressed; break;
+      }
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.code.startsWith('Arrow')) e.preventDefault();
+      setKey(e.code, true);
+    });
+    window.addEventListener('keyup', (e) => {
+      if (e.code.startsWith('Arrow')) e.preventDefault();
+      setKey(e.code, false);
+    });
+
+    // Joystick
+    const moveJoy = { x: 0, y: 0 };
+    const moveManager = nipplejs.create({
+      zone: document.getElementById('moveJoystick'),
+      mode: 'static',
+      position: { left: '70px', top: '70px' },
+      color: '#e60087',
+      size: 100,
+      threshold: 0.1,
+      fadeTime: 200,
+    });
+    moveManager.on('move', (evt, data) => {
+      if (!data.force || data.force < 0.1) {
+        moveJoy.x = 0;
+        moveJoy.y = 0;
+        return;
+      }
+      moveJoy.x = data.vector.x;
+      moveJoy.y = data.vector.y;
+    });
+    moveManager.on('end', () => {
+      moveJoy.x = 0;
+      moveJoy.y = 0;
+    });
+
+    // Resize
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      const w = Math.max(1, Math.floor(window.innerWidth / RENDER_SCALE));
+      const h = Math.max(1, Math.floor(window.innerHeight / RENDER_SCALE));
+      composer.setSize(w, h);
+      ditherShader.uniforms.resolution.value.set(w, h);
+    });
+
+    // Animation loop
+    const clock = new THREE.Clock();
+
+    function animate() {
+      const delta = clock.getDelta();
+
+      const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)).normalize();
+      const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, -1, 0), forward).normalize();
+
+      const moveDelta = new THREE.Vector3();
+
+      if (moveState.forward) moveDelta.add(forward);
+      if (moveState.backward) moveDelta.sub(forward);
+      if (moveState.right) moveDelta.add(right);
+      if (moveState.left) moveDelta.sub(right);
+
+      if (moveJoy.x !== 0 || moveJoy.y !== 0) {
+        moveDelta.addScaledVector(forward, moveJoy.y);
+        moveDelta.addScaledVector(right, moveJoy.x);
+      }
+
+      if (moveDelta.lengthSq() > 0) {
+        moveDelta.normalize().multiplyScalar(moveSpeed * delta * 30);
+
+        const nextX = camera.position.x + moveDelta.x;
+        const nextZ = camera.position.z + moveDelta.z;
+
+        if (!isWall(nextX, nextZ)) {
+          camera.position.x = nextX;
+          camera.position.z = nextZ;
+        } else {
+          if (!isWall(nextX, camera.position.z)) {
+            camera.position.x = nextX;
+          } else if (!isWall(camera.position.x, nextZ)) {
+            camera.position.z = nextZ;
+          }
+        }
+
+        updateCameraLook();
+      }
+
+      composer.render();
+      requestAnimationFrame(animate);
+    }
+
+    animate();
+  </script>
+</body>
+</html>
