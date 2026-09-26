@@ -5,14 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Three.js – Bayer 8x8 dithering (shader)</title>
   <style>
-    body { margin: 0; overflow: hidden; font-family: sans-serif; background: #000; touch-action: none; }
+    body { margin: 0; overflow: hidden; font-family: monospace; background: #000; touch-action: none; }
     #moveJoystick {
       position: absolute; bottom: 40px; left: 40px; width: 140px; height: 140px;
       z-index: 30; opacity: 0.7; touch-action: none;
     }
+    #info {
+      position: absolute; top: 12px; left: 12px;
+      color: #ccc; font-size: 13px; z-index: 99;
+      border-radius: 6px; pointer-events: none;
+      line-height: 1.6;
+    }
+    #info b { color: #fff; }
   </style>
 </head>
 <body>
+  <div id="info">loading…</div>
 
   <div id="moveJoystick"></div>
 
@@ -38,6 +46,34 @@
     const LEVELS = 10;
     const RENDER_SCALE = 4;
 
+    // ==== HITMAP SETTINGS ====
+    const HITMAP_SIZE = 17.1;
+    const HITMAP_CENTER_X = 0;
+    const HITMAP_CENTER_Z = -4.85;
+    const HITMAP_ROTATION = Math.PI;
+    const HITMAP_RES = 256;  // matches your source image
+
+    // ==== ROOM REGISTRY ====
+    // Grey value (0-255) → room name. Values are matched within ±ROOM_MATCH_TOLERANCE.
+    // Adjust the numbers to match the actual grey levels in your image.
+    const ROOM_MATCH_TOLERANCE = 1;
+    const ROOMS = [
+      { grey:  60, name: 'Sofa' },
+      { grey:  70, name: 'Entrance Hall' },
+      { grey:  80, name: 'Bedroom 2' },
+      { grey:  90, name: 'Bathroom 2' },
+      { grey:  30, name: 'Living Room' },
+      { grey: 40, name: 'Dining Room' },
+      { grey: 50  , name: 'Kitchen' },
+      { grey: 10, name: 'Bedroom 1' },
+      { grey: 20, name: 'Bathroom 1' },
+      { grey: 255, name: 'Wall / Outside' },
+    ];
+
+    // Which grey counts as a wall. Anything >= this value is impassable.
+    const WALL_GREY_THRESHOLD = 250;
+
+    // ==== SCENE ====
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x11151c);
 
@@ -60,13 +96,13 @@
     }
     updateCameraLook();
 
-    // Renderer
+    // ==== RENDERER ====
     const renderer = new THREE.WebGLRenderer({ antialias: false });
     renderer.setPixelRatio(1);
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
-    // Composer with explicit 8-bit target
+    // ==== COMPOSER ====
     const rtWidth = Math.max(1, Math.floor(window.innerWidth / RENDER_SCALE));
     const rtHeight = Math.max(1, Math.floor(window.innerHeight / RENDER_SCALE));
 
@@ -81,7 +117,7 @@
 
     composer.addPass(new RenderPass(scene, camera));
 
-    // 8×8 Bayer dither shader
+    // ==== DITHER SHADER ====
     const ditherShader = {
       uniforms: {
         tDiffuse: { value: null },
@@ -104,7 +140,6 @@
 
         varying vec2 vUv;
 
-        // 8×8 Bayer matrix values 0..63 — same as the CPU array
         const float BAYER[64] = float[64](
            0.0, 32.0,  8.0, 40.0,  2.0, 34.0, 10.0, 42.0,
           48.0, 16.0, 56.0, 24.0, 50.0, 18.0, 58.0, 26.0,
@@ -124,20 +159,12 @@
 
         void main() {
           vec3 color = texture2D(tDiffuse, vUv).rgb;
-
-          // Pixel coordinate in the low-res buffer (matches CPU x/y)
           vec2 pixel = floor(vUv * resolution);
-
-          // STEP = 255 / (levels - 1), but we work in 0..1 range so STEP = 1 / (levels - 1)
           float step1 = 1.0 / (levels - 1.0);
-
-          // threshold = (bayer / 64 - 0.5) * step1
           float bv = bayerValue(pixel) / 64.0;
           float threshold = (bv - 0.5) * step1;
-
           vec3 adjusted = color + threshold;
           vec3 quantized = floor(adjusted / step1 + 0.5) * step1;
-
           gl_FragColor = vec4(clamp(quantized, 0.0, 1.0), 1.0);
         }
       `
@@ -147,7 +174,7 @@
     ditherPass.renderToScreen = true;
     composer.addPass(ditherPass);
 
-    // Pointer drag to look
+    // ==== POINTER LOOK ====
     let lookPointerId = null;
     let prevPointer = { x: 0, y: 0 };
 
@@ -180,7 +207,7 @@
     window.addEventListener('pointercancel', endLook);
     window.addEventListener('pointerleave', endLook);
 
-    // Lighting & floor
+    // ==== LIGHTING & FLOOR ====
     scene.add(new THREE.AmbientLight(0xffffff, 1.2));
     const keyLight = new THREE.DirectionalLight(0xffffff, 1.5);
     keyLight.position.set(5, 12, 8);
@@ -193,20 +220,23 @@
     floor.rotation.x = -Math.PI / 2;
     scene.add(floor);
 
-    // Hitmap
-    const HITMAP_SIZE = 17.1;
-    const HITMAP_CENTER_X = 0;
-    const HITMAP_CENTER_Z = -4.85;
-    const HITMAP_ROTATION = Math.PI;
-    const HITMAP_RES = 512;
-
+    // ==== HITMAP ====
     const hitCanvas = document.createElement('canvas');
     hitCanvas.width = HITMAP_RES;
     hitCanvas.height = HITMAP_RES;
     const hitCtx = hitCanvas.getContext('2d', { willReadFrequently: true });
 
+    // The full pixel buffer, cached as a Uint8ClampedArray after load
+    let hitPixels = null;
+
     const hitmapTexture = new THREE.TextureLoader().load('house.png', (tex) => {
       hitCtx.drawImage(tex.image, 0, 0, HITMAP_RES, HITMAP_RES);
+      hitPixels = hitCtx.getImageData(0, 0, HITMAP_RES, HITMAP_RES).data;
+      console.log('Hitmap loaded. Pixel buffer size:', hitPixels.length);
+      // Log the unique grey values so you can verify against ROOMS
+      const unique = new Set();
+      for (let i = 0; i < hitPixels.length; i += 4) unique.add(hitPixels[i]);
+      // console.log('Unique greys:', [...unique].sort((a,b) => a-b));
     });
 
     const hitmapPlane = new THREE.Mesh(
@@ -217,7 +247,8 @@
     hitmapPlane.position.set(HITMAP_CENTER_X, 0.05, HITMAP_CENTER_Z);
     scene.add(hitmapPlane);
 
-    function isWall(worldX, worldZ) {
+    // Convert world XZ → hitmap pixel index (into hitPixels)
+    function worldToPixelIndex(worldX, worldZ) {
       const dx = worldX - HITMAP_CENTER_X;
       const dz = worldZ - HITMAP_CENTER_Z;
       const c = Math.cos(-HITMAP_ROTATION);
@@ -227,15 +258,39 @@
       rx = -rx;
       const u = rx / HITMAP_SIZE + 0.5;
       const v = rz / HITMAP_SIZE + 0.5;
-      if (u < 0 || u > 1 || v < 0 || v > 1) return false;
-      const data = hitCtx.getImageData(
-        Math.floor(u * HITMAP_RES),
-        Math.floor((1 - v) * HITMAP_RES), 1, 1
-      ).data;
-      return data[0] > 128;
+      if (u < 0 || u > 1 || v < 0 || v > 1) return -1;
+      const px = Math.floor(u * HITMAP_RES);
+      const py = Math.floor((1 - v) * HITMAP_RES);
+      return (py * HITMAP_RES + px) * 4;
     }
 
-    // GLTF
+    // Reads the grey value at a world position. Returns -1 if outside the map.
+    function getGreyAt(worldX, worldZ) {
+      if (!hitPixels) return -1;
+      const idx = worldToPixelIndex(worldX, worldZ);
+      if (idx < 0) return -1;
+      return hitPixels[idx];
+    }
+
+    // Collision: anything at or above WALL_GREY_THRESHOLD is impassable.
+    function isWall(worldX, worldZ) {
+      const g = getGreyAt(worldX, worldZ);
+      if (g < 0) return false; // outside the map is walkable
+      return g >= WALL_GREY_THRESHOLD;
+    }
+
+    // Look up a room name from a grey value.
+    function getRoomName(grey) {
+      if (grey < 0) return '—';
+      for (const room of ROOMS) {
+        if (Math.abs(grey - room.grey) <= ROOM_MATCH_TOLERANCE) {
+          return room.name;
+        }
+      }
+      return 'Unknown (' + grey + ')';
+    }
+
+    // ==== GLTF ====
     new GLTFLoader().load('scene.gltf', (gltf) => {
       gltf.scene.traverse(child => {
         if (child.isLight) gltf.scene.remove(child);
@@ -249,7 +304,7 @@
       scene.add(gltf.scene);
     });
 
-    // Keyboard (WASD + Arrows)
+    // ==== KEYBOARD ====
     const moveState = { forward: false, backward: false, left: false, right: false };
     const moveSpeed = 0.12;
 
@@ -271,7 +326,7 @@
       setKey(e.code, false);
     });
 
-    // Joystick
+    // ==== JOYSTICK ====
     const moveJoy = { x: 0, y: 0 };
     const moveManager = nipplejs.create({
       zone: document.getElementById('moveJoystick'),
@@ -296,7 +351,19 @@
       moveJoy.y = 0;
     });
 
-    // Resize
+    // ==== HUD ====
+    const infoEl = document.getElementById('info');
+    let hudTick = 0;
+
+    function updateHUD() {
+      const g = getGreyAt(camera.position.x, camera.position.z);
+      const room = getRoomName(g);
+      infoEl.innerHTML =
+        `${room}<br>`;
+        // `<b>X / Z:</b> ${camera.position.x.toFixed(2)}, ${camera.position.z.toFixed(2)}`;
+    }
+
+    // ==== RESIZE ====
     window.addEventListener('resize', () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
@@ -307,7 +374,7 @@
       ditherShader.uniforms.resolution.value.set(w, h);
     });
 
-    // Animation loop
+    // ==== ANIMATION ====
     const clock = new THREE.Clock();
 
     function animate() {
@@ -347,6 +414,9 @@
 
         updateCameraLook();
       }
+
+      // Update HUD every ~6 frames (about 10 Hz)
+      if ((hudTick++ % 6) === 0) updateHUD();
 
       composer.render();
       requestAnimationFrame(animate);
