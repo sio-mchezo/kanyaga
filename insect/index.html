@@ -1,0 +1,264 @@
+<html>
+<head>
+  <title>insect</title>
+  <style>
+    body { margin: 0; background: #000; color: #fff; font-family: monospace; overflow: hidden; }
+    #joystickContainer { position: fixed; bottom: 40px; left: 40px; width: 120px; height: 120px; z-index: 10; }
+  </style>
+</head>
+<body>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.9.0/nipplejs.min.js"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.128.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.128.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+
+    const amount = 8;
+    const castplane = 40;
+    const midRing = 2;
+    const maxStretch = midRing + 1.5;
+    const jitter = 1;
+    const kneeHeight = 0.75;
+    const stepDuration = 0.12;
+    const stepArc = 0.5;
+    const gaitA = [0, 2, 4, 6];
+    const gaitB = [1, 3, 5, 7];
+    const turnSpeed = 0.06;
+    const moveSpeed = 2.0;
+    const camBack = 4;
+    const camyMin = 0.5;
+    const camyMax = 26;
+
+    let camy = 10;
+    let camyTarget = camy;
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
+
+    const light = new THREE.PointLight(0xffffff, 1, 60);
+    light.position.set(10, 10, 10);
+    scene.add(light);
+    scene.add(new THREE.AmbientLight(0x666666, 0.3));
+    scene.add(new THREE.GridHelper(castplane, 40, 0x333333, 0x222222));
+
+    addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    const selection = new THREE.Group();
+    selection.position.y = 0.1;
+    scene.add(selection);
+
+    const feetgroup = new THREE.Group();
+    scene.add(feetgroup);
+
+    const cursor = new THREE.Group();
+    scene.add(cursor);
+
+    const dotMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.05), dotMat);
+    body.scale.set(1.6, 1, 1);
+    selection.add(body);
+
+    const legMat = new THREE.LineBasicMaterial({ color: 0xffffff });
+    const foot = [];
+
+    let bodyHeading = 0;
+    let targetHeading = 0;
+    const input = { x: 0, z: 0 };
+
+    const diffAngle = (a, b) => {
+      let d = (a - b) % (Math.PI * 2);
+      if (d > Math.PI) d -= Math.PI * 2;
+      if (d < -Math.PI) d += Math.PI * 2;
+      return d;
+    };
+
+    function targetFor(home, cx, cz, jx, jz) {
+      const a = home + bodyHeading;
+      return {
+        x: cx + Math.cos(a) * midRing + jx - feetgroup.position.x,
+        z: cz + Math.sin(a) * midRing + jz - feetgroup.position.z
+      };
+    }
+
+    for (let i = 0; i < amount; i++) {
+      const mesh = new THREE.Group();
+      feetgroup.add(mesh);
+
+      const home = (i / amount) * Math.PI * 2 + Math.PI / amount;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3));
+      const leg = new THREE.Line(geo, legMat);
+      leg.frustumCulled = false;
+      scene.add(leg);
+
+      const jx = (Math.random() - 0.5) * jitter;
+      const jz = (Math.random() - 0.5) * jitter;
+      const t = targetFor(home, 0, 0, jx, jz);
+      mesh.position.set(t.x, 0, t.z);
+
+      foot.push({
+        mesh, home, leg,
+        stepping: false, t: 0,
+        fx: 0, fz: 0, tx: 0, tz: 0,
+        jx, jz
+      });
+    }
+
+    function beginStep(s, cx, cz) {
+      s.stepping = true;
+      s.t = 0;
+      s.fx = s.mesh.position.x;
+      s.fz = s.mesh.position.z;
+      s.jx = (Math.random() - 0.5) * jitter;
+      s.jz = (Math.random() - 0.5) * jitter;
+      const t = targetFor(s.home, cx, cz, s.jx, s.jz);
+      s.tx = t.x;
+      s.tz = t.z;
+    }
+
+    function setupJoystick() {
+      const container = document.createElement('div');
+      container.id = 'joystickContainer';
+      document.body.appendChild(container);
+
+      const stick = nipplejs.create({ dataOnly: true });
+
+      stick.on('move', (_, data) => {
+        if (!data?.force || data.force < 0.1) return;
+        const r = data.angle?.radian;
+        if (typeof r !== 'number' || isNaN(r)) return;
+        const f = Math.min(data.force, 1.5);
+        const nx = Math.cos(r) * f;
+        const nz = Math.sin(-r) * f;
+        if (isNaN(nx) || isNaN(nz)) return;
+        input.x = nx;
+        input.z = nz;
+      });
+
+      stick.on('end', () => {
+        input.x = 0;
+        input.z = 0;
+      });
+    }
+
+    function updateHeading() {
+      if (input.x || input.z) {
+        targetHeading = Math.atan2(input.z, input.x);
+        bodyHeading += diffAngle(targetHeading, bodyHeading) * turnSpeed;
+        selection.rotation.y = -bodyHeading;
+      }
+    }
+
+    function updateFeet(dt) {
+      const cx = cursor.position.x;
+      const cz = cursor.position.z;
+      let aBusy = false, bBusy = false;
+      for (let k = 0; k < gaitA.length; k++) if (foot[gaitA[k]].stepping) aBusy = true;
+      for (let k = 0; k < gaitB.length; k++) if (foot[gaitB[k]].stepping) bBusy = true;
+
+      for (let i = 0; i < amount; i++) {
+        const s = foot[i];
+
+        if (s.stepping) {
+          s.t += dt / stepDuration;
+          if (s.t >= 1) {
+            s.t = 1;
+            s.stepping = false;
+          }
+          const e = s.t * s.t * (3 - 2 * s.t);
+          s.mesh.position.x = s.fx + (s.tx - s.fx) * e;
+          s.mesh.position.z = s.fz + (s.tz - s.fz) * e;
+        } else {
+          const ideal = targetFor(s.home, cx, cz, s.jx, s.jz);
+          const dx = s.mesh.position.x - ideal.x;
+          const dz = s.mesh.position.z - ideal.z;
+          const off = Math.sqrt(dx * dx + dz * dz);
+          if (off > maxStretch || off > 0.8) {
+            const inA = gaitA.includes(i);
+            if ((inA && !bBusy) || (!inA && !aBusy) || off > maxStretch) {
+              beginStep(s, cx, cz);
+            }
+          }
+        }
+      }
+    }
+
+    function updateLegs() {
+      const bx = selection.position.x;
+      const by = selection.position.y;
+      const bz = selection.position.z;
+
+      for (let i = 0; i < amount; i++) {
+        const s = foot[i];
+        const fx = feetgroup.position.x + s.mesh.position.x;
+        const fy = feetgroup.position.y + s.mesh.position.y;
+        const fz = feetgroup.position.z + s.mesh.position.z;
+        const lift = s.stepping ? Math.sin(s.t * Math.PI) * stepArc : 0;
+        const kx = bx + (fx - bx) / 3;
+        const kz = bz + (fz - bz) / 3;
+        const ky = kneeHeight + lift;
+        if (isNaN(fx) || isNaN(fz) || isNaN(kx) || isNaN(kz)) continue;
+        const p = s.leg.geometry.attributes.position;
+        p.setXYZ(0, bx, by, bz);
+        p.setXYZ(1, kx, ky, kz);
+        p.setXYZ(2, fx, fy + lift, fz);
+        p.needsUpdate = true;
+        s.leg.geometry.boundingSphere = null;
+      }
+    }
+
+    addEventListener('wheel', (event) => {
+      camyTarget = Math.max(camyMin, Math.min(camyMax, camyTarget - event.deltaY * 0.01));
+    });
+
+    setupJoystick();
+
+    let prev = performance.now();
+    function animate() {
+      requestAnimationFrame(animate);
+      const now = performance.now();
+      const dt = Math.min(0.1, (now - prev) / 1000);
+      prev = now;
+
+      if (isNaN(input.x)) input.x = 0;
+      if (isNaN(input.z)) input.z = 0;
+      if (isNaN(bodyHeading)) bodyHeading = 0;
+
+      camy += (camyTarget - camy) * 0.15;
+
+      updateHeading();
+      cursor.position.x += input.x * moveSpeed * dt;
+      cursor.position.z += input.z * moveSpeed * dt;
+
+      selection.position.x += (cursor.position.x - selection.position.x) * 0.2;
+      selection.position.z += (cursor.position.z - selection.position.z) * 0.2;
+
+      camera.position.x += (selection.position.x - camera.position.x) * 0.2;
+      camera.position.z += (selection.position.z + camBack - camera.position.z) * 0.2;
+      camera.position.y += (camy - camera.position.y) * 0.15;
+      camera.lookAt(selection.position);
+
+      updateFeet(dt);
+      updateLegs();
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
+  </script>
+</body>
+</html>
