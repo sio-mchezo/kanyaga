@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>house</title>
+  <style>
+    @font-face {
+    font-family: 'game_over';
+    src: url('font/game_over-webfont.woff2') format('woff2'),
+         url('font/game_over-webfont.woff') format('woff'),
+         url('font/game_over-webfont.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+    }
+    body { margin: 0; overflow: hidden; font-family: monospace; background: #000; touch-action: none; }
+    #moveJoystick { position: absolute; bottom: 10px; left: 10px; width: 140px; height: 140px; z-index: 30; opacity: 0.7; touch-action: none; cursor:pointer; }
+    #overlay {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      color: #ccc;
+      font-size: 1em;
+      z-index: 99;
+      line-height: 1.4;
+      font-family: 'game_over';
+      background: rgba(0, 0, 0, 0.6);
+      padding: 10px 12px;
+      flex-direction: column;
+      gap: 6px;
+      pointer-events: auto;
+      display: none;
+    }
+    #overlay button {
+      font-family: 'game_over';
+      font-size: 1em;
+      color: #ccc;
+      background: rgba(40, 40, 50, 0.8);
+      border: 1px solid #555;
+      padding: 6px 10px;
+      cursor: pointer;
+      text-align: left;
+      min-width: 100px;
+    }
+    #overlay button:hover {
+      background: rgba(70, 70, 90, 0.9);
+    }
+    #overlay button.active {
+      background: #e60087;
+      color: #fff;
+      border-color: #ff66b2;
+    }
+      .corners {
+          clip-path: polygon(
+            0px 8px,
+            4px 8px,
+            4px 4px,
+            8px 4px,
+            8px 0px,
+            calc(100% - 8px) 0px,
+            calc(100% - 8px) 4px,
+            calc(100% - 4px) 4px,
+            calc(100% - 4px) 8px,
+            100% 8px,
+            100% calc(100% - 8px),
+            calc(100% - 4px) calc(100% - 8px),
+            calc(100% - 4px) calc(100% - 4px),
+            calc(100% - 8px) calc(100% - 4px),
+            calc(100% - 8px) 100%,
+            8px 100%,
+            8px calc(100% - 4px),
+            4px calc(100% - 4px),
+            4px calc(100% - 8px),
+            0px calc(100% - 8px)
+          );
+        }
+    </style>
+</head>
+<body>
+  <div id="overlay" class="corners">
+<!--     <button data-state="default">Default</button>
+    <button data-state="hunt">Hunt</button>
+    <button data-state="search">Search</button>
+    <button data-state="avoid">Avoid</button> -->
+  </div>
+  <div id="moveJoystick"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.9.0/nipplejs.min.js"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+    const LEVELS = 10;
+    const RENDER_SCALE = 4;
+
+    const HITMAP_SIZE = 17.1;
+    const HITMAP_CENTER_X = 0;
+    const HITMAP_CENTER_Z = -4.85;
+    const HITMAP_ROTATION = Math.PI;
+    const HITMAP_RES = 256;
+
+    const ROOM_MATCH_TOLERANCE = 1;
+    const ROOMS = [
+      { grey: 60, name: 'Sofa' },
+      { grey: 70, name: 'Entrance Hall' },
+      { grey: 80, name: 'Bedroom 2' },
+      { grey: 90, name: 'Bathroom 2' },
+      { grey: 30, name: 'Living Room' },
+      { grey: 40, name: 'Dining Room' },
+      { grey: 50, name: 'Kitchen' },
+      { grey: 10, name: 'Bedroom 1' },
+      { grey: 20, name: 'Bathroom 1' },
+      { grey: 255, name: 'Wall / Outside' },
+    ];
+    const WALL_GREY_THRESHOLD = 250;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x11151c);
+
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 1.1, 10);
+
+    let yaw = Math.PI;
+    let pitch = 0;
+    const lookTarget = new THREE.Vector3();
+
+    function updateCameraLook() {
+      pitch = Math.max(-Math.PI / 2 + 0.05, Math.min(Math.PI / 2 - 0.05, pitch));
+      const dir = new THREE.Vector3(
+        Math.sin(yaw) * Math.cos(pitch),
+        Math.sin(pitch),
+        Math.cos(yaw) * Math.cos(pitch)
+      );
+      lookTarget.copy(camera.position).add(dir.multiplyScalar(5));
+      camera.lookAt(lookTarget);
+    }
+    updateCameraLook();
+
+    const renderer = new THREE.WebGLRenderer({ antialias: false });
+    renderer.setPixelRatio(1);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const rtWidth = Math.max(1, Math.floor(window.innerWidth / RENDER_SCALE));
+    const rtHeight = Math.max(1, Math.floor(window.innerHeight / RENDER_SCALE));
+
+    const composerTarget = new THREE.WebGLRenderTarget(rtWidth, rtHeight, {
+      minFilter: THREE.NearestFilter,
+      magFilter: THREE.NearestFilter,
+      format: THREE.RGBAFormat,
+      type: THREE.UnsignedByteType,
+    });
+    const composer = new EffectComposer(renderer, composerTarget);
+    composer.setSize(rtWidth, rtHeight);
+    composer.addPass(new RenderPass(scene, camera));
+
+    const ditherShader = {
+      uniforms: {
+        tDiffuse: { value: null },
+        resolution: { value: new THREE.Vector2(rtWidth, rtHeight) },
+        levels: { value: LEVELS },
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        precision highp float;
+        uniform sampler2D tDiffuse;
+        uniform vec2 resolution;
+        uniform float levels;
+        varying vec2 vUv;
+        const float BAYER[64] = float[64](
+           0.0, 32.0,  8.0, 40.0,  2.0, 34.0, 10.0, 42.0,
+          48.0, 16.0, 56.0, 24.0, 50.0, 18.0, 58.0, 26.0,
+          12.0, 44.0,  4.0, 36.0, 14.0, 46.0,  6.0, 38.0,
+          60.0, 28.0, 52.0, 20.0, 62.0, 30.0, 54.0, 22.0,
+           3.0, 35.0, 11.0, 43.0,  1.0, 33.0,  9.0, 41.0,
+          51.0, 19.0, 59.0, 27.0, 49.0, 17.0, 57.0, 25.0,
+          15.0, 47.0,  7.0, 39.0, 13.0, 45.0,  5.0, 37.0,
+          63.0, 31.0, 55.0, 23.0, 61.0, 29.0, 53.0, 21.0
+        );
+        float bayerValue(vec2 pixel) {
+          int x = int(mod(pixel.x, 8.0));
+          int y = int(mod(pixel.y, 8.0));
+          return BAYER[y * 8 + x];
+        }
+        void main() {
+          vec3 color = texture2D(tDiffuse, vUv).rgb;
+          vec2 pixel = floor(vUv * resolution);
+          float step1 = 1.0 / (levels - 1.0);
+          float bv = bayerValue(pixel) / 64.0;
+          float threshold = (bv - 0.5) * step1;
+          vec3 adjusted = color + threshold;
+          vec3 quantized = floor(adjusted / step1 + 0.5) * step1;
+          gl_FragColor = vec4(clamp(quantized, 0.0, 1.0), 1.0);
+        }
+      `
+    };
+
+    const ditherPass = new ShaderPass(ditherShader);
+    ditherPass.renderToScreen = true;
+    composer.addPass(ditherPass);
+
+    let lookPointerId = null;
+    let prevPointer = { x: 0, y: 0 };
+
+    function isJoystickTarget(e) {
+      return e.target && e.target.closest && e.target.closest('#moveJoystick');
+    }
+
+    function isOverlayTarget(e) {
+      return e.target && e.target.closest && e.target.closest('#overlay');
+    }
+
+    window.addEventListener('pointerdown', (e) => {
+      if (lookPointerId !== null) return;
+      if (isJoystickTarget(e)) return;
+      if (isOverlayTarget(e)) return;
+      lookPointerId = e.pointerId;
+      prevPointer.x = e.clientX;
+      prevPointer.y = e.clientY;
+    });
+
+    window.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== lookPointerId) return;
+      yaw -= (e.clientX - prevPointer.x) * 0.004;
+      pitch -= (e.clientY - prevPointer.y) * 0.004;
+      pitch = Math.max(-1.2, Math.min(0.25, pitch));
+      prevPointer.x = e.clientX;
+      prevPointer.y = e.clientY;
+      updateCameraLook();
+    });
+
+    function endLook(e) {
+      if (e.pointerId === lookPointerId) lookPointerId = null;
+    }
+    window.addEventListener('pointerup', endLook);
+    window.addEventListener('pointercancel', endLook);
+    window.addEventListener('pointerleave', endLook);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 1.2));
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    keyLight.position.set(5, 12, 8);
+    scene.add(keyLight);
+
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(200, 200),
+      new THREE.MeshLambertMaterial({ color: 0x3a3f47 })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -0.1;
+    scene.add(floor);
+
+    const hitCanvas = document.createElement('canvas');
+    hitCanvas.width = HITMAP_RES;
+    hitCanvas.height = HITMAP_RES;
+    const hitCtx = hitCanvas.getContext('2d', { willReadFrequently: true });
+
+    let hitPixels = null;
+
+    const hitmapTexture = new THREE.TextureLoader().load('house.png', (tex) => {
+      hitCtx.drawImage(tex.image, 0, 0, HITMAP_RES, HITMAP_RES);
+      hitPixels = hitCtx.getImageData(0, 0, HITMAP_RES, HITMAP_RES).data;
+    });
+
+    function worldToPixelIndex(worldX, worldZ) {
+      const dx = worldX - HITMAP_CENTER_X;
+      const dz = worldZ - HITMAP_CENTER_Z;
+      const c = Math.cos(-HITMAP_ROTATION);
+      const s = Math.sin(-HITMAP_ROTATION);
+      let rx = dx * c - dz * s;
+      const rz = dx * s + dz * c;
+      rx = -rx;
+      const u = rx / HITMAP_SIZE + 0.5;
+      const v = rz / HITMAP_SIZE + 0.5;
+      if (u < 0 || u > 1 || v < 0 || v > 1) return -1;
+      const px = Math.floor(u * HITMAP_RES);
+      const py = Math.floor((1 - v) * HITMAP_RES);
+      return (py * HITMAP_RES + px) * 4;
+    }
+
+    function getGreyAt(worldX, worldZ) {
+      if (!hitPixels) return -1;
+      const idx = worldToPixelIndex(worldX, worldZ);
+      if (idx < 0) return -1;
+      return hitPixels[idx];
+    }
+
+    function isWall(worldX, worldZ) {
+      const g = getGreyAt(worldX, worldZ);
+      if (g < 0) return false;
+      return g >= WALL_GREY_THRESHOLD;
+    }
+
+    function isWalkable(x, z) {
+      const g = getGreyAt(x, z);
+      if (g < 0) return false;
+      if (g >= WALL_GREY_THRESHOLD) return false;
+      return true;
+    }
+
+    function getRoomName(grey) {
+      if (grey < 0) return '';
+      for (const room of ROOMS) {
+        if (Math.abs(grey - room.grey) <= ROOM_MATCH_TOLERANCE) {
+          return room.name;
+        }
+      }
+      return 'Unknown (' + grey + ')';
+    }
+
+    function loadTexture(url, repeatX = 1, repeatY = 1) {
+      const tex = new THREE.TextureLoader().load(url);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.flipY = false;
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(repeatX, repeatY);
+      return tex;
+    }
+
+    new GLTFLoader().load('house1.glb', (gltf) => {
+      gltf.scene.traverse(child => {
+        if (child.isLight) gltf.scene.remove(child);
+        if (child.isMesh && child.material.map
+          && child.material.map.name === "textures/material_12_baseColor.png") {
+          child.visible = false;
+        }
+        if (child.isMesh && child.material.map
+          && child.material.map.name === "textures/material_6_baseColor.png") {
+           child.material = new THREE.MeshLambertMaterial({
+              map: new THREE.TextureLoader().load('textures/wood.png')
+            }); 
+        }
+      });
+      gltf.scene.scale.set(0.2, 0.2, 0.2);
+      gltf.scene.position.set(0, -0.48, 5);
+      scene.add(gltf.scene);
+    });
+
+    new GLTFLoader().load('ceilings.glb', (gltf) => {
+      gltf.scene.traverse(child => {
+        if (child.isMesh) {
+            child.material = new THREE.MeshLambertMaterial({
+              map: new THREE.TextureLoader().load('textures/ceiling.png'),
+              emissive: 0xcccccc,
+              side: THREE.DoubleSide
+            });
+        }
+      });
+      gltf.scene.scale.set(0.2, 0.2, 0.2);
+      gltf.scene.position.set(0, 1.8, 5);
+      scene.add(gltf.scene);
+    });
+
+    new GLTFLoader().load('walls.gltf', (gltf) => {
+      gltf.scene.traverse(child => {
+        if (child.isLight) gltf.scene.remove(child);
+      });
+      gltf.scene.traverse(child => {
+
+        if (child.isMesh && child.material) {
+          const name = child.material.name;
+            const wallTexture = new THREE.TextureLoader().load('textures/walltexture.png');
+            wallTexture.colorSpace = THREE.SRGBColorSpace;
+            wallTexture.wrapS = THREE.RepeatWrapping;
+            wallTexture.wrapT = THREE.RepeatWrapping;
+            wallTexture.repeat.set(1, 1);
+            
+
+          if (name == 'glass') {
+            child.material = new THREE.MeshPhongMaterial({
+              color: 0xffffff,
+              transparent: true,
+              opacity: 0.2,
+            });
+          }            
+
+          if (name == 'white') {
+            child.material = new THREE.MeshLambertMaterial({
+              color: 0xeeeeee
+            });
+          }
+
+          if (name == 'walls') {
+            const wallTx = new THREE.TextureLoader().load('textures/wallpaper.jpg');
+            wallTx.colorSpace = THREE.SRGBColorSpace;
+            wallTx.wrapS = THREE.RepeatWrapping;
+            wallTx.wrapT = THREE.RepeatWrapping;
+            wallTx.repeat.set(1, 1);
+            child.material = new THREE.MeshLambertMaterial({ map: wallTx });
+          }
+
+          if (name == 'brick') {
+            child.material.map.wrapS = THREE.RepeatWrapping;
+            child.material.map.wrapT = THREE.RepeatWrapping;
+            child.material.map.repeat.set(1, 1);
+          }
+
+          if (name == 'tiles') {
+            const tileTex = new THREE.TextureLoader().load('textures/tiles.png');
+            tileTex.wrapS = THREE.RepeatWrapping;
+            tileTex.wrapT = THREE.RepeatWrapping;
+            tileTex.repeat.set(1, 1);
+            child.material = new THREE.MeshLambertMaterial({
+              map: tileTex,
+            });
+          }
+
+          if (name == 'cement') {
+            child.material = new THREE.MeshLambertMaterial({
+              map: loadTexture('textures/cement.png', 2, 2),
+            });
+          }
+
+          if (name == 'livingroom' && 
+            name == 'bedroom1' &&
+             name == 'bedroom2' && 
+             name == 'diningroom') {
+            child.material = new THREE.MeshLambertMaterial({
+              map: wallTexture,
+            });
+          }
+
+          if (name == 'bedroom1') {
+            child.material = new THREE.MeshLambertMaterial({
+              color:0xFFDBD1,
+              map: wallTexture
+            });
+          }
+
+          if (name == 'bedroom2') {
+            child.material = new THREE.MeshLambertMaterial({
+              color:0xFFC5D6,
+              map: wallTexture,
+            });
+          }
+
+          if (name == 'diningroom') {
+            child.material = new THREE.MeshLambertMaterial({
+              color:0xFFFFD1,
+              map: wallTexture,
+            });
+          }
+          if (name == 'livingroom') {
+            child.material = new THREE.MeshLambertMaterial({
+              color:0xfffff0,
+              map: wallTexture,
+            });
+          }
+
+        }
+      });
+
+      gltf.scene.scale.set(0.2, 0.2, 0.2);
+      gltf.scene.position.set(0, -0.48, 5);
+      scene.add(gltf.scene);
+    });
+
+    const moveState = { forward: false, backward: false, left: false, right: false };
+    const moveSpeed = 0.08;
+
+    function setKey(code, pressed) {
+      switch(code) {
+        case 'KeyW': case 'ArrowUp':    moveState.forward  = pressed; break;
+        case 'KeyS': case 'ArrowDown':  moveState.backward = pressed; break;
+        case 'KeyA': case 'ArrowLeft':  moveState.left     = pressed; break;
+        case 'KeyD': case 'ArrowRight': moveState.right    = pressed; break;
+      }
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.code.startsWith('Arrow')) e.preventDefault();
+      setKey(e.code, true);
+    });
+    window.addEventListener('keyup', (e) => {
+      if (e.code.startsWith('Arrow')) e.preventDefault();
+      setKey(e.code, false);
+    });
+
+    const moveJoy = { x: 0, y: 0 };
+    const moveManager = nipplejs.create({
+      zone: document.getElementById('moveJoystick'),
+      mode: 'static',
+      position: { left: '70px', top: '70px' },
+      color: '#e60087',
+      size: 100,
+      threshold: 0.1,
+      fadeTime: 200,
+    });
+
+    const DEADZONE = 0.05;
+
+    moveManager.on('move', (evt, data) => {
+      if (!data.force || data.force < 0.1) {
+        moveJoy.x = 0;
+        moveJoy.y = 0;
+        return;
+      }
+      const x = data.vector.x;
+      const y = data.vector.y;
+      const mag = Math.hypot(x, y);
+      if (mag < DEADZONE) {
+        moveJoy.x = 0;
+        moveJoy.y = 0;
+        return;
+      }
+      const scaled = (mag - DEADZONE) / (1 - DEADZONE);
+      const nx = x / mag;
+      const ny = y / mag;
+      const curved = scaled * scaled;
+      moveJoy.x = nx * curved;
+      moveJoy.y = ny * curved;
+    });
+
+    moveManager.on('end', () => {
+      moveJoy.x = 0;
+      moveJoy.y = 0;
+    });
+
+    const amount = 8;
+    const midRing = 2;
+    const maxStretch = midRing + 1.5;
+    const jitter = 1;
+    const kneeHeight = 0.75;
+    const stepDuration = 0.12;
+    const stepArc = 0.5;
+    const gaitA = [0, 2, 4, 6];
+    const gaitB = [1, 3, 5, 7];
+    const turnSpeed = 0.06;
+    const insectMoveSpeed = 2.0;
+    const NPC_SCALE = 0.15;
+    const NPC_COLLISION_RADIUS = midRing * NPC_SCALE;
+
+    const npcRoot = new THREE.Group();
+    npcRoot.scale.setScalar(NPC_SCALE);
+    scene.add(npcRoot);
+
+    const npcSelection = new THREE.Group();
+    npcSelection.position.y = 0.1;
+    npcRoot.add(npcSelection);
+
+    const npcFeetgroup = new THREE.Group();
+    npcRoot.add(npcFeetgroup);
+
+    const npcCursor = new THREE.Group();
+    npcRoot.add(npcCursor);
+
+    const npcBodyMat = new THREE.MeshLambertMaterial({ color: 0xe60087, emissive: 0x330018 });
+    const npcBody = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.05), npcBodyMat);
+    npcBody.scale.set(1.6, 1, 1);
+    npcSelection.add(npcBody);
+
+    const npcLegMat = new THREE.LineBasicMaterial({ color: 0xffaa00 });
+
+    let npcBodyHeading = 0;
+    let npcTargetHeading = 0;
+    const npcFoot = [];
+
+    function npcTargetFor(home, cx, cz, jx, jz) {
+      const a = home + npcBodyHeading;
+      return {
+        x: cx + Math.cos(a) * midRing + jx - npcFeetgroup.position.x,
+        z: cz + Math.sin(a) * midRing + jz - npcFeetgroup.position.z
+      };
+    }
+
+    for (let i = 0; i < amount; i++) {
+      const mesh = new THREE.Group();
+      npcFeetgroup.add(mesh);
+
+      const home = (i / amount) * Math.PI * 2 + Math.PI / amount;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3));
+      const leg = new THREE.Line(geo, npcLegMat);
+      leg.frustumCulled = false;
+      npcRoot.add(leg);
+
+      const jx = (Math.random() - 0.5) * jitter;
+      const jz = (Math.random() - 0.5) * jitter;
+      const t = npcTargetFor(home, 0, 0, jx, jz);
+      mesh.position.set(t.x, 0, t.z);
+
+      npcFoot.push({
+        mesh, home, leg,
+        stepping: false, t: 0,
+        fx: 0, fz: 0, tx: 0, tz: 0,
+        jx, jz
+      });
+    }
+
+    const npcInput = { x: 0, z: 0 };
+
+    function npcDiffAngle(a, b) {
+      let d = (a - b) % (Math.PI * 2);
+      if (d > Math.PI) d -= Math.PI * 2;
+      if (d < -Math.PI) d += Math.PI * 2;
+      return d;
+    }
+
+    function npcBeginStep(s, cx, cz) {
+      s.stepping = true;
+      s.t = 0;
+      s.fx = s.mesh.position.x;
+      s.fz = s.mesh.position.z;
+      s.jx = (Math.random() - 0.5) * jitter;
+      s.jz = (Math.random() - 0.5) * jitter;
+      const t = npcTargetFor(s.home, cx, cz, s.jx, s.jz);
+      s.tx = t.x;
+      s.tz = t.z;
+    }
+
+    function npcSetDirection(dx, dz) {
+      if (dx === 0 && dz === 0) return;
+      npcTargetHeading = Math.atan2(dz, dx);
+    }
+
+    function npcGetWorldPosition() {
+      return new THREE.Vector3(
+        npcCursor.position.x * NPC_SCALE,
+        0,
+        npcCursor.position.z * NPC_SCALE
+      );
+    }
+
+    function npcUpdate(dt) {
+      if (npcInput.x !== 0 || npcInput.z !== 0) {
+        npcTargetHeading = Math.atan2(npcInput.z, npcInput.x);
+      }
+      npcBodyHeading += npcDiffAngle(npcTargetHeading, npcBodyHeading) * turnSpeed;
+      npcSelection.rotation.y = -npcBodyHeading;
+
+      npcCursor.position.x += npcInput.x * insectMoveSpeed * dt;
+      npcCursor.position.z += npcInput.z * insectMoveSpeed * dt;
+
+      npcSelection.position.x += (npcCursor.position.x - npcSelection.position.x) * 0.2;
+      npcSelection.position.z += (npcCursor.position.z - npcSelection.position.z) * 0.2;
+
+      const cx = npcCursor.position.x;
+      const cz = npcCursor.position.z;
+
+      let aBusy = false, bBusy = false;
+      for (let k = 0; k < gaitA.length; k++) if (npcFoot[gaitA[k]].stepping) aBusy = true;
+      for (let k = 0; k < gaitB.length; k++) if (npcFoot[gaitB[k]].stepping) bBusy = true;
+
+      for (let i = 0; i < amount; i++) {
+        const s = npcFoot[i];
+
+        if (s.stepping) {
+          s.t += dt / stepDuration;
+          if (s.t >= 1) {
+            s.t = 1;
+            s.stepping = false;
+          }
+          const e = s.t * s.t * (3 - 2 * s.t);
+          s.mesh.position.x = s.fx + (s.tx - s.fx) * e;
+          s.mesh.position.z = s.fz + (s.tz - s.fz) * e;
+        } else {
+          const ideal = npcTargetFor(s.home, cx, cz, s.jx, s.jz);
+          const dx = s.mesh.position.x - ideal.x;
+          const dz = s.mesh.position.z - ideal.z;
+          const off = Math.sqrt(dx * dx + dz * dz);
+          if (off > maxStretch || off > 0.8) {
+            const inA = gaitA.includes(i);
+            if ((inA && !bBusy) || (!inA && !aBusy) || off > maxStretch) {
+              npcBeginStep(s, cx, cz);
+            }
+          }
+        }
+      }
+
+      const bx = npcSelection.position.x;
+      const by = npcSelection.position.y;
+      const bz = npcSelection.position.z;
+
+      for (let i = 0; i < amount; i++) {
+        const s = npcFoot[i];
+        const fx = npcFeetgroup.position.x + s.mesh.position.x;
+        const fy = npcFeetgroup.position.y + s.mesh.position.y;
+        const fz = npcFeetgroup.position.z + s.mesh.position.z;
+        const lift = s.stepping ? Math.sin(s.t * Math.PI) * stepArc : 0;
+        const kx = bx + (fx - bx) / 3;
+        const kz = bz + (fz - bz) / 3;
+        const ky = kneeHeight + lift;
+        if (isNaN(fx) || isNaN(fz) || isNaN(kx) || isNaN(kz)) continue;
+        const p = s.leg.geometry.attributes.position;
+        p.setXYZ(0, bx, by, bz);
+        p.setXYZ(1, kx, ky, kz);
+        p.setXYZ(2, fx, fy + lift, fz);
+        p.needsUpdate = true;
+        s.leg.geometry.boundingSphere = null;
+      }
+    }
+
+    function playerWouldHitNPC(px, pz, npcPos) {
+      const dx = px - npcPos.x;
+      const dz = pz - npcPos.z;
+      return (dx * dx + dz * dz) < (NPC_COLLISION_RADIUS * NPC_COLLISION_RADIUS);
+    }
+
+    function npcWouldHitPlayer(nx, nz, playerPos) {
+      const dx = nx - playerPos.x;
+      const dz = nz - playerPos.z;
+      return (dx * dx + dz * dz) < (NPC_COLLISION_RADIUS * NPC_COLLISION_RADIUS);
+    }
+
+    const NPC_STATE = {
+      DEFAULT: 'default',
+      HUNT: 'hunt',
+      SEARCH: 'search',
+      AVOID: 'avoid'
+    };
+    let npcState = NPC_STATE.DEFAULT;
+    let manualState = false;
+
+    const npcDir = new THREE.Vector3(1, 0, 0);
+
+    const NPC_SPEED = 0.35;
+    const NPC_TURN_SPEED = 1.8;
+    let wanderAngle = Math.random() * Math.PI * 2;
+    let wanderTimer = 0;
+    const WANDER_CHANGE_MIN = 1.5;
+    const WANDER_CHANGE_MAX = 4.0;
+
+    let avoidTimer = 0;
+
+    let dodgeTimer = 0;
+    let dodgeSide = 1;
+    const DODGE_DURATION = 0.45;
+    const DODGE_SPEED_MULT = 2.0;
+
+    let npcStuckTimer = 0;
+
+    function findKitchenStart() {
+      const candidates = [];
+      for (let x = -8; x <= 8; x += 0.2) {
+        for (let z = -12; z <= 2; z += 0.2) {
+          const g = getGreyAt(x, z);
+          if (g > 0 && Math.abs(g - 50) <= ROOM_MATCH_TOLERANCE) {
+            candidates.push({ x, z });
+          }
+        }
+      }
+      if (candidates.length > 0) {
+        const mid = Math.floor(candidates.length / 2);
+        return candidates[mid];
+      }
+      return { x: -2.5, z: -6.5 };
+    }
+
+    let npcInitialized = false;
+    function initNPC() {
+      if (npcInitialized || !hitPixels) return;
+      const start = findKitchenStart();
+      let placed = false;
+      let px = start.x;
+      let pz = start.z;
+
+      if (!isWalkable(px, pz)) {
+        for (let r = 0.5; r < 3; r += 0.5) {
+          for (let a = 0; a < Math.PI * 2; a += 0.3) {
+            const tx = start.x + Math.cos(a) * r;
+            const tz = start.z + Math.sin(a) * r;
+            if (isWalkable(tx, tz)) {
+              px = tx;
+              pz = tz;
+              placed = true;
+              break;
+            }
+          }
+          if (placed) break;
+        }
+      } else {
+        placed = true;
+      }
+
+      npcCursor.position.set(px / NPC_SCALE, 0, pz / NPC_SCALE);
+      npcSelection.position.set(px / NPC_SCALE, npcSelection.position.y, pz / NPC_SCALE);
+
+      const randAng = Math.random() * Math.PI * 2;
+      npcDir.set(Math.sin(randAng), 0, Math.cos(randAng));
+      wanderAngle = randAng;
+      npcSetDirection(npcDir.x, npcDir.z);
+      npcInput.x = 0;
+      npcInput.z = 0;
+      npcUpdate(0);
+      npcInitialized = true;
+    }
+
+    const clock = new THREE.Clock();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      const w = Math.max(1, Math.floor(window.innerWidth / RENDER_SCALE));
+      const h = Math.max(1, Math.floor(window.innerHeight / RENDER_SCALE));
+      composer.setSize(w, h);
+      ditherShader.uniforms.resolution.value.set(w, h);
+    });
+
+    function animate() {
+      const delta = Math.min(clock.getDelta(), 0.1);
+
+      if (!npcInitialized) initNPC();
+
+      const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)).normalize();
+      const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, -1, 0), forward).normalize();
+      const moveDelta = new THREE.Vector3();
+
+      if (moveState.forward) moveDelta.add(forward);
+      if (moveState.backward) moveDelta.sub(forward);
+      if (moveState.right) moveDelta.add(right);
+      if (moveState.left) moveDelta.sub(right);
+
+      if (moveJoy.x !== 0 || moveJoy.y !== 0) {
+        moveDelta.addScaledVector(forward, moveJoy.y);
+        moveDelta.addScaledVector(right, moveJoy.x);
+      }
+
+      if (moveDelta.lengthSq() > 0) {
+        moveDelta.normalize().multiplyScalar(moveSpeed * delta * 30);
+
+        const npcPosForCollision = npcInitialized ? npcGetWorldPosition() : null;
+
+        const nextX = camera.position.x + moveDelta.x;
+        const nextZ = camera.position.z + moveDelta.z;
+
+        const tryMove = (tx, tz) => {
+          if (isWall(tx, tz)) return false;
+          if (npcPosForCollision && playerWouldHitNPC(tx, tz, npcPosForCollision)) return false;
+          return true;
+        };
+
+        if (tryMove(nextX, nextZ)) {
+          camera.position.x = nextX;
+          camera.position.z = nextZ;
+        } else {
+          if (tryMove(nextX, camera.position.z)) {
+            camera.position.x = nextX;
+          } else if (tryMove(camera.position.x, nextZ)) {
+            camera.position.z = nextZ;
+          }
+        }
+
+        updateCameraLook();
+      }
+
+      if (npcInitialized) {
+        const npcPos = npcGetWorldPosition();
+
+        const dxp = camera.position.x - npcPos.x;
+        const dzp = camera.position.z - npcPos.z;
+        const distToPlayer = Math.hypot(dxp, dzp);
+
+        if (!manualState) {
+          if (distToPlayer < 2.0) {
+            npcState = NPC_STATE.AVOID;
+            avoidTimer = 1.0;
+          } else if (distToPlayer < 7.0) {
+            if (npcState !== NPC_STATE.AVOID || avoidTimer <= 0) npcState = NPC_STATE.HUNT;
+          } else if (distToPlayer < 12.0) {
+            if (npcState !== NPC_STATE.AVOID || avoidTimer <= 0) npcState = NPC_STATE.SEARCH;
+          } else {
+            if (npcState !== NPC_STATE.AVOID || avoidTimer <= 0) npcState = NPC_STATE.DEFAULT;
+          }
+          if (avoidTimer > 0) avoidTimer -= delta;
+        }
+
+        let desiredDir = new THREE.Vector3();
+
+        switch (npcState) {
+          case NPC_STATE.DEFAULT:
+            wanderTimer -= delta;
+            if (wanderTimer <= 0) {
+              wanderAngle += (Math.random() - 0.5) * Math.PI * 0.8;
+              wanderTimer = WANDER_CHANGE_MIN + Math.random() * (WANDER_CHANGE_MAX - WANDER_CHANGE_MIN);
+            }
+            desiredDir.set(Math.sin(wanderAngle), 0, Math.cos(wanderAngle));
+            break;
+          case NPC_STATE.HUNT:
+            desiredDir.set(dxp, 0, dzp);
+            if (desiredDir.lengthSq() > 0.001) desiredDir.normalize();
+            break;
+          case NPC_STATE.SEARCH:
+            desiredDir.set(dxp, 0, dzp);
+            if (desiredDir.lengthSq() > 0.001) {
+              desiredDir.normalize();
+              const searchNoise = Math.sin(performance.now() * 0.002) * 0.5;
+              const ca = Math.cos(searchNoise);
+              const sa = Math.sin(searchNoise);
+              const nx = desiredDir.x * ca - desiredDir.z * sa;
+              const nz = desiredDir.x * sa + desiredDir.z * ca;
+              desiredDir.set(nx, 0, nz);
+            }
+            break;
+          case NPC_STATE.AVOID:
+            desiredDir.set(-dxp, 0, -dzp);
+            if (desiredDir.lengthSq() > 0.001) desiredDir.normalize();
+            break;
+        }
+
+        if (dodgeTimer > 0) {
+          dodgeTimer -= delta;
+          const perp = new THREE.Vector3(-npcDir.z, 0, npcDir.x).multiplyScalar(dodgeSide);
+          desiredDir.copy(perp);
+        }
+
+        if (desiredDir.lengthSq() > 0.001) {
+          desiredDir.normalize();
+          const currentAngle = Math.atan2(npcDir.x, npcDir.z);
+          const targetAngle = Math.atan2(desiredDir.x, desiredDir.z);
+          let angleDiff = targetAngle - currentAngle;
+          while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+          while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+          const turnAmount = Math.sign(angleDiff) * Math.min(Math.abs(angleDiff), NPC_TURN_SPEED * delta);
+          const newAngle = currentAngle + turnAmount;
+          npcDir.set(Math.sin(newAngle), 0, Math.cos(newAngle));
+        }
+
+        const stepDist = NPC_SPEED * delta;
+        const desiredXWorld = npcPos.x + npcDir.x * stepDist;
+        const desiredZWorld = npcPos.z + npcDir.z * stepDist;
+
+        const playerPos = camera.position;
+        const canX = isWalkable(desiredXWorld, npcPos.z)
+          && !npcWouldHitPlayer(desiredXWorld, npcPos.z, playerPos);
+        const canZ = isWalkable(npcPos.x, desiredZWorld)
+          && !npcWouldHitPlayer(npcPos.x, desiredZWorld, playerPos);
+        const canBoth = isWalkable(desiredXWorld, desiredZWorld)
+          && !npcWouldHitPlayer(desiredXWorld, desiredZWorld, playerPos);
+
+        let inputX, inputZ;
+
+        if (canBoth) {
+          inputX = npcDir.x;
+          inputZ = npcDir.z;
+        } else if (canX) {
+          inputX = npcDir.x;
+          inputZ = 0;
+          npcDir.set(Math.sign(npcDir.x) || 1, 0, 0);
+        } else if (canZ) {
+          inputX = 0;
+          inputZ = npcDir.z;
+          npcDir.set(0, 0, Math.sign(npcDir.z) || 1);
+        } else {
+          inputX = 0;
+          inputZ = 0;
+          dodgeTimer = DODGE_DURATION;
+          dodgeSide = Math.random() < 0.5 ? 1 : -1;
+        }
+
+        npcInput.x = inputX * (NPC_SPEED / insectMoveSpeed / NPC_SCALE);
+        npcInput.z = inputZ * (NPC_SPEED / insectMoveSpeed / NPC_SCALE);
+
+        if (npcInput.x !== 0 || npcInput.z !== 0) {
+          npcStuckTimer = 0;
+        } else {
+          npcStuckTimer += delta;
+          if (npcStuckTimer > 0.5) {
+            const randAng = Math.random() * Math.PI * 2;
+            npcDir.set(Math.sin(randAng), 0, Math.cos(randAng));
+            wanderAngle = randAng;
+            npcStuckTimer = 0;
+          }
+        }
+
+        npcSetDirection(npcDir.x, npcDir.z);
+        npcUpdate(delta);
+
+        if (npcState === NPC_STATE.HUNT) {
+          const pdx = camera.position.x - npcPos.x;
+          const pdz = camera.position.z - npcPos.z;
+          const pd = Math.hypot(pdx, pdz);
+          if (pd > 0.0001 && pd < NPC_COLLISION_RADIUS) {
+            const overlap = NPC_COLLISION_RADIUS - pd;
+            const nx = pdx / pd;
+            const nz = pdz / pd;
+            const pushX = camera.position.x + nx * overlap;
+            const pushZ = camera.position.z + nz * overlap;
+            if (!isWall(pushX, pushZ)) {
+              camera.position.x = pushX;
+              camera.position.z = pushZ;
+            } else {
+              if (!isWall(pushX, camera.position.z)) camera.position.x = pushX;
+              else if (!isWall(camera.position.x, pushZ)) camera.position.z = pushZ;
+            }
+            updateCameraLook();
+          }
+        }
+      }
+
+      composer.render();
+      requestAnimationFrame(animate);
+    }
+
+    animate();
+  </script>
+</body>
+</html>
