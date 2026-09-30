@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Curve Pong 3D</title>
+  <title>Pong</title>
   <style>
     * {
       margin: 0;
@@ -70,6 +70,8 @@
           this.opponent = { x: 0, y: 0 };
           this.ball = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, spinX: 0, spinY: 0 };
           this.scores = { human: 0, computer: 0 };
+          this.charge = 0;
+          this.charging = false;
           this.start(1);
         }
         start(level) {
@@ -86,6 +88,8 @@
           this._aiTime = 0;
           this._aiTarget = { x: 0, y: 0 };
           this._opponentVelocity = { x: 0, y: 0 };
+          this.charge = 0;
+          this.charging = false;
           this.events.length = 0;
           this._readyBall();
         }
@@ -151,6 +155,11 @@
           const decay = Math.exp(-dt / 0.085);
           this.player.vx *= decay;
           this.player.vy *= decay;
+          if (this.charging) {
+            this.charge = Math.min(1, this.charge + dt * 0.9);
+          } else {
+            this.charge = Math.max(0, this.charge - dt * 3);
+          }
           this._moveOpponent(dt);
           const b = this.ball;
           b.vx += b.spinX * dt;
@@ -258,6 +267,18 @@
           const swipe = actor === 'human' ? 0.56 : 0.24 + this.level * 0.018;
           b.spinX = clamp(vx * swipe, -11, 11);
           b.spinY = clamp(-vy * swipe, -11, 11);
+
+          if (actor === 'human' && this.charge > 0.02) {
+            const boost = 1 + this.charge * 0.55;
+            b.vx *= boost;
+            b.vy *= boost;
+            b.vz *= boost;
+            b.spinX *= 1 + this.charge * 1.2;
+            b.spinY *= 1 + this.charge * 1.2;
+            this.events.push({ type: 'charged', power: this.charge });
+            this.charge = 0;
+          }
+
           this.rally++;
           this.events.push({ type: 'hit', actor, x: b.x, y: b.y, z: b.z, rally: this.rally });
         }
@@ -276,6 +297,7 @@
           this.events.push({ type: 'score', winner, scores: { ...this.scores } });
           this.ball.vx = this.ball.vy = this.ball.vz = 0;
           this.player.vx = this.player.vy = 0;
+          this.charge = 0;
           if (this.scores[winner] >= WIN_SCORE) {
             this.state = winner === 'human' ? 'won' : 'lost';
             this.events.push({ type: 'match', winner });
@@ -294,9 +316,9 @@
           this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
           this.renderer.setClearColor(0x000000);
           this.scene = new THREE.Scene();
-          this.scene.fog = new THREE.Fog(0x000000, 9, 52);
+          this.scene.fog = new THREE.Fog(0x000000, 9, 60);
           this.camera = new THREE.PerspectiveCamera(56.55, 1.5, 0.1, 100);
-          this.camera.position.set(0, 0, 6.7);
+          this.camera.position.set(0, 0, 9.2);
           this.camera.lookAt(0, 0, -D / 2);
 
           this.grid = new THREE.Group();
@@ -317,8 +339,8 @@
             this.gridLines.push({ line, z });
           }
 
-          this.player = this.paddle(0xb32429);
-          this.opponent = this.paddle(0x2042da);
+          this.player = this.paddle(0xb32429, 0xff5533);
+          this.opponent = this.paddle(0x2042da, 0x5577ff);
           this.scene.add(this.player, this.opponent);
           this.opponent.position.z = -D;
 
@@ -342,14 +364,14 @@
           );
         }
 
-        paddle(color) {
+        paddle(color, chargeColor) {
           const g = new THREE.Group();
 
           const polar = new THREE.PolarGridHelper(
             COURT.paddleHalf,
-            1,      // radial segments
-            2,      // circles
-            64,     // divisions
+            1,
+            3,
+            64,
             color,
             color
           );
@@ -372,6 +394,22 @@
           disc.position.z = -0.005;
           g.add(disc);
 
+          const chargeDisc = new THREE.Mesh(
+            new THREE.CircleGeometry(1, 64),
+            new THREE.MeshBasicMaterial({
+              color: chargeColor,
+              transparent: true,
+              opacity: 0,
+              side: THREE.DoubleSide,
+              depthWrite: false
+            })
+          );
+          chargeDisc.position.z = 0.004;
+          chargeDisc.scale.set(0, 0, 1);
+          g.add(chargeDisc);
+
+          g.chargeDisc = chargeDisc;
+          g.chargeColor = new THREE.Color(chargeColor);
           g.renderOrder = 3;
           return g;
         }
@@ -418,6 +456,20 @@
             this.ball.rotateOnWorldAxis(axis, angle);
           }
 
+          // charge disc on player paddle
+          const charge = game.charge;
+          const disc = this.player.chargeDisc;
+          if (charge > 0.001) {
+            const maxRadius = COURT.paddleHalf * 0.98;
+            const r = charge * maxRadius;
+            disc.scale.set(r, r, 1);
+            disc.material.opacity = 0.55 * charge + 0.15;
+            const hot = new THREE.Color(0xffdd22).lerp(new THREE.Color(0xff2266), charge);
+            disc.material.color.copy(hot);
+          } else {
+            disc.material.opacity = 0;
+          }
+
           const ballZ = game.ball.z;
           for (const entry of this.gridLines) {
             const dist = Math.abs(ballZ - entry.z);
@@ -445,6 +497,7 @@
       let lastTime = performance.now();
       let touch = null;
       let lastPointer = 0;
+      let spaceDownAt = 0;
 
       function resize() {
         renderer.resize();
@@ -475,15 +528,26 @@
           movePointer(e);
         }
         if (game.state === 'ready') game.serve();
+        game.charging = true;
         e.preventDefault();
       });
       for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture'])
-        canvas.addEventListener(ev, () => { touch = null; });
+        canvas.addEventListener(ev, () => {
+          touch = null;
+          game.charging = false;
+        });
 
       window.addEventListener('keydown', e => {
-        if (e.key === ' ') {
+        if (e.key === ' ' && !e.repeat) {
           e.preventDefault();
-          if (game.state === 'ready') game.serve();
+          spaceDownAt = performance.now();
+          game.charging = true;
+        }
+      });
+      window.addEventListener('keyup', e => {
+        if (e.key === ' ') {
+          game.charging = false;
+          if (performance.now() - spaceDownAt < 200 && game.state === 'ready') game.serve();
         }
       });
 
