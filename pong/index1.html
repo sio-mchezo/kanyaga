@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Curveball</title>
+<style>
+    body { margin: 0; overflow: hidden; background: #050505; }
+    canvas { display: block; }
+    #hud {
+        position: absolute; top: 16px; left: 20px;
+        color: #00ff88; font-family: 'Courier New', monospace;
+        font-size: 28px; font-weight: bold; letter-spacing: 4px;
+        text-shadow: 0 0 12px #00ff88;
+        pointer-events: none; user-select: none;
+    }
+    #hint {
+        position: absolute; bottom: 16px; left: 20px;
+        color: #00ff88; font-family: 'Courier New', monospace;
+        font-size: 11px; opacity: 0.35;
+        pointer-events: none; user-select: none;
+    }
+</style>
+</head>
+<body>
+<div id="hud">0 : 0</div>
+<div id="hint">swing through the ball to add spin</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.1/build/three.module.js" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+// =========================================================
+//  SCENE
+// =========================================================
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x050505);
+scene.fog = new THREE.Fog(0x050505, 25, 55);
+
+const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 200);
+camera.position.z = 16;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+
+// =========================================================
+//  CONSTANTS
+// =========================================================
+const W = 14, H = 10, D = 24;
+const HW = W / 2, HH = H / 2, HD = D / 2;
+const DR = 1.6, BR = 0.4;
+const PZ = 10, CZ = -10;
+
+const MAGNUS = 0.7;            // strong curve
+const GRAVITY = -3.0;
+const SPIN_DECAY = 0.998;      // spin persists across flight
+const MAX_SPIN = 20.0;
+const BALL_SPEED = 11.0;
+
+const BASE_LINE_COLOR = new THREE.Color(0x143014);
+const GLOW_LINE_COLOR = new THREE.Color(0x66ff99);
+
+// =========================================================
+//  TUNNEL — individual segments, one gets highlighted
+// =========================================================
+const flashers = [];
+
+function makeSegment(p1, p2) {
+    const geo = new THREE.BufferGeometry().setFromPoints([p1, p2]);
+    const mat = new THREE.LineBasicMaterial({ color: BASE_LINE_COLOR.clone() });
+    const line = new THREE.Line(geo, mat);
+    scene.add(line);
+
+    const arr = geo.attributes.position.array;
+    flashers.push({
+        material: mat,
+        ax: arr[0], ay: arr[1], az: arr[2],
+        bx: arr[3], by: arr[4], bz: arr[5],
+    });
+}
+
+// ---- Rings ----
+const RING_COUNT = 13;
+const RING_Z = [];
+for (let i = 0; i < RING_COUNT; i++) {
+    RING_Z.push(-HD + i * (D / (RING_COUNT - 1)));
+}
+for (let i = 0; i < RING_COUNT; i++) {
+    const z = RING_Z[i];
+    makeSegment(new THREE.Vector3(-HW,  HH, z), new THREE.Vector3( HW,  HH, z));
+    makeSegment(new THREE.Vector3( HW, -HH, z), new THREE.Vector3(-HW, -HH, z));
+    makeSegment(new THREE.Vector3(-HW,  HH, z), new THREE.Vector3(-HW, -HH, z));
+    makeSegment(new THREE.Vector3( HW,  HH, z), new THREE.Vector3( HW, -HH, z));
+}
+
+// ---- Longitudinal edges (split per ring-gap) ----
+const EDGES = [
+    { x: -HW, y:  HH },
+    { x:  HW, y:  HH },
+    { x: -HW, y: -HH },
+    { x:  HW, y: -HH },
+];
+for (let e = 0; e < EDGES.length; e++) {
+    const { x, y } = EDGES[e];
+    for (let i = 0; i < RING_COUNT - 1; i++) {
+        makeSegment(
+            new THREE.Vector3(x, y, RING_Z[i]),
+            new THREE.Vector3(x, y, RING_Z[i + 1])
+        );
+    }
+}
+
+// ---- Center longitudinal lines (subtle, no glow) ----
+const centerMat = new THREE.LineBasicMaterial({ color: 0x0a1f0a });
+for (let i = 0; i < RING_COUNT - 1; i++) {
+    const z1 = RING_Z[i], z2 = RING_Z[i + 1];
+    scene.add(new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(0, -HH, z1),
+            new THREE.Vector3(0, -HH, z2)
+        ]), centerMat
+    ));
+    scene.add(new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(0, HH, z1),
+            new THREE.Vector3(0, HH, z2)
+        ]), centerMat
+    ));
+}
+
+// =========================================================
+//  BALL
+// =========================================================
+const ballOuter = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(BR, 1),
+    new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true })
+);
+const ballInner = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(BR * 0.55, 0),
+    new THREE.MeshBasicMaterial({ color: 0x00ffff })
+);
+ballOuter.add(ballInner);
+scene.add(ballOuter);
+
+// =========================================================
+//  DISC PADDLE — PolarGridHelper
+// =========================================================
+function makeDisc(color) {
+    const helper = new THREE.PolarGridHelper(
+        DR,       // radius
+        8,        // radials (spokes)
+        4,        // circles
+        64,       // divisions per circle
+        color,
+        color
+    );
+    helper.rotation.x = Math.PI / 2;
+    helper.material.opacity = 0.7;
+    helper.material.transparent = true;
+    return helper;
+}
+
+const player = makeDisc(0x00ff88);
+player.position.z = PZ;
+scene.add(player);
+
+const cpu = makeDisc(0xff44aa);
+cpu.position.z = CZ;
+scene.add(cpu);
+
+// =========================================================
+//  STATE
+// =========================================================
+const bp = new THREE.Vector3(0, 2, 0);
+const bv = new THREE.Vector3(0, 0, BALL_SPEED);
+const bs = new THREE.Vector3(0, 0, 0);
+
+// =========================================================
+//  MOUSE INPUT
+// =========================================================
+const mouse = new THREE.Vector2();
+const ray = new THREE.Raycaster();
+const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -PZ);
+const target = new THREE.Vector3(0, 0, PZ);
+const prevP = new THREE.Vector3();
+const pvel = new THREE.Vector3();
+
+addEventListener('mousemove', e => {
+    mouse.x = (e.clientX / innerWidth) * 2 - 1;
+    mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+    ray.setFromCamera(mouse, camera);
+    const hit = new THREE.Vector3();
+    if (ray.ray.intersectPlane(plane, hit)) {
+        target.x = Math.max(-HW + DR, Math.min(HW - DR, hit.x));
+        target.y = Math.max(-HH + DR, Math.min(HH - DR, hit.y));
+    }
+});
+
+// =========================================================
+//  CPU STATE (with reaction delay)
+// =========================================================
+const prevC = new THREE.Vector3();
+const cvel = new THREE.Vector3();
+const cpuTarget = new THREE.Vector3(0, 0, 0);
+let cpuDelay = 0;
+
+let pcd = 0, ccd = 0;
+
+const tmp1 = new THREE.Vector3();
+
+// =========================================================
+//  SCORE
+// =========================================================
+let playerScore = 0, cpuScore = 0;
+const hudEl = document.getElementById('hud');
+
+function reset(dir) {
+    bp.set(0, 2 * dir, 0);
+    bv.set(0, 0, BALL_SPEED * dir);
+    bs.set(0, 0, 0);
+}
+
+// =========================================================
+//  PHYSICS — constant speed, only direction changes
+// =========================================================
+function updatePhysics(dt) {
+    // Magnus (spin curves the ball)
+    tmp1.crossVectors(bs, bv);
+    bv.addScaledVector(tmp1, MAGNUS * dt);
+
+    // Gravity
+    bv.y += GRAVITY * dt;
+
+    // Renormalize to constant speed
+    if (bv.lengthSq() > 0.0001) {
+        bv.setLength(BALL_SPEED);
+    }
+
+    // Guard against corner-trapped ball
+    if (Math.abs(bv.z) < BALL_SPEED * 0.3) {
+        bv.z = Math.sign(bv.z || 1) * BALL_SPEED * 0.3;
+        bv.setLength(BALL_SPEED);
+    }
+
+    // Integrate
+    bp.addScaledVector(bv, dt);
+
+    // Spin decay
+    bs.multiplyScalar(SPIN_DECAY);
+    if (bs.length() > MAX_SPIN) bs.setLength(MAX_SPIN);
+
+    // Walls
+    if (bp.x - BR < -HW) { bp.x = -HW + BR; bv.x = Math.abs(bv.x); }
+    else if (bp.x + BR > HW) { bp.x = HW - BR; bv.x = -Math.abs(bv.x); }
+
+    if (bp.y - BR < -HH) { bp.y = -HH + BR; bv.y = Math.abs(bv.y); }
+    else if (bp.y + BR > HH) { bp.y = HH - BR; bv.y = -Math.abs(bv.y); }
+}
+
+// =========================================================
+//  PADDLE COLLISION + SPIN
+// =========================================================
+function tryHit(discPos, discVel, isPlayer, dt) {
+    const dirZ = isPlayer ? 1 : -1;
+    if (bv.z * dirZ <= 0) return;
+    const faceZ = isPlayer ? PZ : CZ;
+    if (Math.abs(bp.z - faceZ) > 1.5) return;
+
+    const dx = bp.x - discPos.x;
+    const dy = bp.y - discPos.y;
+    const rr = DR + BR;
+    if (dx * dx + dy * dy > rr * rr) return;
+
+    if (isPlayer && pcd > 0) return;
+    if (!isPlayer && ccd > 0) return;
+
+    bv.z = -bv.z;
+    bp.z = isPlayer ? faceZ - BR - 0.05 : faceZ + BR + 0.05;
+
+    const offX = dx / DR;
+    const offY = dy / DR;
+
+    // Stronger swing contribution — a fast flick can saturate MAX_SPIN
+    const sidespin = offX * 2.0 + discVel.x * 4.0;
+    const topspin  = offY * 2.0 - discVel.y * 4.0;
+
+    bs.y = isPlayer ? -sidespin : sidespin;
+    bs.x = isPlayer ? -topspin  : topspin;
+    if (bs.length() > MAX_SPIN) bs.setLength(MAX_SPIN);
+
+    bv.setLength(BALL_SPEED);
+
+    if (isPlayer) pcd = 0.15;
+    else ccd = 0.15;
+}
+
+// =========================================================
+//  CPU — slower, with reaction delay so spin can beat it
+// =========================================================
+function updateCPU(dt) {
+    prevC.copy(cpu.position);
+
+    // CPU only refreshes its view of the ball every 0.15s
+    cpuDelay -= dt;
+    if (cpuDelay <= 0) {
+        cpuDelay = 0.15;
+        cpuTarget.copy(bp);
+    }
+
+    let px = cpuTarget.x;
+    let py = cpuTarget.y;
+    if (bv.z < -0.01) {
+        const t = (CZ - cpuTarget.z) / bv.z;
+        if (t > 0 && t < 3) {
+            px = cpuTarget.x + bv.x * t;
+            py = cpuTarget.y + bv.y * t + 0.5 * GRAVITY * t * t;
+        }
+    }
+
+    px = Math.max(-HW + DR, Math.min(HW - DR, px));
+    py = Math.max(-HH + DR, Math.min(HH - DR, py));
+
+    const dx = px - cpu.position.x;
+    const dy = py - cpu.position.y;
+    const d = Math.sqrt(dx * dx + dy * dy);
+
+    if (d > 0.05) {
+        // Slower CPU — 8 instead of 11
+        const m = Math.min(d, 8.0 * dt);
+        cpu.position.x += (dx / d) * m;
+        cpu.position.y += (dy / d) * m;
+    }
+
+    cvel.set(
+        (cpu.position.x - prevC.x) / Math.max(dt, 0.001),
+        (cpu.position.y - prevC.y) / Math.max(dt, 0.001),
+        0
+    );
+}
+
+// =========================================================
+//  HIGHLIGHT — only the closest segment lights up
+// =========================================================
+function updateHighlight() {
+    let closestIdx = -1;
+    let closestD2 = Infinity;
+
+    for (let i = 0; i < flashers.length; i++) {
+        const f = flashers[i];
+
+        const abx = f.bx - f.ax, aby = f.by - f.ay, abz = f.bz - f.az;
+        const apx = bp.x - f.ax, apy = bp.y - f.ay, apz = bp.z - f.az;
+        const ab2 = abx*abx + aby*aby + abz*abz;
+        let t = ab2 > 0 ? (apx*abx + apy*aby + apz*abz) / ab2 : 0;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const cx = f.ax + abx*t, cy = f.ay + aby*t, cz = f.az + abz*t;
+        const ddx = bp.x - cx, ddy = bp.y - cy, ddz = bp.z - cz;
+        const d2 = ddx*ddx + ddy*ddy + ddz*ddz;
+
+        if (d2 < closestD2) {
+            closestD2 = d2;
+            closestIdx = i;
+        }
+    }
+
+    for (let i = 0; i < flashers.length; i++) {
+        const f = flashers[i];
+        const target = (i === closestIdx) ? GLOW_LINE_COLOR : BASE_LINE_COLOR;
+        f.material.color.lerp(target, 0.25);
+    }
+}
+
+// =========================================================
+//  MAIN LOOP
+// =========================================================
+const clock = new THREE.Clock();
+
+function animate() {
+    requestAnimationFrame(animate);
+    const dt = Math.min(clock.getDelta(), 0.05);
+
+    if (pcd > 0) pcd -= dt;
+    if (ccd > 0) ccd -= dt;
+
+    // Player disc follows mouse
+    prevP.copy(player.position);
+    player.position.x = target.x;
+    player.position.y = target.y;
+    pvel.set(
+        (player.position.x - prevP.x) / Math.max(dt, 0.001),
+        (player.position.y - prevP.y) / Math.max(dt, 0.001),
+        0
+    );
+
+    updatePhysics(dt);
+    tryHit(player.position, pvel, true, dt);
+    tryHit(cpu.position, cvel, false, dt);
+    updateCPU(dt);
+
+    // Scoring
+    if (bp.z > PZ + 3) {
+        cpuScore++;
+        hudEl.textContent = `${playerScore} : ${cpuScore}`;
+        reset(-1);
+    } else if (bp.z < CZ - 3) {
+        playerScore++;
+        hudEl.textContent = `${playerScore} : ${cpuScore}`;
+        reset(1);
+    }
+
+    // Ball visual
+    ballOuter.position.copy(bp);
+    const spinMag = bs.length();
+    if (spinMag > 0.01) {
+        const axis = tmp1.copy(bs).normalize();
+        ballOuter.rotateOnWorldAxis(axis, spinMag * dt);
+    }
+
+    // Highlight the one segment closest to the ball
+    updateHighlight();
+
+    renderer.render(scene, camera);
+}
+
+animate();
+
+addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
