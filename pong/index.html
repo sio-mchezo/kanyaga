@@ -3,53 +3,51 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Pong</title>
+  <title>pong</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    body {
-      background: #000;
-      overflow: hidden;
-      font-family: system-ui, sans-serif;
-    }
-    canvas {
-      display: block;
-      width: 100vw;
-      height: 100vh;
-      touch-action: none;
-      cursor: none;
-    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; }
+    body { background: #000; overflow: hidden; font-family: system-ui, sans-serif; }
+    canvas { display: block; width: 100vw; height: 100vh; touch-action: none; cursor: none; }
     #score {
-      position: fixed;
-      top: 16px;
-      left: 50%;
-      transform: translateX(-50%);
-      color: #fff;
-      font-size: 48px;
-      font-weight: 300;
-      letter-spacing: 6px;
+      position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+      color: #fff; font-size: 48px; font-weight: 300; letter-spacing: 6px;
       text-shadow: 0 0 20px rgba(0, 160, 255, 0.6);
-      pointer-events: none;
-      z-index: 10;
-      font-variant-numeric: tabular-nums;
+      pointer-events: none; z-index: 10; font-variant-numeric: tabular-nums;
     }
+    #charge-btn {
+      position: fixed; bottom: 28px; right: 28px;
+      width: 96px; height: 96px; border-radius: 50%;
+      background: rgba(255, 200, 40, 0.15);
+      border: 2px solid rgba(255, 200, 40, 0.6);
+      color: #ffcc22; font-size: 14px; font-weight: 600; letter-spacing: 1px;
+      display: none; align-items: center; justify-content: center;
+      user-select: none; -webkit-user-select: none; touch-action: none;
+      z-index: 20; transition: background 0.08s, transform 0.08s;
+    }
+    #charge-btn.active {
+      background: rgba(255, 68, 136, 0.35);
+      border-color: #ff4488; color: #ff4488; transform: scale(0.94);
+    }
+    #charge-btn.visible { display: flex; }
   </style>
 </head>
 <body>
   <div id="score">0 : 0</div>
   <canvas id="court"></canvas>
+  <button id="charge-btn">CHARGE</button>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r109/three.min.js"></script>
+  <script src="ZzFX.micro.js"></script>
   <script>
     (() => {
+      // ---- constants ----
       const COURT = { halfWidth: 5.4, halfHeight: 3.6, depth: 24, paddleHalf: 1.05, ballRadius: 0.38 };
       const WIN_SCORE = 4;
       const STEP = 1 / 120;
       const MAX_BALL_SPEED = 36;
       const MAX_PADDLE_SPEED = 24;
+      const MAX_BALL_SPEED_SQ = MAX_BALL_SPEED * MAX_BALL_SPEED;
       const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
       const paddleXLimit = COURT.halfWidth - COURT.paddleHalf;
       const paddleYLimit = COURT.halfHeight - COURT.paddleHalf;
@@ -62,152 +60,183 @@
         return folded <= span ? folded - limit : span * 2 - folded - limit;
       }
 
-      class GamePhysics {
-        constructor(random = Math.random) {
-          this.random = random;
-          this.events = [];
-          this.player = { x: 0, y: 0, vx: 0, vy: 0 };
-          this.opponent = { x: 0, y: 0 };
-          this.ball = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, spinX: 0, spinY: 0 };
-          this.scores = { human: 0, computer: 0 };
-          this.charge = 0;
-          this.charging = false;
-          this.start(1);
+      // ---- physics ----
+      function createPhysics(random = Math.random) {
+        const player = { x: 0, y: 0, vx: 0, vy: 0 };
+        const opponent = { x: 0, y: 0 };
+        const ball = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, spinX: 0, spinY: 0 };
+        const scores = { human: 0, computer: 0 };
+        const events = [];
+        const aiTarget = { x: 0, y: 0 };
+        const opponentVelocity = { x: 0, y: 0 };
+
+        const api = {
+          state: 'ready',
+          level: 1,
+          scores,
+          charge: 0,
+          charging: false,
+          player,
+          opponent,
+          ball,
+          events,
+          start, setPaddle, serve, update,
+        };
+
+        let elapsed = 0;
+        let rally = 0;
+        let accumulator = 0;
+        let pointTime = 0;
+        let aiTime = 0;
+
+        function readyBall() {
+          ball.x = player.x;
+          ball.y = player.y;
+          ball.z = COURT.ballRadius + 0.25;
+          ball.vx = 0;
+          ball.vy = 0;
+          ball.vz = 0;
+          ball.spinX = 0;
+          ball.spinY = 0;
         }
-        start(level) {
-          this.level = clamp(Math.floor(level) || 1, 1, 12);
-          this.state = 'ready';
-          this.scores.human = 0;
-          this.scores.computer = 0;
-          Object.assign(this.player, { x: 0, y: 0, vx: 0, vy: 0 });
-          Object.assign(this.opponent, { x: 0, y: 0 });
-          this.elapsed = 0;
-          this.rally = 0;
-          this._accumulator = 0;
-          this._pointTime = 0;
-          this._aiTime = 0;
-          this._aiTarget = { x: 0, y: 0 };
-          this._opponentVelocity = { x: 0, y: 0 };
-          this.charge = 0;
-          this.charging = false;
-          this.events.length = 0;
-          this._readyBall();
+
+        function start(newLevel) {
+          api.level = clamp(Math.floor(newLevel) || 1, 1, 12);
+          api.state = 'ready';
+          scores.human = 0;
+          scores.computer = 0;
+          player.x = 0; player.y = 0; player.vx = 0; player.vy = 0;
+          opponent.x = 0; opponent.y = 0;
+          elapsed = 0;
+          rally = 0;
+          accumulator = 0;
+          pointTime = 0;
+          aiTime = 0;
+          aiTarget.x = 0; aiTarget.y = 0;
+          opponentVelocity.x = 0; opponentVelocity.y = 0;
+          api.charge = 0;
+          api.charging = false;
+          events.length = 0;
+          readyBall();
         }
-        setPaddle(x, y, dt = 1 / 60) {
+
+        function setPaddle(x, y, dt = 1 / 60) {
           const nextX = clamp(x, -paddleXLimit, paddleXLimit);
           const nextY = clamp(y, -paddleYLimit, paddleYLimit);
           const sampleTime = Math.max(dt, 1 / 240);
-          let vx = (nextX - this.player.x) / sampleTime;
-          let vy = (nextY - this.player.y) / sampleTime;
-          const speed = Math.hypot(vx, vy);
-          if (speed > MAX_PADDLE_SPEED) {
-            vx *= MAX_PADDLE_SPEED / speed;
-            vy *= MAX_PADDLE_SPEED / speed;
+          let vx = (nextX - player.x) / sampleTime;
+          let vy = (nextY - player.y) / sampleTime;
+          const speedSq = vx * vx + vy * vy;
+          if (speedSq > MAX_PADDLE_SPEED * MAX_PADDLE_SPEED) {
+            const scale = MAX_PADDLE_SPEED / Math.sqrt(speedSq);
+            vx *= scale;
+            vy *= scale;
           }
-          Object.assign(this.player, { x: nextX, y: nextY, vx, vy });
-          if (this.state === 'ready') this._readyBall();
+          player.x = nextX; player.y = nextY; player.vx = vx; player.vy = vy;
+          if (api.state === 'ready') readyBall();
         }
-        serve() {
-          if (this.state !== 'ready') return false;
-          this.state = 'playing';
-          this.rally = 0;
-          this._accumulator = 0;
-          this._aiTime = 0;
-          Object.assign(this.ball, {
-            x: this.player.x, y: this.player.y, z: COURT.ballRadius + 0.25,
-            vx: (this.random() - 0.5) * 2.8, vy: (this.random() - 0.5) * 1.8,
-            vz: 13.5 + this.level * 0.35, spinX: 0, spinY: 0,
-          });
-          this.player.vx = 0;
-          this.player.vy = 0;
+
+        function serve() {
+          if (api.state !== 'ready') return false;
+          api.state = 'playing';
+          rally = 0;
+          accumulator = 0;
+          aiTime = 0;
+          ball.x = player.x;
+          ball.y = player.y;
+          ball.z = COURT.ballRadius + 0.25;
+          ball.vx = (random() - 0.5) * 2.8;
+          ball.vy = (random() - 0.5) * 1.8;
+          ball.vz = 13.5 + api.level * 0.35;
+          ball.spinX = 0;
+          ball.spinY = 0;
+          player.vx = 0;
+          player.vy = 0;
+          events.push({ type: 'serve' });
           return true;
         }
-        update(dt) {
-          if (this.state === 'ready' || this.state === 'won' || this.state === 'lost') {
-            this._accumulator = 0;
+
+        function update(dt) {
+          const state = api.state;
+          if (state === 'ready' || state === 'won' || state === 'lost') {
+            accumulator = 0;
             return;
           }
-          this._accumulator += Math.min(dt, 0.1);
-          while (this._accumulator >= STEP) {
-            this._accumulator -= STEP;
-            if (this.state === 'playing') this._step(STEP);
-            else if (this.state === 'point') {
-              this._pointTime -= STEP;
-              if (this._pointTime <= 0) {
-                this.state = 'ready';
-                this._readyBall();
+          accumulator += dt < 0.1 ? dt : 0.1;
+          while (accumulator >= STEP) {
+            accumulator -= STEP;
+            if (api.state === 'playing') step(STEP);
+            else if (api.state === 'point') {
+              pointTime -= STEP;
+              if (pointTime <= 0) {
+                api.state = 'ready';
+                readyBall();
               }
             }
-            if (this.state === 'ready' || this.state === 'won' || this.state === 'lost') {
-              this._accumulator = 0;
+            if (api.state === 'ready' || api.state === 'won' || api.state === 'lost') {
+              accumulator = 0;
               break;
             }
           }
         }
-        _readyBall() {
-          Object.assign(this.ball, {
-            x: this.player.x, y: this.player.y, z: COURT.ballRadius + 0.25,
-            vx: 0, vy: 0, vz: 0, spinX: 0, spinY: 0,
-          });
-        }
-        _step(dt) {
-          this.elapsed += dt;
+
+        function step(dt) {
+          elapsed += dt;
           const decay = Math.exp(-dt / 0.085);
-          this.player.vx *= decay;
-          this.player.vy *= decay;
-          if (this.charging) {
-            this.charge = Math.min(1, this.charge + dt * 0.9);
-          } else {
-            this.charge = Math.max(0, this.charge - dt * 3);
-          }
-          this._moveOpponent(dt);
-          const b = this.ball;
-          b.vx += b.spinX * dt;
-          b.vy += b.spinY * dt;
+          player.vx *= decay;
+          player.vy *= decay;
+          if (api.charging) api.charge = Math.min(1, api.charge + dt * 0.9);
+          else api.charge = Math.max(0, api.charge - dt * 3);
+          moveOpponent(dt);
+          ball.vx += ball.spinX * dt;
+          ball.vy += ball.spinY * dt;
           const spinDecay = Math.exp(-dt * 0.18);
-          b.spinX *= spinDecay;
-          b.spinY *= spinDecay;
-          this._capSpeed();
-          this._travel(dt);
+          ball.spinX *= spinDecay;
+          ball.spinY *= spinDecay;
+          capSpeed();
+          travel(dt);
         }
-        _moveOpponent(dt) {
-          this._aiTime -= dt;
-          if (this._aiTime <= 0) {
-            this._aiTime += Math.max(0.055, 0.25 - this.level * 0.016);
-            if (this.ball.vz > 0) {
-              const travelTime = Math.max(0, (COURT.depth - COURT.ballRadius - this.ball.z) / this.ball.vz);
-              const anticipation = 0.2 + this.level * 0.053;
+
+        function moveOpponent(dt) {
+          aiTime -= dt;
+          if (aiTime <= 0) {
+            aiTime += Math.max(0.055, 0.25 - api.level * 0.016);
+            if (ball.vz > 0) {
+              const travelTime = Math.max(0, (COURT.depth - COURT.ballRadius - ball.z) / ball.vz);
+              const anticipation = 0.2 + api.level * 0.053;
               const lookAhead = travelTime * anticipation;
-              const uncertainty = 0.65 * (1 - this.level / 13);
-              this._aiTarget.x = clamp(
-                reflectedPosition(this.ball.x + this.ball.vx * lookAhead + this.ball.spinX * lookAhead ** 2 * 0.5, ballXLimit) +
-                  (this.random() - 0.5) * uncertainty,
+              const uncertainty = 0.65 * (1 - api.level / 13);
+              aiTarget.x = clamp(
+                reflectedPosition(ball.x + ball.vx * lookAhead + ball.spinX * lookAhead * lookAhead * 0.5, ballXLimit) +
+                  (random() - 0.5) * uncertainty,
                 -paddleXLimit, paddleXLimit
               );
-              this._aiTarget.y = clamp(
-                reflectedPosition(this.ball.y + this.ball.vy * lookAhead + this.ball.spinY * lookAhead ** 2 * 0.5, ballYLimit) +
-                  (this.random() - 0.5) * uncertainty,
+              aiTarget.y = clamp(
+                reflectedPosition(ball.y + ball.vy * lookAhead + ball.spinY * lookAhead * lookAhead * 0.5, ballYLimit) +
+                  (random() - 0.5) * uncertainty,
                 -paddleYLimit, paddleYLimit
               );
             } else {
-              this._aiTarget.x = this.ball.x * 0.15;
-              this._aiTarget.y = this.ball.y * 0.15;
+              aiTarget.x = ball.x * 0.15;
+              aiTarget.y = ball.y * 0.15;
             }
           }
-          const dx = this._aiTarget.x - this.opponent.x;
-          const dy = this._aiTarget.y - this.opponent.y;
-          const dist = Math.hypot(dx, dy);
-          const move = Math.min(dist, (2.6 + this.level * 0.4) * dt);
+          const dx = aiTarget.x - opponent.x;
+          const dy = aiTarget.y - opponent.y;
+          const distSq = dx * dx + dy * dy;
+          const dist = Math.sqrt(distSq);
+          const maxMove = (2.6 + api.level * 0.4) * dt;
+          const move = dist < maxMove ? dist : maxMove;
           const frac = dist > 1e-9 ? move / dist : 0;
           const mx = dx * frac;
           const my = dy * frac;
-          this.opponent.x = clamp(this.opponent.x + mx, -paddleXLimit, paddleXLimit);
-          this.opponent.y = clamp(this.opponent.y + my, -paddleYLimit, paddleYLimit);
-          this._opponentVelocity.x = mx / dt;
-          this._opponentVelocity.y = my / dt;
+          opponent.x = clamp(opponent.x + mx, -paddleXLimit, paddleXLimit);
+          opponent.y = clamp(opponent.y + my, -paddleYLimit, paddleYLimit);
+          opponentVelocity.x = mx / dt;
+          opponentVelocity.y = my / dt;
         }
-        _travel(dt) {
-          const b = this.ball;
+
+        function travel(dt) {
           let remaining = dt;
           for (let i = 0; i < 6 && remaining > 1e-9; i++) {
             let time = remaining;
@@ -218,164 +247,148 @@
                 collision = kind;
               }
             };
-            if (b.vx > 1e-9) consider((ballXLimit - b.x) / b.vx, 'x');
-            else if (b.vx < -1e-9) consider((-ballXLimit - b.x) / b.vx, 'x');
-            if (b.vy > 1e-9) consider((ballYLimit - b.y) / b.vy, 'y');
-            else if (b.vy < -1e-9) consider((-ballYLimit - b.y) / b.vy, 'y');
-            if (b.vz > 1e-9) consider((COURT.depth - COURT.ballRadius - b.z) / b.vz, 'computer');
-            else if (b.vz < -1e-9) consider((COURT.ballRadius - b.z) / b.vz, 'human');
+            if (ball.vx > 1e-9) consider((ballXLimit - ball.x) / ball.vx, 'x');
+            else if (ball.vx < -1e-9) consider((-ballXLimit - ball.x) / ball.vx, 'x');
+            if (ball.vy > 1e-9) consider((ballYLimit - ball.y) / ball.vy, 'y');
+            else if (ball.vy < -1e-9) consider((-ballYLimit - ball.y) / ball.vy, 'y');
+            if (ball.vz > 1e-9) consider((COURT.depth - COURT.ballRadius - ball.z) / ball.vz, 'computer');
+            else if (ball.vz < -1e-9) consider((COURT.ballRadius - ball.z) / ball.vz, 'human');
 
-            b.x += b.vx * time;
-            b.y += b.vy * time;
-            b.z += b.vz * time;
+            ball.x += ball.vx * time;
+            ball.y += ball.vy * time;
+            ball.z += ball.vz * time;
             remaining -= time;
             if (!collision) break;
             if (collision === 'x' || collision === 'y') {
-              b[`v${collision}`] *= -1;
-              b[collision === 'x' ? 'spinX' : 'spinY'] *= 0.8;
-              this.events.push({ type: 'wall', axis: collision, x: b.x, y: b.y, z: b.z });
+              ball[`v${collision}`] *= -1;
+              ball[collision === 'x' ? 'spinX' : 'spinY'] *= 0.8;
+              events.push({ type: 'wall', axis: collision, x: ball.x, y: ball.y, z: ball.z });
             } else {
-              const paddle = collision === 'human' ? this.player : this.opponent;
-              if (this._touchesPaddle(paddle)) this._hit(collision, paddle);
+              const paddle = collision === 'human' ? player : opponent;
+              if (touchesPaddle(paddle)) hit(collision, paddle);
               else {
-                this._score(collision === 'human' ? 'computer' : 'human');
+                score(collision === 'human' ? 'computer' : 'human');
                 break;
               }
             }
           }
         }
-        _touchesPaddle(paddle) {
-          const dx = Math.max(0, Math.abs(this.ball.x - paddle.x) - COURT.paddleHalf);
-          const dy = Math.max(0, Math.abs(this.ball.y - paddle.y) - COURT.paddleHalf);
-          return dx * dx + dy * dy <= COURT.ballRadius ** 2 + 1e-9;
-        }
-        _hit(actor, paddle) {
-          const b = this.ball;
-          const speed = Math.min(MAX_BALL_SPEED, Math.hypot(b.vx, b.vy, b.vz) + 0.65 + this.level * 0.025);
-          const offsetX = clamp((b.x - paddle.x) / COURT.paddleHalf, -1.15, 1.15);
-          const offsetY = clamp((b.y - paddle.y) / COURT.paddleHalf, -1.15, 1.15);
-          const vx = actor === 'human' ? this.player.vx : this._opponentVelocity.x;
-          const vy = actor === 'human' ? this.player.vy : this._opponentVelocity.y;
-          b.vx = offsetX * speed * 0.39 + vx * 0.12;
-          b.vy = offsetY * speed * 0.34 + vy * 0.1;
-          const sideways = Math.hypot(b.vx, b.vy);
-          if (sideways > speed * 0.72) {
-            b.vx *= speed * 0.72 / sideways;
-            b.vy *= speed * 0.72 / sideways;
-          }
-          b.vz = (actor === 'human' ? 1 : -1) * Math.sqrt(Math.max(0, speed ** 2 - b.vx ** 2 - b.vy ** 2));
-          const swipe = actor === 'human' ? 0.56 : 0.24 + this.level * 0.018;
-          b.spinX = clamp(vx * swipe, -11, 11);
-          b.spinY = clamp(-vy * swipe, -11, 11);
 
-          if (actor === 'human' && this.charge > 0.02) {
-            const boost = 1 + this.charge * 0.55;
-            b.vx *= boost;
-            b.vy *= boost;
-            b.vz *= boost;
-            b.spinX *= 1 + this.charge * 1.2;
-            b.spinY *= 1 + this.charge * 1.2;
-            this.events.push({ type: 'charged', power: this.charge });
-            this.charge = 0;
+        function touchesPaddle(paddle) {
+          const dx = Math.max(0, Math.abs(ball.x - paddle.x) - COURT.paddleHalf);
+          const dy = Math.max(0, Math.abs(ball.y - paddle.y) - COURT.paddleHalf);
+          return dx * dx + dy * dy <= COURT.ballRadius * COURT.ballRadius + 1e-9;
+        }
+
+        function hit(actor, paddle) {
+          const ballSpeed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy + ball.vz * ball.vz);
+          const speed = Math.min(MAX_BALL_SPEED, ballSpeed + 0.65 + api.level * 0.025);
+          const offsetX = clamp((ball.x - paddle.x) / COURT.paddleHalf, -1.15, 1.15);
+          const offsetY = clamp((ball.y - paddle.y) / COURT.paddleHalf, -1.15, 1.15);
+          const vx = actor === 'human' ? player.vx : opponentVelocity.x;
+          const vy = actor === 'human' ? player.vy : opponentVelocity.y;
+          ball.vx = offsetX * speed * 0.39 + vx * 0.12;
+          ball.vy = offsetY * speed * 0.34 + vy * 0.1;
+          const sidewaysSq = ball.vx * ball.vx + ball.vy * ball.vy;
+          const sideways = Math.sqrt(sidewaysSq);
+          const cap = speed * 0.72;
+          if (sideways > cap) {
+            const s = cap / sideways;
+            ball.vx *= s;
+            ball.vy *= s;
+          }
+          const vzSq = speed * speed - ball.vx * ball.vx - ball.vy * ball.vy;
+          ball.vz = (actor === 'human' ? 1 : -1) * Math.sqrt(vzSq > 0 ? vzSq : 0);
+          const swipe = actor === 'human' ? 0.56 : 0.24 + api.level * 0.018;
+          ball.spinX = clamp(vx * swipe, -11, 11);
+          ball.spinY = clamp(-vy * swipe, -11, 11);
+
+          if (actor === 'human' && api.charge > 0.02) {
+            const boost = 1 + api.charge * 0.55;
+            ball.vx *= boost;
+            ball.vy *= boost;
+            ball.vz *= boost;
+            ball.spinX *= 1 + api.charge * 1.2;
+            ball.spinY *= 1 + api.charge * 1.2;
+            events.push({ type: 'charged', power: api.charge });
+            api.charge = 0;
           }
 
-          this.rally++;
-          this.events.push({ type: 'hit', actor, x: b.x, y: b.y, z: b.z, rally: this.rally });
+          rally++;
+          events.push({ type: 'hit', actor, x: ball.x, y: ball.y, z: ball.z, rally });
         }
-        _capSpeed() {
-          const b = this.ball;
-          const speed = Math.hypot(b.vx, b.vy, b.vz);
-          if (speed > MAX_BALL_SPEED) {
-            const s = MAX_BALL_SPEED / speed;
-            b.vx *= s;
-            b.vy *= s;
-            b.vz *= s;
+
+        function capSpeed() {
+          const speedSq = ball.vx * ball.vx + ball.vy * ball.vy + ball.vz * ball.vz;
+          if (speedSq > MAX_BALL_SPEED_SQ) {
+            const s = MAX_BALL_SPEED / Math.sqrt(speedSq);
+            ball.vx *= s;
+            ball.vy *= s;
+            ball.vz *= s;
           }
         }
-        _score(winner) {
-          this.scores[winner]++;
-          this.events.push({ type: 'score', winner, scores: { ...this.scores } });
-          this.ball.vx = this.ball.vy = this.ball.vz = 0;
-          this.player.vx = this.player.vy = 0;
-          this.charge = 0;
-          if (this.scores[winner] >= WIN_SCORE) {
-            this.state = winner === 'human' ? 'won' : 'lost';
-            this.events.push({ type: 'match', winner });
+
+        function score(winner) {
+          scores[winner]++;
+          events.push({ type: 'score', winner, scores: { human: scores.human, computer: scores.computer } });
+          ball.vx = ball.vy = ball.vz = 0;
+          player.vx = player.vy = 0;
+          api.charge = 0;
+          if (scores[winner] >= WIN_SCORE) {
+            api.state = winner === 'human' ? 'won' : 'lost';
+            events.push({ type: 'match', winner });
           } else {
-            this.state = 'point';
-            this._pointTime = 1;
+            api.state = 'point';
+            pointTime = 1;
           }
         }
+
+        return api;
       }
 
+      // ---- renderer ----
       const { halfWidth: W, halfHeight: H, depth: D, ballRadius: R } = COURT;
 
-      class CourtRenderer {
-        constructor(canvas) {
-          this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-          this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-          this.renderer.setClearColor(0x000000);
-          this.scene = new THREE.Scene();
-          this.scene.fog = new THREE.Fog(0x000000, 9, 60);
-          this.camera = new THREE.PerspectiveCamera(56.55, 1.5, 0.1, 100);
-          this.camera.position.set(0, 0, 9.2);
-          this.camera.lookAt(0, 0, -D / 2);
+      function createRenderer(canvas) {
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+        renderer.setClearColor(0x000000);
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.Fog(0x000000, 9, 60);
+        const camera = new THREE.PerspectiveCamera(56.55, 1.5, 0.1, 100);
+        camera.position.set(0, 0, 9.2);
+        camera.lookAt(0, 0, -D / 2);
 
-          this.grid = new THREE.Group();
-          this.scene.add(this.grid);
-          this.gridLines = [];
+        const grid = new THREE.Group();
+        scene.add(grid);
+        const gridLines = [];
 
-          const zSteps = 20;
-          for (let i = 0; i <= zSteps; i++) {
-            const z = (i / zSteps) * D;
-            const line = this.line(
-              [new THREE.Vector3(-W, -H, -z), new THREE.Vector3(W, -H, -z),
-               new THREE.Vector3(W, H, -z), new THREE.Vector3(-W, H, -z),
-               new THREE.Vector3(-W, -H, -z)],
-              i === 0 ? 0x35c42b : 0x397d29,
-              i === 0 ? 0.95 : 0.6
-            );
-            this.grid.add(line);
-            this.gridLines.push({ line, z });
-          }
-
-          this.player = this.paddle(0xb32429, 0xff5533);
-          this.opponent = this.paddle(0x2042da, 0x5577ff);
-          this.scene.add(this.player, this.opponent);
-          this.opponent.position.z = -D;
-
-          const sphere = new THREE.SphereGeometry(R, 36, 24);
-          for (const face of sphere.faces) {
-            const verts = [sphere.vertices[face.a], sphere.vertices[face.b], sphere.vertices[face.c]];
-            const x = verts.reduce((a, p) => a + p.x, 0);
-            const y = verts.reduce((a, p) => a + p.y, 0);
-            face.color.setHex(x * y > 0 ? 0x32ef20 : 0x066cf5);
-          }
-          this.ball = new THREE.Mesh(sphere, new THREE.MeshBasicMaterial({ vertexColors: THREE.FaceColors, fog: false }));
-          this.scene.add(this.ball);
-
-          this.resize();
+        const zSteps = 20;
+        const rungSpacing = D / zSteps;
+        for (let i = 0; i <= zSteps; i++) {
+          const z = (i / zSteps) * D;
+          const line = makeLine(
+            [new THREE.Vector3(-W, -H, -z), new THREE.Vector3(W, -H, -z),
+             new THREE.Vector3(W, H, -z), new THREE.Vector3(-W, H, -z),
+             new THREE.Vector3(-W, -H, -z)],
+            i === 0 ? 0x35c42b : 0x397d29,
+            i === 0 ? 0.95 : 0.6
+          );
+          grid.add(line);
+          gridLines.push({ line, z });
         }
 
-        line(points, color, opacity = 1) {
+        function makeLine(points, color, opacity = 1) {
           return new THREE.Line(
             new THREE.BufferGeometry().setFromPoints(points),
             new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false })
           );
         }
 
-        paddle(color, chargeColor) {
+        function makePaddle(color, chargeColor) {
           const g = new THREE.Group();
 
-          const polar = new THREE.PolarGridHelper(
-            COURT.paddleHalf,
-            1,
-            3,
-            64,
-            color,
-            color
-          );
-          polar.rotation.x = Math.PI/2;
+          const polar = new THREE.PolarGridHelper(COURT.paddleHalf, 1, 3, 64, color, color);
+          polar.rotation.x = Math.PI / 2;
           polar.material.transparent = true;
           polar.material.opacity = 0.85;
           polar.material.depthWrite = false;
@@ -384,11 +397,8 @@
           const disc = new THREE.Mesh(
             new THREE.CircleGeometry(COURT.paddleHalf, 64),
             new THREE.MeshBasicMaterial({
-              color,
-              transparent: true,
-              opacity: 0.12,
-              side: THREE.DoubleSide,
-              depthWrite: false
+              color, transparent: true, opacity: 0.12,
+              side: THREE.DoubleSide, depthWrite: false
             })
           );
           disc.position.z = -0.005;
@@ -397,15 +407,13 @@
           const chargeDisc = new THREE.Mesh(
             new THREE.CircleGeometry(1, 64),
             new THREE.MeshBasicMaterial({
-              color: chargeColor,
-              transparent: true,
-              opacity: 0,
-              side: THREE.DoubleSide,
-              depthWrite: false
+              color: chargeColor, transparent: true, opacity: 0,
+              side: THREE.DoubleSide, depthWrite: false
             })
           );
           chargeDisc.position.z = 0.004;
-          chargeDisc.scale.set(0, 0, 1);
+          chargeDisc.scale.set(0.0001, 0.0001, 1);
+          chargeDisc.visible = false;
           g.add(chargeDisc);
 
           g.chargeDisc = chargeDisc;
@@ -414,95 +422,149 @@
           return g;
         }
 
-        resize() {
+        const player = makePaddle(0xb32429, 0xff5533);
+        const opponent = makePaddle(0x2042da, 0x5577ff);
+        scene.add(player, opponent);
+        opponent.position.z = -D;
+
+        const sphere = new THREE.SphereGeometry(R, 36, 24);
+        for (const face of sphere.faces) {
+          const verts = [sphere.vertices[face.a], sphere.vertices[face.b], sphere.vertices[face.c]];
+          const x = verts.reduce((a, p) => a + p.x, 0);
+          const y = verts.reduce((a, p) => a + p.y, 0);
+          face.color.setHex(x * y > 0 ? 0xcccccc : 0x999999);
+        }
+        const ballMesh = new THREE.Mesh(sphere, new THREE.MeshBasicMaterial({ vertexColors: THREE.FaceColors, fog: false }));
+        scene.add(ballMesh);
+
+        const axisTmp = new THREE.Vector3();
+        const colorGreenBase = new THREE.Color(0x397d29);
+        const colorGreenFlash = new THREE.Color(0x88ff88);
+        const colorChargeLow = new THREE.Color(0xffdd22);
+        const colorChargeHigh = new THREE.Color(0xff2266);
+        const colorTmp = new THREE.Color();
+
+        let lastBallZ = null;
+        let lastRung = null;
+
+        function resize() {
           const w = window.innerWidth;
           const h = window.innerHeight;
-          this.renderer.setSize(w, h, false);
-          this.camera.aspect = w / h;
-          this.camera.updateProjectionMatrix();
+          const dpr = window.devicePixelRatio || 1;
+
+          renderer.setPixelRatio(dpr);
+          renderer.setSize(w, h, false);
+
+          canvas.width = Math.floor(w * dpr);
+          canvas.height = Math.floor(h * dpr);
+          canvas.style.width = w + 'px';
+          canvas.style.height = h + 'px';
+
+          renderer.setViewport(0, 0, w, h);
+          camera.aspect = w / h;
+          camera.updateProjectionMatrix();
         }
 
-        pointer(clientX, clientY) {
-          const rect = this.renderer.domElement.getBoundingClientRect();
+        function pointer(clientX, clientY) {
+          const rect = renderer.domElement.getBoundingClientRect();
           const p = new THREE.Vector3(
             ((clientX - rect.left) / rect.width) * 2 - 1,
             1 - ((clientY - rect.top) / rect.height) * 2,
             0.5
-          ).unproject(this.camera);
-          const dir = p.sub(this.camera.position).normalize();
-          const hit = this.camera.position.clone().add(dir.multiplyScalar(-this.camera.position.z / dir.z));
+          ).unproject(camera);
+          const dir = p.sub(camera.position).normalize();
+          const hit = camera.position.clone().add(dir.multiplyScalar(-camera.position.z / dir.z));
           return { x: hit.x, y: hit.y };
         }
 
-        render(game, dt) {
-          this.player.position.set(game.player.x, game.player.y, 0.012);
-          this.opponent.position.set(game.opponent.x, game.opponent.y, -D + 0.012);
-          this.ball.position.set(game.ball.x, game.ball.y, -game.ball.z);
+        function render(game, dt) {
+          player.position.set(game.player.x, game.player.y, 0.012);
+          opponent.position.set(game.opponent.x, game.opponent.y, -D + 0.012);
+          ballMesh.position.set(game.ball.x, game.ball.y, -game.ball.z);
 
-          const ballR = COURT.ballRadius;
           const vx = game.ball.vx;
           const vy = game.ball.vy;
           const spinX = game.ball.spinX;
           const spinY = game.ball.spinY;
-
-          const rollX = vy / ballR;
-          const rollY = -vx / ballR;
+          const rollX = vy / R;
+          const rollY = -vx / R;
           const totalOmegaX = rollX + spinX;
           const totalOmegaY = rollY + spinY;
-
-          const angle = Math.hypot(totalOmegaX, totalOmegaY) * dt;
-          if (angle > 1e-6) {
-            const axis = new THREE.Vector3(totalOmegaX, totalOmegaY, 0).normalize();
-            this.ball.rotateOnWorldAxis(axis, angle);
+          const omegaSq = totalOmegaX * totalOmegaX + totalOmegaY * totalOmegaY;
+          if (omegaSq > 1e-12) {
+            const len = Math.sqrt(omegaSq);
+            axisTmp.set(totalOmegaX / len, totalOmegaY / len, 0);
+            ballMesh.rotateOnWorldAxis(axisTmp, len * dt);
           }
 
-          // charge disc on player paddle
           const charge = game.charge;
-          const disc = this.player.chargeDisc;
+          const disc = player.chargeDisc;
           if (charge > 0.001) {
-            const maxRadius = COURT.paddleHalf * 0.98;
-            const r = charge * maxRadius;
+            disc.visible = true;
+            const r = charge * COURT.paddleHalf * 0.98;
             disc.scale.set(r, r, 1);
             disc.material.opacity = 0.55 * charge + 0.15;
-            const hot = new THREE.Color(0xffdd22).lerp(new THREE.Color(0xff2266), charge);
-            disc.material.color.copy(hot);
+            colorTmp.copy(colorChargeLow).lerp(colorChargeHigh, charge);
+            disc.material.color.copy(colorTmp);
           } else {
-            disc.material.opacity = 0;
+            disc.visible = false;
           }
 
           const ballZ = game.ball.z;
-          for (const entry of this.gridLines) {
+          for (let i = 0; i < gridLines.length; i++) {
+            const entry = gridLines[i];
             const dist = Math.abs(ballZ - entry.z);
-            const flash = Math.max(0, 1 - dist / 2.5);
+            const flash = dist < 2.5 ? 1 - dist / 2.5 : 0;
             const baseOpacity = entry.z === 0 ? 0.95 : 0.6;
             entry.line.material.opacity = baseOpacity + flash * 0.4;
-            entry.line.material.color.setHex(0x397d29).lerp(new THREE.Color(0x88ff88), flash * 0.8);
+            colorTmp.copy(colorGreenBase).lerp(colorGreenFlash, flash * 0.8);
+            entry.line.material.color.copy(colorTmp);
           }
 
-          this.renderer.render(this.scene, this.camera);
+          // sound on every rung crossing
+          if (lastBallZ !== null) {
+            const thisRung = Math.round(ballZ / rungSpacing);
+            if (thisRung !== lastRung) {
+              const steps = Math.abs(thisRung - lastRung);
+              window.dispatchEvent(new CustomEvent('pong-rung', {
+                detail: { rung: thisRung, steps }
+              }));
+            }
+          }
+          lastBallZ = ballZ;
+          lastRung = Math.round(ballZ / rungSpacing);
+
+          renderer.render(scene, camera);
         }
+
+        return { resize, pointer, render };
       }
 
+      // ---- boot ----
       const canvas = document.getElementById('court');
       const scoreEl = document.getElementById('score');
+      const chargeBtn = document.getElementById('charge-btn');
+      const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+
       let renderer;
       try {
-        renderer = new CourtRenderer(canvas);
+        renderer = createRenderer(canvas);
       } catch (e) {
         document.body.innerHTML = '<h1 style="color:white;text-align:center;margin-top:40vh">WebGL not available</h1>';
         return;
       }
 
-      const game = new GamePhysics();
+      const game = createPhysics();
       let lastTime = performance.now();
       let touch = null;
       let lastPointer = 0;
       let spaceDownAt = 0;
 
-      function resize() {
-        renderer.resize();
-      }
+      if (isTouch) chargeBtn.classList.add('visible');
+
+      function resize() { renderer.resize(); }
       window.addEventListener('resize', resize);
+      resize();
 
       function movePointer(e) {
         const point = renderer.pointer(e.clientX, e.clientY);
@@ -510,8 +572,8 @@
         lastPointer = e.timeStamp;
         if (e.pointerType === 'touch') {
           if (!touch || touch.id !== e.pointerId) return;
-          const x = touch.paddleX + (point.x - touch.x) * 1.0;
-          const y = touch.paddleY + (point.y - touch.y) * 1.0;
+          const x = touch.paddleX + (point.x - touch.x);
+          const y = touch.paddleY + (point.y - touch.y);
           game.setPaddle(x, y, dt);
         } else {
           game.setPaddle(point.x, point.y, dt);
@@ -524,17 +586,18 @@
           const point = renderer.pointer(e.clientX, e.clientY);
           touch = { id: e.pointerId, x: point.x, y: point.y, paddleX: game.player.x, paddleY: game.player.y };
           canvas.setPointerCapture(e.pointerId);
+          if (game.state === 'ready') game.serve();
         } else {
           movePointer(e);
+          game.charging = true;
+          if (game.state === 'ready') game.serve();
         }
-        if (game.state === 'ready') game.serve();
-        game.charging = true;
         e.preventDefault();
       });
       for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture'])
         canvas.addEventListener(ev, () => {
           touch = null;
-          game.charging = false;
+          if (!isTouch) game.charging = false;
         });
 
       window.addEventListener('keydown', e => {
@@ -551,6 +614,20 @@
         }
       });
 
+      chargeBtn.addEventListener('pointerdown', e => {
+        e.preventDefault();
+        chargeBtn.classList.add('active');
+        game.charging = true;
+      });
+      const endCharge = e => {
+        e.preventDefault();
+        chargeBtn.classList.remove('active');
+        game.charging = false;
+      };
+      chargeBtn.addEventListener('pointerup', endCharge);
+      chargeBtn.addEventListener('pointercancel', endCharge);
+      chargeBtn.addEventListener('pointerleave', endCharge);
+
       function updateScore() {
         scoreEl.textContent = `${game.scores.human} : ${game.scores.computer}`;
       }
@@ -561,12 +638,18 @@
 
         game.update(dt);
 
-        const events = game.events.splice(0);
-        for (const ev of events) {
+        const events = game.events;
+        for (let i = 0; i < events.length; i++) {
+          const ev = events[i];
           if (ev.type === 'score' || ev.type === 'match') {
             updateScore();
+          } else if (ev.type === 'hit') {
+            window.dispatchEvent(new CustomEvent('pong-hit', { detail: { actor: ev.actor } }));
+          } else if (ev.type === 'serve') {
+            window.dispatchEvent(new CustomEvent('pong-serve'));
           }
         }
+        events.length = 0;
 
         if (game.state === 'won' || game.state === 'lost') {
           setTimeout(() => game.start(game.level), 800);
@@ -580,5 +663,68 @@
       requestAnimationFrame(frame);
     })();
   </script>
+
+  <!-- sounds: the only place zzfx is used -->
+  <script>
+(() => {
+  const V = 0.1;
+
+  let ctxReady = false;
+
+  // Lazily create / resume the AudioContext on first user gesture.
+  // ZzFX creates its own context on first call, so we prime it here.
+  function unlockAudio() {
+    try {
+      if (!window.zzfxX) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        window.zzfxX = new AC();
+      }
+      if (window.zzfxX.state === 'suspended') {
+        window.zzfxX.resume();
+      }
+      ctxReady = window.zzfxX.sampleRate > 0;
+    } catch {
+      ctxReady = false;
+    }
+  }
+
+  // Unlock on the first pointer / key event
+  for (const ev of ['pointerdown', 'keydown', 'touchstart']) {
+    window.addEventListener(ev, unlockAudio, { once: true, passive: true });
+  }
+
+  const play = (a) => {
+    if (!ctxReady) unlockAudio();
+    if (!ctxReady) return;
+    try {
+      zzfx(...[a[0] * V, ...a.slice(1)]);
+    } catch {
+      // silently ignore — audio is optional
+    }
+  };
+
+  const SND = {
+    hitHuman: [0.5,,482,.01,.05,.21,1,3.4,,,275,.1,,,,.1,,.57,.01,,-997],
+    hitCpu:   [0.5,,482,.01,.05,.21,2,,,,275,.1,,,,.1,,.57,.01,,-997],
+    serve:    [0.4,,600,.01,.04,.18,1,1.5,,,,,,,,,,.6,.01,,-1200],
+    border:   [1.9,0,65.40639,.07,.01,.35,1,,,,,,,,,,.12,.81,.18],
+  };
+
+  window.addEventListener('pong-hit', e => {
+    play(e.detail.actor === 'human' ? SND.hitHuman : SND.hitCpu);
+  });
+  window.addEventListener('pong-serve', () => play(SND.serve));
+  window.addEventListener('pong-border', () => play(SND.border));
+
+window.addEventListener('pong-rung', e => {
+  const t = Math.min(1, Math.abs(e.detail.rung) / 20);
+  const freq = 660 + t * 660;
+  // short square blip — attack 0.002s, sustain 0.02s, release 0.08s
+  play([0.15, , freq, .002, .02, .08, 1, 1]);
+});
+
+})();
+</script>
 </body>
 </html>
