@@ -16,7 +16,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r109/three.min.js"></script>
   <script>
     (() => {
-      const COURT = { halfWidth: 5.4, halfHeight: 3.6, depth: 24, paddleHalf: 1.05, ballRadius: 0.38 };
+      const COURT = { halfWidth: 5.4, halfHeight: 3.6, depth: 24, paddleHalf: 2, ballRadius: 0.38 };
       const STEP = 1 / 120;
       const MAX_BALL_SPEED = 36;
       const MAX_PADDLE_SPEED = 24;
@@ -25,6 +25,8 @@
       const MIN_BALL_SPEED_SQ = MIN_BALL_SPEED * MIN_BALL_SPEED;
       const CAMERA_Z = 9.2;
       const CAMERA_FOV = 56.55;
+      const FLASH_DURATION = 0.2;
+      const FLASH_OPACITY = 0.5;
       const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
       let paddleXLimit = COURT.halfWidth - COURT.paddleHalf;
@@ -80,10 +82,8 @@
         }
 
         function setPaddle(x, y, dt = 1 / 60) {
-          // x, y are the raw finger position.
-          // boost the paddle's reach as the finger approaches the screen edge.
-          const edgeStart = 0.7; // fraction of half-court where the boost begins
-          const edgeMax = 1.8;   // extra multiplier at the very edge
+          const edgeStart = 0.7;
+          const edgeMax = 1.8;
 
           const fx = clamp(x / paddleXLimit, -1, 1);
           const fy = clamp(y / paddleYLimit, -1, 1);
@@ -317,13 +317,6 @@
         function makePaddle(color) {
           const g = new THREE.Group();
 
-          const polar = new THREE.PolarGridHelper(COURT.paddleHalf, 1, 3, 64, color, color);
-          polar.rotation.x = Math.PI / 2;
-          polar.material.transparent = true;
-          polar.material.opacity = 0.85;
-          polar.material.depthWrite = false;
-          g.add(polar);
-
           const disc = new THREE.Mesh(
             new THREE.CircleGeometry(COURT.paddleHalf, 64),
             new THREE.MeshBasicMaterial({
@@ -335,10 +328,11 @@
           g.add(disc);
 
           g.renderOrder = 3;
+          g.disc = disc;
           return g;
         }
 
-        const player = makePaddle(0xb32429);
+        const player = makePaddle(0xcccccc);
         scene.add(player);
 
         const sphere = new THREE.SphereGeometry(R, 36, 24);
@@ -355,6 +349,8 @@
         const colorGreenBase = new THREE.Color(0x397d29);
         const colorGreenFlash = new THREE.Color(0x88ff88);
         const colorTmp = new THREE.Color();
+
+        let flashTime = 0;
 
         function resize() {
           const w = window.innerWidth;
@@ -390,9 +386,21 @@
           return { x: hit.x, y: hit.y };
         }
 
+        function triggerFlash() {
+          flashTime = FLASH_DURATION;
+        }
+
         function render(game, dt) {
           player.position.set(game.player.x, game.player.y, 0.012);
           ballMesh.position.set(game.ball.x, game.ball.y, -game.ball.z);
+
+          if (flashTime > 0) {
+            flashTime -= dt;
+            const t = Math.max(0, flashTime / FLASH_DURATION);
+            player.disc.material.opacity = 0.12 * (1 - t) + FLASH_OPACITY * t;
+          } else {
+            player.disc.material.opacity = 0.12;
+          }
 
           const vx = game.ball.vx;
           const vy = game.ball.vy;
@@ -423,7 +431,7 @@
           renderer.render(scene, camera);
         }
 
-        return { resize, pointer, render };
+        return { resize, pointer, render, triggerFlash };
       }
 
       const canvas = document.getElementById('court');
@@ -488,6 +496,10 @@
         lastTime = time;
 
         game.update(dt);
+
+        for (let i = 0; i < game.events.length; i++) {
+          if (game.events[i].type === 'hit') renderer.triggerFlash();
+        }
         game.events.length = 0;
 
         renderer.render(game, dt);
