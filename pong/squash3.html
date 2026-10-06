@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>pong</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; }
+    body { background: #000; overflow: hidden; font-family: system-ui, sans-serif; }
+    canvas { display: block; width: 100vw; height: 100vh; touch-action: none; cursor: none; }
+  </style>
+</head>
+<body>
+  <canvas id="court"></canvas>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r109/three.min.js"></script>
+  <script>
+    (() => {
+      const COURT = { halfW: 5.4, halfH: 3.6, depth: 24, paddleR: 2, ballR: 0.38 };
+      const CAM = { z: 9.2, fov: 56.55 };
+      const FLASH = { dur: 0.18, op: 0.55 };
+
+      const PHYS = {
+        gravity: 55,
+        maxBall: 40,
+        minBall: 12,
+        minVz: 6,
+        maxPaddle: 42,
+        paddleDecay: 0.13,
+        strokeSmooth: 28,
+        spinDecay: 0.08,
+        spinToVx: 0.40,
+        spinToVy: 0.18,
+        spinToVz: 0.22,
+        funnelStart: 0.45,
+        funnelForce: 28,
+        wallDamp: 0.40,
+        wallCrossDamp: 0.85,
+        farWallCrossDamp: 0.88,
+      };
+
+      const HIT = {
+        hitBoost: 1.05,
+        gripMin: 0.78,
+        gripMax: 0.98,
+        sweetPower: 1.35,
+        aimBase: 0.10,
+        aimEdgeBonus: 0.06,
+        aimPower: 2.6,
+        driveRef: 22,
+        driveBlock: 0.55,
+        driveFull: 1.0,
+        sideBlock: 0.28,
+        sideDrive: 0.20,
+        depthReward: 0.07,
+        spinBase: 5.5,
+        spinSweet: 3.5,
+        spinDirect: 2.2,
+        spinClamp: 60,
+        residualSlide: 0.10,
+      };
+
+      const clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
+
+      const bounds = { px: 0, py: 0, bx: 0, by: 0 };
+
+      function updateExtents(aspect) {
+        const halfH = Math.tan(CAM.fov * Math.PI / 360) * CAM.z;
+        const halfW = halfH * aspect;
+        COURT.halfW = halfW;
+        COURT.halfH = halfH;
+        bounds.px = halfW - COURT.paddleR;
+        bounds.py = halfH - COURT.paddleR;
+        bounds.bx = halfW - COURT.ballR;
+        bounds.by = halfH - COURT.ballR;
+      }
+
+      function createGame(rng = Math.random) {
+        const player = { x: 0, y: 0, vx: 0, vy: 0, svx: 0, svy: 0 };
+        const ball = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, spinX: 0, spinY: 0 };
+
+        const g = {
+          state: 'ready',
+          player,
+          ball,
+          lastHit: false,
+          lastScore: false,
+          start, setPaddle, serve, step,
+        };
+
+        let pointT = 0;
+
+        function start() {
+          g.state = 'ready';
+          player.x = 0; player.y = 0;
+          player.vx = 0; player.vy = 0;
+          player.svx = 0; player.svy = 0;
+          pointT = 0;
+          g.lastHit = g.lastScore = false;
+          readyBall();
+        }
+
+        function readyBall() {
+          ball.x = player.x;
+          ball.y = player.y;
+          ball.z = COURT.ballR + 0.25;
+          ball.vx = 0; ball.vy = 0; ball.vz = 0;
+          ball.spinX = 0; ball.spinY = 0;
+        }
+
+        function setPaddle(x, y, dt) {
+          const nextX = clamp(x, -bounds.px, bounds.px);
+          const nextY = clamp(y, -bounds.py, bounds.py);
+          const t = Math.max(dt, 1 / 240);
+          let vx = (nextX - player.x) / t;
+          let vy = (nextY - player.y) / t;
+          const sp = Math.sqrt(vx * vx + vy * vy);
+          if (sp > PHYS.maxPaddle) {
+            const s = PHYS.maxPaddle / sp;
+            vx *= s; vy *= s;
+          }
+
+          player.x = nextX;
+          player.y = nextY;
+          player.vx = vx;
+          player.vy = vy;
+
+          const a = 1 - Math.exp(-t * PHYS.strokeSmooth);
+          player.svx += (vx - player.svx) * a;
+          player.svy += (vy - player.svy) * a;
+
+          if (g.state === 'ready') readyBall();
+        }
+
+        function serve() {
+          if (g.state !== 'ready') return false;
+          g.state = 'playing';
+          ball.x = player.x;
+          ball.y = player.y;
+          ball.z = COURT.ballR + 0.25;
+          ball.vx = (rng() - 0.5) * 2.2;
+          ball.vy = (rng() - 0.5) * 1.4;
+          ball.vz = 17;
+          ball.spinX = 0;
+          ball.spinY = 0;
+          player.vx = 0; player.vy = 0;
+          player.svx = 0; player.svy = 0;
+          return true;
+        }
+
+        function step(dt) {
+          g.lastHit = false;
+          g.lastScore = false;
+
+          if (g.state === 'ready') return;
+
+          if (g.state === 'point') {
+            pointT -= dt;
+            if (pointT <= 0) {
+              g.state = 'ready';
+              readyBall();
+            }
+            return;
+          }
+
+          const pd = Math.exp(-dt / PHYS.paddleDecay);
+          player.vx *= pd;
+          player.vy *= pd;
+          player.svx *= pd;
+          player.svy *= pd;
+
+          ball.vx += ball.spinX * dt * PHYS.spinToVx;
+          ball.vy += ball.spinY * dt * PHYS.spinToVy;
+          ball.vz -= ball.spinY * dt * PHYS.spinToVz;
+          ball.vz += Math.sign(ball.vz || 1) * PHYS.gravity * dt;
+
+          const sd = Math.exp(-dt * PHYS.spinDecay);
+          ball.spinX *= sd;
+          ball.spinY *= sd;
+
+          ball.x += ball.vx * dt;
+          ball.y += ball.vy * dt;
+          ball.z += ball.vz * dt;
+
+          const fx = bounds.bx > 1e-6 ? ball.x / bounds.bx : 0;
+          const fy = bounds.by > 1e-6 ? ball.y / bounds.by : 0;
+          const ax = Math.abs(fx);
+          const ay = Math.abs(fy);
+          if (ax > PHYS.funnelStart) {
+            ball.vx -= Math.sign(fx) * (ax - PHYS.funnelStart) * PHYS.funnelForce * dt;
+          }
+          if (ay > PHYS.funnelStart) {
+            ball.vy -= Math.sign(fy) * (ay - PHYS.funnelStart) * PHYS.funnelForce * dt;
+          }
+
+          if (ball.x >  bounds.bx) { ball.x =  bounds.bx; ball.vx = -ball.vx * PHYS.wallDamp; ball.vy *= PHYS.wallCrossDamp; ball.spinX *= 0.8; }
+          if (ball.x < -bounds.bx) { ball.x = -bounds.bx; ball.vx = -ball.vx * PHYS.wallDamp; ball.vy *= PHYS.wallCrossDamp; ball.spinX *= 0.8; }
+          if (ball.y >  bounds.by) { ball.y =  bounds.by; ball.vy = -ball.vy * PHYS.wallDamp; ball.vx *= PHYS.wallCrossDamp; ball.spinY *= 0.8; }
+          if (ball.y < -bounds.by) { ball.y = -bounds.by; ball.vy = -ball.vy * PHYS.wallDamp; ball.vx *= PHYS.wallCrossDamp; ball.spinY *= 0.8; }
+
+          const farZ = COURT.depth - COURT.ballR;
+          if (ball.z > farZ) {
+            ball.z = farZ;
+            ball.vz = -Math.abs(ball.vz);
+            ball.vx *= PHYS.farWallCrossDamp;
+            ball.vy *= PHYS.farWallCrossDamp;
+            ball.spinX *= 0.85;
+            ball.spinY *= 0.85;
+          }
+
+          if (Math.abs(ball.vz) < PHYS.minVz) {
+            ball.vz = PHYS.minVz * Math.sign(ball.vz || 1);
+          }
+
+          const sp2 = ball.vx * ball.vx + ball.vy * ball.vy + ball.vz * ball.vz;
+          if (sp2 > PHYS.maxBall * PHYS.maxBall) {
+            const s = PHYS.maxBall / Math.sqrt(sp2);
+            ball.vx *= s; ball.vy *= s; ball.vz *= s;
+          } else if (sp2 > 1e-6 && sp2 < PHYS.minBall * PHYS.minBall) {
+            const s = PHYS.minBall / Math.sqrt(sp2);
+            ball.vx *= s; ball.vy *= s; ball.vz *= s;
+          }
+
+          if (ball.z < COURT.ballR) {
+            if (hitsPaddle()) onHit();
+            else {
+              g.state = 'point';
+              pointT = 0.9;
+              g.lastScore = true;
+              ball.vx = 0; ball.vy = 0; ball.vz = 0;
+              player.vx = 0; player.vy = 0;
+              player.svx = 0; player.svy = 0;
+            }
+          }
+        }
+
+        function hitsPaddle() {
+          const dx = Math.max(0, Math.abs(ball.x - player.x) - COURT.paddleR);
+          const dy = Math.max(0, Math.abs(ball.y - player.y) - COURT.paddleR);
+          return dx * dx + dy * dy <= COURT.ballR * COURT.ballR + 1e-8;
+        }
+
+        function onHit() {
+          const incoming = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy + ball.vz * ball.vz);
+          const speed = Math.min(PHYS.maxBall, incoming + HIT.hitBoost);
+
+          const ox = clamp((ball.x - player.x) / COURT.paddleR, -1, 1);
+          const oy = clamp((ball.y - player.y) / COURT.paddleR, -1, 1);
+          const radial = Math.min(1, Math.sqrt(ox * ox + oy * oy));
+
+          const sweet = Math.pow(1 - radial, HIT.sweetPower);
+          const grip = HIT.gripMin + (HIT.gripMax - HIT.gripMin) * sweet;
+
+          const strokeX = player.svx;
+          const strokeY = player.svy;
+          const strokeSp = Math.sqrt(strokeX * strokeX + strokeY * strokeY);
+          const drive = clamp(strokeSp / HIT.driveRef, 0, 1);
+
+          const aimX = Math.sign(ox) * Math.pow(Math.abs(ox), HIT.aimPower) * speed * (HIT.aimBase + HIT.aimEdgeBonus * (1 - sweet));
+          const aimY = Math.sign(oy) * Math.pow(Math.abs(oy), HIT.aimPower) * speed * (HIT.aimBase + HIT.aimEdgeBonus * (1 - sweet));
+
+          const oldVx = ball.vx;
+          const oldVy = ball.vy;
+          const relVx = ball.vx - strokeX;
+          const relVy = ball.vy - strokeY;
+
+          const carry = grip * (HIT.driveBlock + (HIT.driveFull - HIT.driveBlock) * drive);
+
+          ball.vx = strokeX * carry + aimX + relVx * (1 - grip) * HIT.residualSlide;
+          ball.vy = strokeY * carry + aimY + relVy * (1 - grip) * HIT.residualSlide;
+
+          const side = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+          const cap = speed * (HIT.sideBlock + HIT.sideDrive * drive);
+          if (side > cap) {
+            const s = cap / side;
+            ball.vx *= s; ball.vy *= s;
+          }
+
+          const vz2 = speed * speed - ball.vx * ball.vx - ball.vy * ball.vy;
+          ball.vz = Math.sqrt(Math.max(0, vz2));
+          ball.vz *= 1 + sweet * HIT.depthReward;
+
+          const spinGain = HIT.spinBase + HIT.spinSweet * sweet;
+          ball.spinX = clamp((strokeX - oldVx) * spinGain * 0.15 + strokeX * HIT.spinDirect, -HIT.spinClamp, HIT.spinClamp);
+          ball.spinY = clamp(-(strokeY - oldVy) * spinGain * 0.15 - strokeY * HIT.spinDirect, -HIT.spinClamp, HIT.spinClamp);
+
+          ball.z = COURT.ballR;
+          g.lastHit = true;
+        }
+
+        return g;
+      }
+
+      function createRenderer(canvas) {
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+        renderer.setClearColor(0x000000);
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.Fog(0x000000, 9, 60);
+        const camera = new THREE.PerspectiveCamera(CAM.fov, 1.5, 0.1, 150);
+        camera.position.set(0, 0, CAM.z);
+        camera.lookAt(0, 0, -COURT.depth / 2);
+
+        const grid = new THREE.Group();
+        scene.add(grid);
+        const gridLines = [];
+
+        function rebuildGrid() {
+          while (grid.children.length) grid.remove(grid.children[0]);
+          gridLines.length = 0;
+          const W = COURT.halfW;
+          const H = COURT.halfH;
+          for (let i = 0; i <= 20; i++) {
+            const z = (i / 20) * COURT.depth;
+            const edge = i === 0 || i === 20;
+            const line = new THREE.Line(
+              new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(-W, -H, -z), new THREE.Vector3( W, -H, -z),
+                new THREE.Vector3( W,  H, -z), new THREE.Vector3(-W,  H, -z),
+                new THREE.Vector3(-W, -H, -z),
+              ]),
+              new THREE.LineBasicMaterial({
+                color: edge ? 0x333333 : 0x999999,
+                transparent: true,
+                opacity: edge ? 0.95 : 0.55,
+                depthWrite: false,
+              })
+            );
+            grid.add(line);
+            gridLines.push({ line, z, edge });
+          }
+        }
+
+        const paddleMesh = new THREE.Group();
+        const paddleDisc = new THREE.Mesh(
+          new THREE.CircleGeometry(COURT.paddleR, 48),
+          new THREE.MeshBasicMaterial({
+            color: 0xcccccc, transparent: true, opacity: 0.12,
+            side: THREE.DoubleSide, depthWrite: false,
+          })
+        );
+        paddleDisc.position.z = -0.005;
+        paddleMesh.add(paddleDisc);
+        paddleMesh.renderOrder = 3;
+        scene.add(paddleMesh);
+
+        const geo = new THREE.SphereGeometry(COURT.ballR, 32, 20);
+        for (const f of geo.faces) {
+          const vs = [geo.vertices[f.a], geo.vertices[f.b], geo.vertices[f.c]];
+          const sx = vs.reduce((a, p) => a + p.x, 0);
+          const sy = vs.reduce((a, p) => a + p.y, 0);
+          f.color.setHex(sx * sy > 0 ? 0xcccccc : 0x999999);
+        }
+        const ballMesh = new THREE.Mesh(
+          geo,
+          new THREE.MeshBasicMaterial({ vertexColors: THREE.FaceColors, fog: false })
+        );
+        scene.add(ballMesh);
+
+        const axisTmp = new THREE.Vector3();
+        const colBase = new THREE.Color(0x397d29);
+        const colFlash = new THREE.Color(0x88ff88);
+        const colTmp = new THREE.Color();
+        let flashT = 0;
+
+        function resize() {
+          const w = window.innerWidth;
+          const h = window.innerHeight;
+          const dpr = window.devicePixelRatio || 1;
+          renderer.setPixelRatio(dpr);
+          renderer.setSize(w, h, false);
+          canvas.width = Math.floor(w * dpr);
+          canvas.height = Math.floor(h * dpr);
+          canvas.style.width = w + 'px';
+          canvas.style.height = h + 'px';
+          renderer.setViewport(0, 0, w, h);
+          camera.aspect = w / h;
+          camera.updateProjectionMatrix();
+          updateExtents(w / h);
+          rebuildGrid();
+        }
+
+        function pointer(cx, cy) {
+          const r = renderer.domElement.getBoundingClientRect();
+          const p = new THREE.Vector3(
+            ((cx - r.left) / r.width) * 2 - 1,
+            1 - ((cy - r.top) / r.height) * 2,
+            0.5
+          ).unproject(camera);
+          const dir = p.sub(camera.position).normalize();
+          const hit = camera.position.clone().add(dir.multiplyScalar(-camera.position.z / dir.z));
+          return { x: hit.x, y: hit.y };
+        }
+
+        function triggerFlash() { flashT = FLASH.dur; }
+
+        function render(game, dt) {
+          paddleMesh.position.set(game.player.x, game.player.y, 0.012);
+          ballMesh.position.set(game.ball.x, game.ball.y, -game.ball.z);
+
+          if (flashT > 0) {
+            flashT -= dt;
+            const t = Math.max(0, flashT / FLASH.dur);
+            paddleDisc.material.opacity = 0.12 * (1 - t) + FLASH.op * t;
+          } else {
+            paddleDisc.material.opacity = 0.12;
+          }
+
+          const rollX =  game.ball.vy / COURT.ballR;
+          const rollY = -game.ball.vx / COURT.ballR;
+          const ox = rollX + game.ball.spinX;
+          const oy = rollY + game.ball.spinY;
+          const o2 = ox * ox + oy * oy;
+          if (o2 > 1e-12) {
+            const len = Math.sqrt(o2);
+            axisTmp.set(ox / len, oy / len, 0);
+            ballMesh.rotateOnWorldAxis(axisTmp, len * dt);
+          }
+
+          const bz = game.ball.z;
+          for (const e of gridLines) {
+            const d = Math.abs(bz - e.z);
+            const f = d < 2.4 ? 1 - d / 2.4 : 0;
+            e.line.material.opacity = (e.edge ? 0.95 : 0.55) + f * 0.4;
+            colTmp.copy(colBase).lerp(colFlash, f * 0.8);
+            e.line.material.color.copy(colTmp);
+          }
+
+          renderer.render(scene, camera);
+        }
+
+        return { resize, pointer, render, triggerFlash };
+      }
+
+      const canvas = document.getElementById('court');
+      let renderer;
+      try {
+        renderer = createRenderer(canvas);
+      } catch (e) {
+        document.body.innerHTML = '<h1 style="color:#fff;text-align:center;margin-top:40vh">WebGL not available</h1>';
+        return;
+      }
+
+      const game = createGame();
+      let last = performance.now();
+      let touch = null;
+      let lastPtr = 0;
+
+      window.addEventListener('resize', () => renderer.resize());
+      renderer.resize();
+
+      function movePtr(e) {
+        const p = renderer.pointer(e.clientX, e.clientY);
+        const dt = Math.max(1 / 240, Math.min(0.1, (e.timeStamp - lastPtr) / 1000 || 1 / 60));
+        lastPtr = e.timeStamp;
+        if (e.pointerType === 'touch') {
+          if (!touch || touch.id !== e.pointerId) return;
+          game.setPaddle(
+            touch.paddleX + (p.x - touch.x),
+            touch.paddleY + (p.y - touch.y),
+            dt
+          );
+        } else {
+          game.setPaddle(p.x, p.y, dt);
+        }
+      }
+
+      canvas.addEventListener('pointermove', movePtr);
+      canvas.addEventListener('pointerdown', e => {
+        if (e.pointerType === 'touch') {
+          const p = renderer.pointer(e.clientX, e.clientY);
+          touch = { id: e.pointerId, x: p.x, y: p.y, paddleX: game.player.x, paddleY: game.player.y };
+          canvas.setPointerCapture(e.pointerId);
+        } else {
+          movePtr(e);
+        }
+        if (game.state === 'ready') game.serve();
+        e.preventDefault();
+      });
+      for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture'])
+        canvas.addEventListener(ev, () => { touch = null; });
+
+      window.addEventListener('keydown', e => {
+        if (e.key === ' ' && !e.repeat) {
+          e.preventDefault();
+          if (game.state === 'ready') game.serve();
+        }
+      });
+
+      function frame(t) {
+        const dt = Math.min(0.05, Math.max(0, (t - last) / 1000));
+        last = t;
+        game.step(dt);
+        if (game.lastHit) renderer.triggerFlash();
+        renderer.render(game, dt);
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    })();
+  </script>
+</body>
+</html>
