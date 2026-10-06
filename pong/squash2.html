@@ -17,7 +17,7 @@
   <script>
     (() => {
       const COURT = { halfWidth: 5.4, halfHeight: 3.6, depth: 24, paddleHalf: 2, ballRadius: 0.38 };
-      const GRAVITY = 60;
+      const GRAVITY = 100;
       const HIT_INCREMENT = 1;
       const STEP = 1 / 120;
       const MAX_BALL_SPEED = 36;
@@ -52,13 +52,7 @@
         const ball = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, spinX: 0, spinY: 0 };
         const events = [];
 
-        const api = {
-          state: 'ready',
-          player,
-          ball,
-          events,
-          start, setPaddle, serve, update,
-        };
+        const api = { state: 'ready', player, ball, events, start, setPaddle, serve, update };
 
         let accumulator = 0;
         let pointTime = 0;
@@ -67,11 +61,8 @@
           ball.x = player.x;
           ball.y = player.y;
           ball.z = COURT.ballRadius + 0.25;
-          ball.vx = 0;
-          ball.vy = 0;
-          ball.vz = 0;
-          ball.spinX = 0;
-          ball.spinY = 0;
+          ball.vx = 0; ball.vy = 0; ball.vz = 0;
+          ball.spinX = 0; ball.spinY = 0;
         }
 
         function start() {
@@ -84,30 +75,13 @@
         }
 
         function setPaddle(x, y, dt = 1 / 60) {
-          const edgeStart = 0.7;
-          const edgeMax = 1.8;
-
-          const fx = clamp(x / paddleXLimit, -1, 1);
-          const fy = clamp(y / paddleYLimit, -1, 1);
-
-          const bx = Math.max(0, Math.abs(fx) - edgeStart) / (1 - edgeStart);
-          const by = Math.max(0, Math.abs(fy) - edgeStart) / (1 - edgeStart);
-
-          const boostX = 1 + bx * (edgeMax - 1);
-          const boostY = 1 + by * (edgeMax - 1);
-
-          const nextX = clamp(x * boostX, -paddleXLimit, paddleXLimit);
-          const nextY = clamp(y * boostY, -paddleYLimit, paddleYLimit);
-
-          const sampleTime = Math.max(dt, 1 / 240);
-          let vx = (nextX - player.x) / sampleTime;
-          let vy = (nextY - player.y) / sampleTime;
-          const speedSq = vx * vx + vy * vy;
-          if (speedSq > MAX_PADDLE_SPEED * MAX_PADDLE_SPEED) {
-            const scale = MAX_PADDLE_SPEED / Math.sqrt(speedSq);
-            vx *= scale;
-            vy *= scale;
-          }
+          const nextX = clamp(x, -paddleXLimit, paddleXLimit);
+          const nextY = clamp(y, -paddleYLimit, paddleYLimit);
+          const t = Math.max(dt, 1 / 240);
+          let vx = (nextX - player.x) / t;
+          let vy = (nextY - player.y) / t;
+          const s = Math.sqrt(vx * vx + vy * vy);
+          if (s > MAX_PADDLE_SPEED) { vx *= MAX_PADDLE_SPEED / s; vy *= MAX_PADDLE_SPEED / s; }
           player.x = nextX; player.y = nextY; player.vx = vx; player.vy = vy;
           if (api.state === 'ready') readyBall();
         }
@@ -122,35 +96,27 @@
           ball.vx = (random() - 0.5) * 2.8;
           ball.vy = (random() - 0.5) * 1.8;
           ball.vz = 18;
-          ball.spinX = 0;
-          ball.spinY = 0;
-          player.vx = 0;
-          player.vy = 0;
+          ball.spinX = 0; ball.spinY = 0;
+          player.vx = 0; player.vy = 0;
           events.push({ type: 'serve' });
           return true;
         }
 
         function update(dt) {
-          if (api.state === 'ready') {
+          if (api.state !== 'playing' && api.state !== 'point') {
             accumulator = 0;
             return;
           }
-          accumulator += dt < 0.1 ? dt : 0.1;
+          accumulator += Math.min(dt, 0.1);
           while (accumulator >= STEP) {
             accumulator -= STEP;
             if (api.state === 'playing') step(STEP);
-            else if (api.state === 'point') {
-              pointTime -= STEP;
-              if (pointTime <= 0) {
-                api.state = 'ready';
-                readyBall();
-              }
-            }
-            if (api.state === 'ready') {
-              accumulator = 0;
-              break;
+            else if ((pointTime -= STEP) <= 0) {
+              api.state = 'ready';
+              readyBall();
             }
           }
+          enforceBallSpeed();
         }
 
         function step(dt) {
@@ -163,110 +129,74 @@
           const spinDecay = Math.exp(-dt * 0.08);
           ball.spinX *= spinDecay;
           ball.spinY *= spinDecay;
-          enforceBallSpeed();
           travel(dt);
         }
 
         function travel(dt) {
-          let remaining = dt;
-          for (let i = 0; i < 6 && remaining > 1e-9; i++) {
-            let time = remaining;
-            let collision = null;
+          ball.x += ball.vx * dt;
+          ball.y += ball.vy * dt;
+          ball.z += ball.vz * dt;
 
-            const consider = (t, kind) => {
-              if (t >= -1e-9 && t <= time + 1e-9) {
-                time = clamp(t, 0, remaining);
-                collision = kind;
-              }
-            };
+          if (ball.x >  ballXLimit) { ball.x =  ballXLimit; ball.vx = -ball.vx; ball.spinX *= 0.85; }
+          if (ball.x < -ballXLimit) { ball.x = -ballXLimit; ball.vx = -ball.vx; ball.spinX *= 0.85; }
+          if (ball.y >  ballYLimit) { ball.y =  ballYLimit; ball.vy = -ball.vy; ball.spinY *= 0.85; }
+          if (ball.y < -ballYLimit) { ball.y = -ballYLimit; ball.vy = -ball.vy; ball.spinY *= 0.85; }
 
-            if (ball.vx > 1e-9) consider((ballXLimit - ball.x) / ball.vx, 'x+');
-            else if (ball.vx < -1e-9) consider((-ballXLimit - ball.x) / ball.vx, 'x-');
-            if (ball.vy > 1e-9) consider((ballYLimit - ball.y) / ball.vy, 'y+');
-            else if (ball.vy < -1e-9) consider((-ballYLimit - ball.y) / ball.vy, 'y-');
-            if (ball.vz > 1e-9) consider((COURT.depth - COURT.ballRadius - ball.z) / ball.vz, 'z+');
-            else if (ball.vz < -1e-9) consider((COURT.ballRadius - ball.z) / ball.vz, 'z-');
-
-            ball.x += ball.vx * time;
-            ball.y += ball.vy * time;
-            ball.z += ball.vz * time;
-            remaining -= time;
-
-            if (!collision) break;
-
-            if (collision === 'x+' || collision === 'x-') {
-              ball.vx *= -1;
-              ball.spinX *= 0.85;
-              events.push({ type: 'wall', axis: 'x', x: ball.x, y: ball.y, z: ball.z });
-            } else if (collision === 'y+' || collision === 'y-') {
-              ball.vy *= -1;
-              ball.spinY *= 0.85;
-              events.push({ type: 'wall', axis: 'y', x: ball.x, y: ball.y, z: ball.z });
-            } else if (collision === 'z+') {
-              ball.vz *= -1;
-              ball.spinX *= 0.9;
-              ball.spinY *= 0.9;
-              events.push({ type: 'wall', axis: 'z', x: ball.x, y: ball.y, z: ball.z });
-            } else {
-              if (touchesPaddle(player)) hit(player);
-              else {
-                score();
-                break;
-              }
-            }
+          const farZ = COURT.depth - COURT.ballRadius;
+          if (ball.z > farZ) {
+            ball.z = farZ;
+            ball.vz = -ball.vz;
+            ball.spinX *= 0.9;
+            ball.spinY *= 0.9;
+          }
+          if (ball.z < COURT.ballRadius) {
+            if (touchesPaddle(player)) hit(player);
+            else score();
           }
         }
 
-        function touchesPaddle(paddle) {
-          const dx = Math.max(0, Math.abs(ball.x - paddle.x) - COURT.paddleHalf);
-          const dy = Math.max(0, Math.abs(ball.y - paddle.y) - COURT.paddleHalf);
-          return dx * dx + dy * dy <= COURT.ballRadius * COURT.ballRadius + 1e-9;
+        function touchesPaddle(p) {
+          const dx = Math.max(0, Math.abs(ball.x - p.x) - COURT.paddleHalf);
+          const dy = Math.max(0, Math.abs(ball.y - p.y) - COURT.paddleHalf);
+          return dx * dx + dy * dy <= COURT.ballRadius * COURT.ballRadius;
         }
 
-        function hit(paddle) {
+        function hit(p) {
           const incoming = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy + ball.vz * ball.vz);
           const speed = Math.min(MAX_BALL_SPEED, incoming + HIT_INCREMENT);
-          const offsetX = clamp((ball.x - paddle.x) / COURT.paddleHalf, -1.15, 1.15);
-          const offsetY = clamp((ball.y - paddle.y) / COURT.paddleHalf, -1.15, 1.15);
-          ball.vx = offsetX * speed * 0.39 + player.vx * 0.12;
-          ball.vy = offsetY * speed * 0.34 + player.vy * 0.1;
-          const sidewaysSq = ball.vx * ball.vx + ball.vy * ball.vy;
-          const sideways = Math.sqrt(sidewaysSq);
+          const ox = clamp((ball.x - p.x) / COURT.paddleHalf, -1.15, 1.5);
+          const oy = clamp((ball.y - p.y) / COURT.paddleHalf, -1.15, 1.5);
+          ball.vx = ox * speed * 0.39 + player.vx * 0.12;
+          ball.vy = oy * speed * 0.34 + player.vy * 0.1;
+          const sideways = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
           const cap = speed * 0.72;
           if (sideways > cap) {
-            const s = cap / sideways;
-            ball.vx *= s;
-            ball.vy *= s;
+            ball.vx *= cap / sideways;
+            ball.vy *= cap / sideways;
           }
           const vzSq = speed * speed - ball.vx * ball.vx - ball.vy * ball.vy;
           ball.vz = Math.sqrt(vzSq > 0 ? vzSq : 0);
-          // ball.spinX = clamp(player.vx * 0.56, -11, 11);
-          // ball.spinY = clamp(-player.vy * 0.56, -11, 11);
-          ball.spinX = clamp(player.vx * 4.0, -40, 40);
-          ball.spinY = clamp(-player.vy * 4.0, -40, 40);
+          ball.spinX = clamp(player.vx * 4, -40, 40);
+          ball.spinY = clamp(-player.vy * 4, -40, 40);
           enforceBallSpeed();
-          events.push({ type: 'hit', x: ball.x, y: ball.y, z: ball.z });
+          events.push({ type: 'hit' });
         }
 
         function enforceBallSpeed() {
           const speedSq = ball.vx * ball.vx + ball.vy * ball.vy + ball.vz * ball.vz;
           if (speedSq > MAX_BALL_SPEED_SQ) {
             const s = MAX_BALL_SPEED / Math.sqrt(speedSq);
-            ball.vx *= s;
-            ball.vy *= s;
-            ball.vz *= s;
+            ball.vx *= s; ball.vy *= s; ball.vz *= s;
           } else if (speedSq > 1e-6 && speedSq < MIN_BALL_SPEED_SQ) {
             const s = MIN_BALL_SPEED / Math.sqrt(speedSq);
-            ball.vx *= s;
-            ball.vy *= s;
-            ball.vz *= s;
+            ball.vx *= s; ball.vy *= s; ball.vz *= s;
           }
         }
 
         function score() {
           events.push({ type: 'score' });
-          ball.vx = ball.vy = ball.vz = 0;
-          player.vx = player.vy = 0;
+          ball.vx = 0; ball.vy = 0; ball.vz = 0;
+          player.vx = 0; player.vy = 0;
           api.state = 'point';
           pointTime = 1;
         }
@@ -321,7 +251,6 @@
 
         function makePaddle(color) {
           const g = new THREE.Group();
-
           const disc = new THREE.Mesh(
             new THREE.CircleGeometry(COURT.paddleHalf, 64),
             new THREE.MeshBasicMaterial({
@@ -331,7 +260,6 @@
           );
           disc.position.z = -0.005;
           g.add(disc);
-
           g.renderOrder = 3;
           g.disc = disc;
           return g;
