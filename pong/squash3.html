@@ -20,47 +20,59 @@
       const CAM = { z: 9.2, fov: 56.55 };
       const FLASH = { dur: 0.18, op: 0.55 };
 
+      // ─── physics ──────────────────────────────────────────────
+      // The ball travels along z. "Gravity" here is a soft pull that
+      // curls the ball's flight path — not a fall. Think of the court
+      // as a tilted air-hockey table: the ball hugs the surface but
+      // has a slight bias away from the player.
       const PHYS = {
-        gravity: 55,
+        drift: 30,            // gentle forward bias along z per second
+        minVz: 8,             // never let the ball stall along z
         maxBall: 40,
-        minBall: 12,
-        minVz: 6,
+        minBall: 14,
         maxPaddle: 42,
-        paddleDecay: 0.13,
-        strokeSmooth: 28,
-        spinDecay: 0.08,
-        spinToVx: 0.40,
-        spinToVy: 0.18,
-        spinToVz: 0.22,
-        funnelStart: 0.45,
-        funnelForce: 28,
-        wallDamp: 0.40,
-        wallCrossDamp: 0.85,
-        farWallCrossDamp: 0.88,
+        paddleDecay: 0.16,    // paddle velocity bleeds off fast
+        strokeSmooth: 80,     // smoothed stroke catches real intent
+        spinDecay: 0.15,      // spin dies quickly so curve is a beat, not a trend
+        spinToVx: 0.8,
+        spinToVy: 0.8,
+        spinToVz: 0.10,
       };
 
-      const HIT = {
-        hitBoost: 1.05,
-        gripMin: 0.78,
+      // walls and funnel shape the court, not the ball's destiny
+      const COURT_FORCE = {
+        funnelStart: 0.55,
+        funnelForce: 26,
+        wallDamp: 0.78,
+        wallCrossDamp: 0.92,
+        farWallDamp: 0.95,
+        farWallCrossDamp: 0.92,
+      };
+
+      // the rubber
+      const RUBBER = {
+        hitBoost: 0.85,
+        gripMin: 0.8,
         gripMax: 0.98,
-        sweetPower: 1.35,
-        aimBase: 0.10,
-        aimEdgeBonus: 0.06,
-        aimPower: 2.6,
+        sweetPower: 1.8,
+        aimBase: 0.14,
+        aimEdgeBonus: 0.1,
+        aimPower: 2.4,
         driveRef: 22,
-        driveBlock: 0.55,
-        driveFull: 1.0,
-        sideBlock: 0.28,
-        sideDrive: 0.20,
-        depthReward: 0.07,
-        spinBase: 5.5,
-        spinSweet: 3.5,
-        spinDirect: 2.2,
-        spinClamp: 60,
-        residualSlide: 0.10,
+        carryBlock: 0.5,
+        carryDrive: 1.0,
+        sideBlock: 0.4,
+        sideDrive: 0.22,
+        depthReward: 0.06,
+        spinFromBrush: 0.7,
+        spinFromStroke: 0.35,
+        spinClamp: 45,
+        slideResidual: 0.08,
       };
 
       const clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
+      const sign = (v) => v < 0 ? -1 : 1;
+      const len2 = (x, y) => Math.sqrt(x * x + y * y);
 
       const bounds = { px: 0, py: 0, bx: 0, by: 0 };
 
@@ -96,7 +108,8 @@
           player.vx = 0; player.vy = 0;
           player.svx = 0; player.svy = 0;
           pointT = 0;
-          g.lastHit = g.lastScore = false;
+          g.lastHit = false;
+          g.lastScore = false;
           readyBall();
         }
 
@@ -114,7 +127,7 @@
           const t = Math.max(dt, 1 / 240);
           let vx = (nextX - player.x) / t;
           let vy = (nextY - player.y) / t;
-          const sp = Math.sqrt(vx * vx + vy * vy);
+          const sp = len2(vx, vy);
           if (sp > PHYS.maxPaddle) {
             const s = PHYS.maxPaddle / sp;
             vx *= s; vy *= s;
@@ -138,9 +151,9 @@
           ball.x = player.x;
           ball.y = player.y;
           ball.z = COURT.ballR + 0.25;
-          ball.vx = (rng() - 0.5) * 2.2;
-          ball.vy = (rng() - 0.5) * 1.4;
-          ball.vz = 17;
+          ball.vx = (rng() - 0.5) * 2.4;
+          ball.vy = (rng() - 0.5) * 1.6;
+          ball.vz = 16;
           ball.spinX = 0;
           ball.spinY = 0;
           player.vx = 0; player.vy = 0;
@@ -163,16 +176,22 @@
             return;
           }
 
+          // paddle velocity bleeds away when you stop moving
           const pd = Math.exp(-dt / PHYS.paddleDecay);
           player.vx *= pd;
           player.vy *= pd;
           player.svx *= pd;
           player.svy *= pd;
 
+          // spin curves the ball. short-lived, so a flick bends a shot
+          // but doesn't accumulate into a spiral.
           ball.vx += ball.spinX * dt * PHYS.spinToVx;
           ball.vy += ball.spinY * dt * PHYS.spinToVy;
           ball.vz -= ball.spinY * dt * PHYS.spinToVz;
-          ball.vz += Math.sign(ball.vz || 1) * PHYS.gravity * dt;
+
+          // gentle forward pull so the rally always progresses along z.
+          // no reversal, no fall.
+          ball.vz += sign(ball.vz || 1) * PHYS.drift * dt;
 
           const sd = Math.exp(-dt * PHYS.spinDecay);
           ball.spinX *= sd;
@@ -182,34 +201,38 @@
           ball.y += ball.vy * dt;
           ball.z += ball.vz * dt;
 
+          // the court funnels the ball back to centre when it strays too far
           const fx = bounds.bx > 1e-6 ? ball.x / bounds.bx : 0;
           const fy = bounds.by > 1e-6 ? ball.y / bounds.by : 0;
           const ax = Math.abs(fx);
           const ay = Math.abs(fy);
-          if (ax > PHYS.funnelStart) {
-            ball.vx -= Math.sign(fx) * (ax - PHYS.funnelStart) * PHYS.funnelForce * dt;
+          if (ax > COURT_FORCE.funnelStart) {
+            ball.vx -= sign(fx) * (ax - COURT_FORCE.funnelStart) * COURT_FORCE.funnelForce * dt;
           }
-          if (ay > PHYS.funnelStart) {
-            ball.vy -= Math.sign(fy) * (ay - PHYS.funnelStart) * PHYS.funnelForce * dt;
+          if (ay > COURT_FORCE.funnelStart) {
+            ball.vy -= sign(fy) * (ay - COURT_FORCE.funnelStart) * COURT_FORCE.funnelForce * dt;
           }
 
-          if (ball.x >  bounds.bx) { ball.x =  bounds.bx; ball.vx = -ball.vx * PHYS.wallDamp; ball.vy *= PHYS.wallCrossDamp; ball.spinX *= 0.8; }
-          if (ball.x < -bounds.bx) { ball.x = -bounds.bx; ball.vx = -ball.vx * PHYS.wallDamp; ball.vy *= PHYS.wallCrossDamp; ball.spinX *= 0.8; }
-          if (ball.y >  bounds.by) { ball.y =  bounds.by; ball.vy = -ball.vy * PHYS.wallDamp; ball.vx *= PHYS.wallCrossDamp; ball.spinY *= 0.8; }
-          if (ball.y < -bounds.by) { ball.y = -bounds.by; ball.vy = -ball.vy * PHYS.wallDamp; ball.vx *= PHYS.wallCrossDamp; ball.spinY *= 0.8; }
+          // walls: damped reflection, and they steal a bit of cross-axis energy
+          if (ball.x >  bounds.bx) { ball.x =  bounds.bx; ball.vx = -ball.vx * COURT_FORCE.wallDamp; ball.vy *= COURT_FORCE.wallCrossDamp; ball.spinX *= 0.75; }
+          if (ball.x < -bounds.bx) { ball.x = -bounds.bx; ball.vx = -ball.vx * COURT_FORCE.wallDamp; ball.vy *= COURT_FORCE.wallCrossDamp; ball.spinX *= 0.75; }
+          if (ball.y >  bounds.by) { ball.y =  bounds.by; ball.vy = -ball.vy * COURT_FORCE.wallDamp; ball.vx *= COURT_FORCE.wallCrossDamp; ball.spinY *= 0.75; }
+          if (ball.y < -bounds.by) { ball.y = -bounds.by; ball.vy = -ball.vy * COURT_FORCE.wallDamp; ball.vx *= COURT_FORCE.wallCrossDamp; ball.spinY *= 0.75; }
 
+          // far wall: the ball comes back to you. slightly softened so
+          // the rally stays playable rather than accelerating forever.
           const farZ = COURT.depth - COURT.ballR;
           if (ball.z > farZ) {
             ball.z = farZ;
-            ball.vz = -Math.abs(ball.vz);
-            ball.vx *= PHYS.farWallCrossDamp;
-            ball.vy *= PHYS.farWallCrossDamp;
+            ball.vz = -Math.abs(ball.vz) * COURT_FORCE.farWallDamp;
+            ball.vx *= COURT_FORCE.farWallCrossDamp;
+            ball.vy *= COURT_FORCE.farWallCrossDamp;
             ball.spinX *= 0.85;
             ball.spinY *= 0.85;
           }
 
           if (Math.abs(ball.vz) < PHYS.minVz) {
-            ball.vz = PHYS.minVz * Math.sign(ball.vz || 1);
+            ball.vz = PHYS.minVz * sign(ball.vz || 1);
           }
 
           const sp2 = ball.vx * ball.vx + ball.vy * ball.vy + ball.vz * ball.vz;
@@ -242,47 +265,65 @@
 
         function onHit() {
           const incoming = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy + ball.vz * ball.vz);
-          const speed = Math.min(PHYS.maxBall, incoming + HIT.hitBoost);
+          const speed = Math.min(PHYS.maxBall, incoming + RUBBER.hitBoost);
 
           const ox = clamp((ball.x - player.x) / COURT.paddleR, -1, 1);
           const oy = clamp((ball.y - player.y) / COURT.paddleR, -1, 1);
           const radial = Math.min(1, Math.sqrt(ox * ox + oy * oy));
 
-          const sweet = Math.pow(1 - radial, HIT.sweetPower);
-          const grip = HIT.gripMin + (HIT.gripMax - HIT.gripMin) * sweet;
+          // sweet spot: full rubber grip in the middle, less on the rim.
+          const sweet = Math.pow(1 - radial, RUBBER.sweetPower);
+          const grip = RUBBER.gripMin + (RUBBER.gripMax - RUBBER.gripMin) * sweet;
 
+          // smoothed stroke is what the rubber reads as "intent"
           const strokeX = player.svx;
           const strokeY = player.svy;
           const strokeSp = Math.sqrt(strokeX * strokeX + strokeY * strokeY);
-          const drive = clamp(strokeSp / HIT.driveRef, 0, 1);
+          const drive = clamp(strokeSp / RUBBER.driveRef, 0, 1);
 
-          const aimX = Math.sign(ox) * Math.pow(Math.abs(ox), HIT.aimPower) * speed * (HIT.aimBase + HIT.aimEdgeBonus * (1 - sweet));
-          const aimY = Math.sign(oy) * Math.pow(Math.abs(oy), HIT.aimPower) * speed * (HIT.aimBase + HIT.aimEdgeBonus * (1 - sweet));
+          // geometric aim: dead centre returns straight, edges angle out.
+          // power-curve so the middle of the bat is forgiving.
+          const aimScale = RUBBER.aimBase + RUBBER.aimEdgeBonus * (1 - sweet);
+          const aimX = sign(ox) * Math.pow(Math.abs(ox), RUBBER.aimPower) * speed * aimScale;
+          const aimY = sign(oy) * Math.pow(Math.abs(oy), RUBBER.aimPower) * speed * aimScale;
 
+          // the paddle's "old" state before we rewrite ball velocity
           const oldVx = ball.vx;
           const oldVy = ball.vy;
           const relVx = ball.vx - strokeX;
           const relVy = ball.vy - strokeY;
 
-          const carry = grip * (HIT.driveBlock + (HIT.driveFull - HIT.driveBlock) * drive);
+          // outgoing lateral velocity: stroke carry + geometric aim + a
+          // whisper of the incoming slide that the rubber didn't fully absorb.
+          const carry = grip * (RUBBER.carryBlock + (RUBBER.carryDrive - RUBBER.carryBlock) * drive);
 
-          ball.vx = strokeX * carry + aimX + relVx * (1 - grip) * HIT.residualSlide;
-          ball.vy = strokeY * carry + aimY + relVy * (1 - grip) * HIT.residualSlide;
+          ball.vx = strokeX * carry + aimX + relVx * (1 - grip) * RUBBER.slideResidual;
+          ball.vy = strokeY * carry + aimY + relVy * (1 - grip) * RUBBER.slideResidual;
 
+          // cap the sideways component. harder strokes are allowed more
+          // angle, so a flick can really open up the court.
           const side = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-          const cap = speed * (HIT.sideBlock + HIT.sideDrive * drive);
+          const cap = speed * (RUBBER.sideBlock + RUBBER.sideDrive * drive);
           if (side > cap) {
             const s = cap / side;
-            ball.vx *= s; ball.vy *= s;
+            ball.vx *= s;
+            ball.vy *= s;
           }
 
+          // the rest of the speed goes into depth. keeps the ball moving
+          // toward the far wall at a predictable pace.
           const vz2 = speed * speed - ball.vx * ball.vx - ball.vy * ball.vy;
           ball.vz = Math.sqrt(Math.max(0, vz2));
-          ball.vz *= 1 + sweet * HIT.depthReward;
+          ball.vz *= 1 + sweet * RUBBER.depthReward;
 
-          const spinGain = HIT.spinBase + HIT.spinSweet * sweet;
-          ball.spinX = clamp((strokeX - oldVx) * spinGain * 0.15 + strokeX * HIT.spinDirect, -HIT.spinClamp, HIT.spinClamp);
-          ball.spinY = clamp(-(strokeY - oldVy) * spinGain * 0.15 - strokeY * HIT.spinDirect, -HIT.spinClamp, HIT.spinClamp);
+          // spin comes from the brush: how fast the paddle slid across
+          // the ball, plus a contribution from the stroke itself.
+          const brushX = strokeX - oldVx;
+          const brushY = strokeY - oldVy;
+          const spinGain = RUBBER.spinFromBrush * (0.7 + 0.6 * sweet);
+
+          ball.spinX = clamp(brushX * spinGain + strokeX * RUBBER.spinFromStroke, -RUBBER.spinClamp, RUBBER.spinClamp);
+          ball.spinY = clamp(-brushY * spinGain - strokeY * RUBBER.spinFromStroke, -RUBBER.spinClamp, RUBBER.spinClamp);
 
           ball.z = COURT.ballR;
           g.lastHit = true;
@@ -291,12 +332,13 @@
         return g;
       }
 
+      // ─── renderer ─────────────────────────────────────────────
       function createRenderer(canvas) {
         const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
         renderer.setClearColor(0x000000);
         const scene = new THREE.Scene();
         scene.fog = new THREE.Fog(0x000000, 9, 60);
-        const camera = new THREE.PerspectiveCamera(CAM.fov, 1.5, 0.1, 150);
+        const camera = new THREE.PerspectiveCamera(CAM.fov, 1.5, 0.1, 100);
         camera.position.set(0, 0, CAM.z);
         camera.lookAt(0, 0, -COURT.depth / 2);
 
@@ -319,7 +361,7 @@
                 new THREE.Vector3(-W, -H, -z),
               ]),
               new THREE.LineBasicMaterial({
-                color: edge ? 0x333333 : 0x999999,
+                color: edge ? 0x35c42b : 0x397d29,
                 transparent: true,
                 opacity: edge ? 0.95 : 0.55,
                 depthWrite: false,
@@ -431,6 +473,7 @@
         return { resize, pointer, render, triggerFlash };
       }
 
+      // ─── boot ─────────────────────────────────────────────────
       const canvas = document.getElementById('court');
       let renderer;
       try {
