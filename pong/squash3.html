@@ -5,694 +5,425 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>pong</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; }
-    body { background: #000; overflow: hidden; font-family: system-ui, sans-serif; }
-    canvas { display: block; width: 100vw; height: 100vh; touch-action: none; cursor: none; }
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{width:100%;height:100%}
+    body{background:#000;overflow:hidden;font-family:system-ui,sans-serif}
+    canvas{display:block;width:100vw;height:100vh;touch-action:none;cursor:none}
   </style>
 </head>
 <body>
   <canvas id="court"></canvas>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r109/three.min.js"></script>
   <script>
-(() => {
-  const COURT = { halfW: 5.4, halfH: 3.6, depth: 24, paddleR: 2, ballR: 0.38 };
-  const CAM = { z: 9.2, fov: 56.55 };
-  const FLASH = { dur: 0.18, op: 0.55 };
-
-  const PHYS = {
-    drift: 30,
-    minVz: 8,
-    maxBall: 40,
-    minBall: 14,
-    maxPaddle: 42,
-    paddleDecay: 0.13,
-    strokeSmooth: 28,
-    peakDecay: 14,
-    spinDecay: 0.18,
-    spinToVx: 0.55,
-    spinToVy: 0.55,
-    spinToVz: 0.08,
+(()=>{
+  const COURT={halfW:5.4,halfH:3.6,depth:24,paddleR:2,ballR:.38};
+  const CAM={z:9.2,fov:56.55};
+  const FLASH={dur:.18,op:.55};
+  const LINES=20;
+  const PHYS={
+    drift:30,minVz:8,maxBall:40,minBall:14,maxPaddle:42,
+    paddleDecay:.13,strokeSmooth:28,peakDecay:14,
+    spinDecay:.09,
+    spinToVx:.8,
+    spinToVy:.8,
+    spinToVz:.08,
+    spinPrecess:2.2,
   };
+  const COURT_FORCE={funnelStart:.55,funnelForce:26,wallDamp:.78,wallCrossDamp:.92,wallSpinDamp:.75,farWallDamp:.95,farWallCrossDamp:.92,farWallSpinDamp:.85};
+  const RUBBER={hitBoost:.9,gripMin:.84,gripMax:.99,sweetPower:1.6,aimBase:.1,aimEdgeBonus:.08,aimPower:2.6,driveRef:18,carryBlock:.35,carryDrive:1.05,sideBlock:.26,sideDrive:.28,depthReward:.08,spinFromBrush:.7,spinFromStroke:.5,spinClamp:55,slideResidual:.05};
+  const BACKGRID={cols:3,rows:3,color:0x333333,targetColor:0x555555,targetOpacity:.4,targetPulse:.1,targetPulseSpeed:1,targetHitDur:.12,targetHitOpacity:1,targetHitColor:0xffffff};
 
-  const COURT_FORCE = {
-    funnelStart: 0.55,
-    funnelForce: 26,
-    wallDamp: 0.78,
-    wallCrossDamp: 0.92,
-    farWallDamp: 0.95,
-    farWallCrossDamp: 0.92,
-  };
+  const clamp=(v,lo,hi)=>v<lo?lo:v>hi?hi:v;
+  const sign=v=>v<0?-1:1;
+  const len2=(x,y)=>Math.sqrt(x*x+y*y);
+  const bounds={px:0,py:0,bx:0,by:0};
 
-  const RUBBER = {
-    hitBoost: 0.9,
-    gripMin: 0.84,
-    gripMax: 0.99,
-    sweetPower: 1.6,
-    aimBase: 0.10,
-    aimEdgeBonus: 0.08,
-    aimPower: 2.6,
-    driveRef: 18,
-    carryBlock: 0.35,
-    carryDrive: 1.05,
-    sideBlock: 0.26,
-    sideDrive: 0.28,
-    depthReward: 0.08,
-    spinFromBrush: 0.55,
-    spinFromStroke: 0.40,
-    spinClamp: 48,
-    slideResidual: 0.05,
-  };
-
-  const BACKGRID = {
-    cols: 3,
-    rows: 3,
-    flashDur: 0.55,
-    opacityMax: 0.85,
-    opacityMin: 0.10,
-    spinWeight: 0.55,
-    speedWeight: 0.55,
-    color: 0x66ddff,
-    edgeColor: 0x2299cc,
-    edgeOpacity: 0.35,
-  };
-
-  const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
-  const sign = (v) => (v < 0 ? -1 : 1);
-  const len2 = (x, y) => Math.sqrt(x * x + y * y);
-
-  const bounds = { px: 0, py: 0, bx: 0, by: 0 };
-
-  function updateExtents(aspect) {
-    const halfH = Math.tan((CAM.fov * Math.PI) / 360) * CAM.z;
-    const halfW = halfH * aspect;
-    COURT.halfW = halfW;
-    COURT.halfH = halfH;
-    bounds.px = halfW - COURT.paddleR;
-    bounds.py = halfH - COURT.paddleR;
-    bounds.bx = halfW - COURT.ballR;
-    bounds.by = halfH - COURT.ballR;
+  function updateExtents(aspect){
+    const halfH=Math.tan(CAM.fov*Math.PI/360)*CAM.z;
+    const halfW=halfH*aspect;
+    COURT.halfW=halfW;COURT.halfH=halfH;
+    bounds.px=halfW-COURT.paddleR;bounds.py=halfH-COURT.paddleR;
+    bounds.bx=halfW-COURT.ballR;bounds.by=halfH-COURT.ballR;
   }
 
-  function createGame(rng = Math.random) {
-    const player = { x: 0, y: 0, vx: 0, vy: 0, svx: 0, svy: 0, pvx: 0, pvy: 0 };
-    const ball = { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, spinX: 0, spinY: 0 };
-
-    const g = {
-      state: 'ready',
-      player,
-      ball,
-      lastHit: false,
-      lastScore: false,
-      backGridHit: null,
-      start,
-      setPaddle,
-      serve,
-      step,
+  function createGame(rng=Math.random){
+    const player={x:0,y:0,vx:0,vy:0,svx:0,svy:0,pvx:0,pvy:0};
+    const ball={x:0,y:0,z:0,vx:0,vy:0,vz:0,spinX:0,spinY:0};
+    let targetCell=0,targetFlashT=0,pointT=0,lastLine=-1;
+    const g={
+      state:'ready',player,ball,
+      lastHit:false,lastHitActor:'human',lastScore:false,lastTargetHit:false,
+      linesCrossed:[],
+      start,setPaddle,serve,step,
+      getTarget:()=>targetCell,
+      getTargetFlash:()=>targetFlashT
     };
 
-    let pointT = 0;
+    function pickTarget(){
+      const total=BACKGRID.cols*BACKGRID.rows;
+      let next=Math.floor(rng()*total);
+      if(next===targetCell)next=(next+1)%total;
+      targetCell=next;
+    }
 
-    function start() {
-      g.state = 'ready';
-      player.x = player.y = 0;
-      player.vx = player.vy = player.svx = player.svy = player.pvx = player.pvy = 0;
-      pointT = 0;
-      g.lastHit = false;
-      g.lastScore = false;
-      g.backGridHit = null;
+    function start(){
+      g.state='ready';
+      player.x=player.y=0;
+      player.vx=player.vy=player.svx=player.svy=player.pvx=player.pvy=0;
+      pointT=0;g.lastHit=false;g.lastHitActor='human';g.lastScore=false;g.lastTargetHit=false;
+      g.linesCrossed.length=0;
+      targetFlashT=0;lastLine=-1;
+      targetCell=Math.floor(rng()*(BACKGRID.cols*BACKGRID.rows));
       readyBall();
     }
 
-    function readyBall() {
-      ball.x = player.x;
-      ball.y = player.y;
-      ball.z = COURT.ballR + 0.25;
-      ball.vx = ball.vy = ball.vz = 0;
-      ball.spinX = ball.spinY = 0;
+    function readyBall(){
+      ball.x=player.x;ball.y=player.y;ball.z=COURT.ballR+.25;
+      ball.vx=ball.vy=ball.vz=0;ball.spinX=ball.spinY=0;lastLine=-1;
     }
 
-    function setPaddle(x, y, dt) {
-      const nextX = clamp(x, -bounds.px, bounds.px);
-      const nextY = clamp(y, -bounds.py, bounds.py);
-      const t = Math.max(dt, 1 / 240);
-      let vx = (nextX - player.x) / t;
-      let vy = (nextY - player.y) / t;
-      const sp = len2(vx, vy);
-      if (sp > PHYS.maxPaddle) {
-        const s = PHYS.maxPaddle / sp;
-        vx *= s;
-        vy *= s;
-      }
-
-      player.x = nextX;
-      player.y = nextY;
-      player.vx = vx;
-      player.vy = vy;
-
-      const a = 1 - Math.exp(-t * PHYS.strokeSmooth);
-      player.svx += (vx - player.svx) * a;
-      player.svy += (vy - player.svy) * a;
-
-      const peakDecay = Math.exp(-t * PHYS.peakDecay);
-      player.pvx *= peakDecay;
-      player.pvy *= peakDecay;
-      if (Math.abs(vx) > Math.abs(player.pvx)) player.pvx = vx;
-      if (Math.abs(vy) > Math.abs(player.pvy)) player.pvy = vy;
-
-      if (g.state === 'ready') readyBall();
+    function setPaddle(x,y,dt){
+      const nextX=clamp(x,-bounds.px,bounds.px),nextY=clamp(y,-bounds.py,bounds.py);
+      const t=Math.max(dt,1/240);
+      let vx=(nextX-player.x)/t,vy=(nextY-player.y)/t;
+      const sp=len2(vx,vy);
+      if(sp>PHYS.maxPaddle){const s=PHYS.maxPaddle/sp;vx*=s;vy*=s}
+      player.x=nextX;player.y=nextY;player.vx=vx;player.vy=vy;
+      const a=1-Math.exp(-t*PHYS.strokeSmooth);
+      player.svx+=(vx-player.svx)*a;player.svy+=(vy-player.svy)*a;
+      const peakDecay=Math.exp(-t*PHYS.peakDecay);
+      player.pvx*=peakDecay;player.pvy*=peakDecay;
+      if(Math.abs(vx)>Math.abs(player.pvx))player.pvx=vx;
+      if(Math.abs(vy)>Math.abs(player.pvy))player.pvy=vy;
+      if(g.state==='ready')readyBall();
     }
 
-    function serve() {
-      if (g.state !== 'ready') return false;
-      g.state = 'playing';
-      ball.x = player.x;
-      ball.y = player.y;
-      ball.z = COURT.ballR + 0.25;
-      ball.vx = (rng() - 0.5) * 2.4;
-      ball.vy = (rng() - 0.5) * 1.6;
-      ball.vz = 16;
-      ball.spinX = ball.spinY = 0;
-      player.vx = player.vy = player.svx = player.svy = player.pvx = player.pvy = 0;
+    function serve(){
+      if(g.state!=='ready')return false;
+      g.state='playing';
+      ball.x=player.x;ball.y=player.y;ball.z=COURT.ballR+.25;
+      ball.vx=(rng()-.5)*2.4;ball.vy=(rng()-.5)*1.6;ball.vz=16;ball.spinX=ball.spinY=0;
+      player.vx=player.vy=player.svx=player.svy=player.pvx=player.pvy=0;
+      lastLine=-1;
       return true;
     }
 
-    function backWallCell(x, y) {
-      const W = COURT.halfW;
-      const H = COURT.halfH;
-      if (x < -W || x > W || y < -H || y > H) return null;
-      const u = (x + W) / (2 * W);
-      const v = (y + H) / (2 * H);
-      const col = Math.min(BACKGRID.cols - 1, Math.floor(u * BACKGRID.cols));
-      const row = Math.min(BACKGRID.rows - 1, Math.floor((1 - v) * BACKGRID.rows));
-      return { col, row };
+    function cellIndex(col,row){return row*BACKGRID.cols+col}
+
+    function backWallCell(x,y){
+      const W=COURT.halfW,H=COURT.halfH;
+      if(x<-W||x>W||y<-H||y>H)return null;
+      const u=(x+W)/(2*W),v=(y+H)/(2*H);
+      return{
+        col:Math.min(BACKGRID.cols-1,Math.floor(u*BACKGRID.cols)),
+        row:Math.min(BACKGRID.rows-1,Math.floor((1-v)*BACKGRID.rows))
+      };
     }
 
-    function step(dt) {
-      g.lastHit = false;
-      g.lastScore = false;
-      g.backGridHit = null;
+    function step(dt){
+      g.lastHit=false;g.lastScore=false;g.lastTargetHit=false;
+      g.linesCrossed.length=0;
 
-      if (g.state === 'ready') return;
-
-      if (g.state === 'point') {
-        pointT -= dt;
-        if (pointT <= 0) {
-          g.state = 'ready';
-          readyBall();
-        }
+      if(targetFlashT>0)targetFlashT-=dt;
+      if(g.state==='ready')return;
+      if(g.state==='point'){
+        pointT-=dt;
+        if(pointT<=0){g.state='ready';readyBall()}
         return;
       }
 
-      const pd = Math.exp(-dt / PHYS.paddleDecay);
-      player.vx *= pd;
-      player.vy *= pd;
-      player.svx *= pd;
-      player.svy *= pd;
-      player.pvx *= pd;
-      player.pvy *= pd;
+      const pd=Math.exp(-dt/PHYS.paddleDecay);
+      player.vx*=pd;player.vy*=pd;player.svx*=pd;player.svy*=pd;player.pvx*=pd;player.pvy*=pd;
 
-      ball.vx += ball.spinX * dt * PHYS.spinToVx;
-      ball.vy += ball.spinY * dt * PHYS.spinToVy;
-      ball.vz -= ball.spinY * dt * PHYS.spinToVz;
-      ball.vz += sign(ball.vz || 1) * PHYS.drift * dt;
+      ball.vx+=ball.spinX*dt*PHYS.spinToVx;
+      ball.vy+=ball.spinY*dt*PHYS.spinToVy;
+      ball.vz-=ball.spinY*dt*PHYS.spinToVz;
+      ball.vz+=sign(ball.vz||1)*PHYS.drift*dt;
 
-      const sd = Math.exp(-dt * PHYS.spinDecay);
-      ball.spinX *= sd;
-      ball.spinY *= sd;
+      const sd=Math.exp(-dt*PHYS.spinDecay);
+      ball.spinX*=sd;ball.spinY*=sd;
 
-      const z0 = ball.z;
-
-      ball.x += ball.vx * dt;
-      ball.y += ball.vy * dt;
-      ball.z += ball.vz * dt;
-
-      const fx = bounds.bx > 1e-6 ? ball.x / bounds.bx : 0;
-      const fy = bounds.by > 1e-6 ? ball.y / bounds.by : 0;
-      const ax = Math.abs(fx);
-      const ay = Math.abs(fy);
-      if (ax > COURT_FORCE.funnelStart) {
-        ball.vx -= sign(fx) * (ax - COURT_FORCE.funnelStart) * COURT_FORCE.funnelForce * dt;
-      }
-      if (ay > COURT_FORCE.funnelStart) {
-        ball.vy -= sign(fy) * (ay - COURT_FORCE.funnelStart) * COURT_FORCE.funnelForce * dt;
-      }
-
-      if (ball.x > bounds.bx) {
-        ball.x = bounds.bx;
-        ball.vx = -ball.vx * COURT_FORCE.wallDamp;
-        ball.vy *= COURT_FORCE.wallCrossDamp;
-        ball.spinX *= 0.75;
-      }
-      if (ball.x < -bounds.bx) {
-        ball.x = -bounds.bx;
-        ball.vx = -ball.vx * COURT_FORCE.wallDamp;
-        ball.vy *= COURT_FORCE.wallCrossDamp;
-        ball.spinX *= 0.75;
-      }
-      if (ball.y > bounds.by) {
-        ball.y = bounds.by;
-        ball.vy = -ball.vy * COURT_FORCE.wallDamp;
-        ball.vx *= COURT_FORCE.wallCrossDamp;
-        ball.spinY *= 0.75;
-      }
-      if (ball.y < -bounds.by) {
-        ball.y = -bounds.by;
-        ball.vy = -ball.vy * COURT_FORCE.wallDamp;
-        ball.vx *= COURT_FORCE.wallCrossDamp;
-        ball.spinY *= 0.75;
-      }
-
-      const farZ = COURT.depth - COURT.ballR;
-      if (ball.z > farZ) {
-        ball.z = farZ;
-
-        const impactSpeed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy + ball.vz * ball.vz);
-        const impactSpin = Math.sqrt(ball.spinX * ball.spinX + ball.spinY * ball.spinY);
-        const cell = backWallCell(ball.x, ball.y);
-        if (cell) {
-          const speedTerm = clamp(impactSpeed / PHYS.maxBall, 0, 1);
-          const spinTerm = clamp(impactSpin / RUBBER.spinClamp, 0, 1);
-          const raw = speedTerm * BACKGRID.speedWeight + spinTerm * BACKGRID.spinWeight;
-          g.backGridHit = { col: cell.col, row: cell.row, intensity: clamp(raw, 0, 1) };
+      {
+        const prec=PHYS.spinPrecess*dt;
+        if(prec!==0&&(ball.spinX!==0||ball.spinY!==0)){
+          const c=Math.cos(prec),s=Math.sin(prec);
+          const nx=ball.spinX*c-ball.spinY*s;
+          const ny=ball.spinX*s+ball.spinY*c;
+          ball.spinX=nx;ball.spinY=ny;
         }
-
-        ball.vz = -Math.abs(ball.vz) * COURT_FORCE.farWallDamp;
-        ball.vx *= COURT_FORCE.farWallCrossDamp;
-        ball.vy *= COURT_FORCE.farWallCrossDamp;
-        ball.spinX *= 0.85;
-        ball.spinY *= 0.85;
       }
 
-      if (Math.abs(ball.vz) < PHYS.minVz) {
-        ball.vz = PHYS.minVz * sign(ball.vz || 1);
+      {
+        const spinMag=len2(ball.spinX,ball.spinY);
+        if(spinMag>12){
+          const prec=PHYS.spinPrecess*dt*Math.min(1,spinMag/RUBBER.spinClamp);
+          const c=Math.cos(prec),s=Math.sin(prec);
+          const nx=ball.spinX*c-ball.spinY*s;
+          const ny=ball.spinX*s+ball.spinY*c;
+          ball.spinX=nx;ball.spinY=ny;
+        }
+      }
+      
+
+      const z0=ball.z;
+      ball.x+=ball.vx*dt;ball.y+=ball.vy*dt;ball.z+=ball.vz*dt;
+
+      const lineSpacing=COURT.depth/LINES;
+      const currentLine=Math.max(0,Math.min(LINES,Math.floor(ball.z/lineSpacing)));
+      if(currentLine!==lastLine){
+        if(lastLine===-1){
+          g.linesCrossed.push(currentLine);
+        }else{
+          const dir=currentLine>lastLine?1:-1;
+          for(let l=lastLine+dir;l!==currentLine+dir;l+=dir){
+            if(l>=0&&l<=LINES)g.linesCrossed.push(l);
+          }
+        }
+        lastLine=currentLine;
       }
 
-      const sp2 = ball.vx * ball.vx + ball.vy * ball.vy + ball.vz * ball.vz;
-      if (sp2 > PHYS.maxBall * PHYS.maxBall) {
-        const s = PHYS.maxBall / Math.sqrt(sp2);
-        ball.vx *= s;
-        ball.vy *= s;
-        ball.vz *= s;
-      } else if (sp2 > 1e-6 && sp2 < PHYS.minBall * PHYS.minBall) {
-        const s = PHYS.minBall / Math.sqrt(sp2);
-        ball.vx *= s;
-        ball.vy *= s;
-        ball.vz *= s;
+      const fx=bounds.bx>1e-6?ball.x/bounds.bx:0,fy=bounds.by>1e-6?ball.y/bounds.by:0;
+      const ax=Math.abs(fx),ay=Math.abs(fy);
+      if(ax>COURT_FORCE.funnelStart)ball.vx-=sign(fx)*(ax-COURT_FORCE.funnelStart)*COURT_FORCE.funnelForce*dt;
+      if(ay>COURT_FORCE.funnelStart)ball.vy-=sign(fy)*(ay-COURT_FORCE.funnelStart)*COURT_FORCE.funnelForce*dt;
+
+      if(ball.x>bounds.bx){
+        ball.x=bounds.bx;ball.vx=-ball.vx*COURT_FORCE.wallDamp;
+        ball.vy*=COURT_FORCE.wallCrossDamp;ball.spinX*=COURT_FORCE.wallSpinDamp;
+      }else if(ball.x<-bounds.bx){
+        ball.x=-bounds.bx;ball.vx=-ball.vx*COURT_FORCE.wallDamp;
+        ball.vy*=COURT_FORCE.wallCrossDamp;ball.spinX*=COURT_FORCE.wallSpinDamp;
+      }
+      if(ball.y>bounds.by){
+        ball.y=bounds.by;ball.vy=-ball.vy*COURT_FORCE.wallDamp;
+        ball.vx*=COURT_FORCE.wallCrossDamp;ball.spinX*=COURT_FORCE.wallSpinDamp;
+      }else if(ball.y<-bounds.by){
+        ball.y=-bounds.by;ball.vy=-ball.vy*COURT_FORCE.wallDamp;
+        ball.vx*=COURT_FORCE.wallCrossDamp;ball.spinX*=COURT_FORCE.wallSpinDamp;
       }
 
-      // continuous-ish near-plane contact
-      if (z0 > COURT.ballR && ball.z < COURT.ballR && ball.vz < 0) {
-        const tHit = (z0 - COURT.ballR) / (z0 - ball.z);
-        ball.x -= ball.vx * dt * (1 - tHit);
-        ball.y -= ball.vy * dt * (1 - tHit);
-        ball.z = COURT.ballR;
-        if (hitsPaddle()) onHit();
-        else score();
-      } else if (ball.z < COURT.ballR) {
-        if (hitsPaddle()) onHit();
-        else score();
+      const farZ=COURT.depth-COURT.ballR;
+      if(ball.z>farZ){
+        ball.z=farZ;
+        const cell=backWallCell(ball.x,ball.y);
+        if(cell&&cellIndex(cell.col,cell.row)===targetCell){
+          targetFlashT=BACKGRID.targetHitDur;
+          g.lastTargetHit=true;
+          pickTarget();
+        }
+        ball.vz=-Math.abs(ball.vz)*COURT_FORCE.farWallDamp;
+        ball.vx*=COURT_FORCE.farWallCrossDamp;ball.vy*=COURT_FORCE.farWallCrossDamp;
+        ball.spinX*=COURT_FORCE.farWallSpinDamp;ball.spinY*=COURT_FORCE.farWallSpinDamp;
+      }
+
+      if(Math.abs(ball.vz)<PHYS.minVz)ball.vz=PHYS.minVz*sign(ball.vz||1);
+      const sp2=ball.vx*ball.vx+ball.vy*ball.vy+ball.vz*ball.vz;
+      if(sp2>PHYS.maxBall*PHYS.maxBall){
+        const s=PHYS.maxBall/Math.sqrt(sp2);ball.vx*=s;ball.vy*=s;ball.vz*=s;
+      }else if(sp2>1e-6&&sp2<PHYS.minBall*PHYS.minBall){
+        const s=PHYS.minBall/Math.sqrt(sp2);ball.vx*=s;ball.vy*=s;ball.vz*=s;
+      }
+
+      if(z0>COURT.ballR&&ball.z<COURT.ballR&&ball.vz<0){
+        const tHit=(z0-COURT.ballR)/(z0-ball.z);
+        ball.x-=ball.vx*dt*(1-tHit);ball.y-=ball.vy*dt*(1-tHit);ball.z=COURT.ballR;
+        hitsPaddle()?onHit():score();
+      }else if(ball.z<COURT.ballR){
+        hitsPaddle()?onHit():score();
       }
     }
 
-    function score() {
-      g.state = 'point';
-      pointT = 0.9;
-      g.lastScore = true;
-      ball.vx = ball.vy = ball.vz = 0;
-      player.vx = player.vy = player.svx = player.svy = player.pvx = player.pvy = 0;
+    function score(){
+      g.state='point';pointT=.9;g.lastScore=true;
+      ball.vx=ball.vy=ball.vz=0;
+      player.vx=player.vy=player.svx=player.svy=player.pvx=player.pvy=0;
     }
 
-    function hitsPaddle() {
-      const dx = Math.max(0, Math.abs(ball.x - player.x) - COURT.paddleR);
-      const dy = Math.max(0, Math.abs(ball.y - player.y) - COURT.paddleR);
-      return dx * dx + dy * dy <= COURT.ballR * COURT.ballR + 1e-8;
+    function hitsPaddle(){
+      const dx=Math.max(0,Math.abs(ball.x-player.x)-COURT.paddleR);
+      const dy=Math.max(0,Math.abs(ball.y-player.y)-COURT.paddleR);
+      return dx*dx+dy*dy<=COURT.ballR*COURT.ballR+1e-8;
     }
 
-    function onHit() {
-      const incoming = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy + ball.vz * ball.vz);
-      const speed = Math.min(PHYS.maxBall, incoming + RUBBER.hitBoost);
-
-      const ox = clamp((ball.x - player.x) / COURT.paddleR, -1, 1);
-      const oy = clamp((ball.y - player.y) / COURT.paddleR, -1, 1);
-      const radial = Math.min(1, Math.sqrt(ox * ox + oy * oy));
-      const sweet = Math.pow(1 - radial, RUBBER.sweetPower);
-      const grip = RUBBER.gripMin + (RUBBER.gripMax - RUBBER.gripMin) * sweet;
-
-      const strokeX = Math.abs(player.pvx) > Math.abs(player.svx) ? player.pvx : player.svx;
-      const strokeY = Math.abs(player.pvy) > Math.abs(player.svy) ? player.pvy : player.svy;
-      const strokeSp = Math.sqrt(strokeX * strokeX + strokeY * strokeY);
-      const drive = clamp(strokeSp / RUBBER.driveRef, 0, 1);
-
-      const aimScale = RUBBER.aimBase + RUBBER.aimEdgeBonus * (1 - sweet);
-      const aimX = sign(ox) * Math.pow(Math.abs(ox), RUBBER.aimPower) * speed * aimScale;
-      const aimY = sign(oy) * Math.pow(Math.abs(oy), RUBBER.aimPower) * speed * aimScale;
-
-      const oldVx = ball.vx;
-      const oldVy = ball.vy;
-      const oldSpinX = ball.spinX;
-      const oldSpinY = ball.spinY;
-      const relVx = ball.vx - strokeX;
-      const relVy = ball.vy - strokeY;
-
-      const carry = grip * (RUBBER.carryBlock + (RUBBER.carryDrive - RUBBER.carryBlock) * drive);
-      ball.vx = strokeX * carry + aimX + relVx * (1 - grip) * RUBBER.slideResidual;
-      ball.vy = strokeY * carry + aimY + relVy * (1 - grip) * RUBBER.slideResidual;
-
-      // dead-bat centre: straighten
-      const quiet = (1 - drive) * sweet;
-      ball.vx *= 1 - quiet * 0.85;
-      ball.vy *= 1 - quiet * 0.85;
-
-      const side = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-      const cap = speed * (RUBBER.sideBlock + RUBBER.sideDrive * drive);
-      if (side > cap) {
-        const s = cap / side;
-        ball.vx *= s;
-        ball.vy *= s;
-      }
-
-      const vz2 = speed * speed - ball.vx * ball.vx - ball.vy * ball.vy;
-      ball.vz = Math.sqrt(Math.max(0, vz2)) * (1 + sweet * RUBBER.depthReward);
-
-      const brushX = strokeX - oldVx;
-      const brushY = strokeY - oldVy;
-      const spinGain = RUBBER.spinFromBrush * (0.7 + 0.6 * sweet);
-      const absorb = (1 - drive) * grip;
-
-      ball.spinX = clamp(
-        brushX * spinGain + strokeX * RUBBER.spinFromStroke - oldSpinX * absorb * 0.5,
-        -RUBBER.spinClamp,
-        RUBBER.spinClamp
-      );
-      ball.spinY = clamp(
-        -brushY * spinGain - strokeY * RUBBER.spinFromStroke - oldSpinY * absorb * 0.5,
-        -RUBBER.spinClamp,
-        RUBBER.spinClamp
-      );
-
-      ball.z = COURT.ballR;
-      g.lastHit = true;
+    function onHit(){
+      const incoming=Math.sqrt(ball.vx*ball.vx+ball.vy*ball.vy+ball.vz*ball.vz);
+      const speed=Math.min(PHYS.maxBall,incoming+RUBBER.hitBoost);
+      const ox=clamp((ball.x-player.x)/COURT.paddleR,-1,1),oy=clamp((ball.y-player.y)/COURT.paddleR,-1,1);
+      const radial=Math.min(1,len2(ox,oy)),sweet=Math.pow(1-radial,RUBBER.sweetPower);
+      const grip=RUBBER.gripMin+(RUBBER.gripMax-RUBBER.gripMin)*sweet;
+      const strokeX=Math.abs(player.pvx)>Math.abs(player.svx)?player.pvx:player.svx;
+      const strokeY=Math.abs(player.pvy)>Math.abs(player.svy)?player.pvy:player.svy;
+      const drive=clamp(len2(strokeX,strokeY)/RUBBER.driveRef,0,1);
+      const aimScale=RUBBER.aimBase+RUBBER.aimEdgeBonus*(1-sweet);
+      const aimX=sign(ox)*Math.pow(Math.abs(ox),RUBBER.aimPower)*speed*aimScale;
+      const aimY=sign(oy)*Math.pow(Math.abs(oy),RUBBER.aimPower)*speed*aimScale;
+      const oldVx=ball.vx,oldVy=ball.vy,oldSpinX=ball.spinX,oldSpinY=ball.spinY;
+      const relVx=ball.vx-strokeX,relVy=ball.vy-strokeY;
+      const carry=grip*(RUBBER.carryBlock+(RUBBER.carryDrive-RUBBER.carryBlock)*drive);
+      ball.vx=strokeX*carry+aimX+relVx*(1-grip)*RUBBER.slideResidual;
+      ball.vy=strokeY*carry+aimY+relVy*(1-grip)*RUBBER.slideResidual;
+      const quiet=(1-drive)*sweet;
+      ball.vx*=1-quiet*.85;ball.vy*=1-quiet*.85;
+      const side=len2(ball.vx,ball.vy),cap=speed*(RUBBER.sideBlock+RUBBER.sideDrive*drive);
+      if(side>cap){const s=cap/side;ball.vx*=s;ball.vy*=s}
+      ball.vz=Math.sqrt(Math.max(0,speed*speed-ball.vx*ball.vx-ball.vy*ball.vy))*(1+sweet*RUBBER.depthReward);
+      const brushX=strokeX-oldVx,brushY=strokeY-oldVy;
+      const spinGain=RUBBER.spinFromBrush*(.7+.6*sweet),absorb=(1-drive)*grip;
+      ball.spinX=clamp(brushX*spinGain+strokeX*RUBBER.spinFromStroke-oldSpinX*absorb*.5,-RUBBER.spinClamp,RUBBER.spinClamp);
+      ball.spinY=clamp(-brushY*spinGain-strokeY*RUBBER.spinFromStroke-oldSpinY*absorb*.5,-RUBBER.spinClamp,RUBBER.spinClamp);
+      ball.z=COURT.ballR;
+      g.lastHitActor='human';
+      g.lastHit=true;
     }
 
     return g;
   }
 
-  function createRenderer(canvas) {
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  function createRenderer(canvas){
+    const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
     renderer.setClearColor(0x000000);
-    const scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0x000000, 9, 60);
-    const camera = new THREE.PerspectiveCamera(CAM.fov, 1.5, 0.1, 100);
-    camera.position.set(0, 0, CAM.z);
-    camera.lookAt(0, 0, -COURT.depth / 2);
-
-    const grid = new THREE.Group();
-    scene.add(grid);
-    const gridLines = [];
-
-    function rebuildGrid() {
-      while (grid.children.length) grid.remove(grid.children[0]);
-      gridLines.length = 0;
-      const W = COURT.halfW;
-      const H = COURT.halfH;
-      for (let i = 0; i <= 20; i++) {
-        const z = (i / 20) * COURT.depth;
-        const edge = i === 0 || i === 20;
-        const line = new THREE.Line(
+    const scene=new THREE.Scene();
+    scene.fog=new THREE.Fog(0x000000,9,60);
+    const camera=new THREE.PerspectiveCamera(CAM.fov,1.5,.1,100);
+    camera.position.set(0,0,CAM.z);camera.lookAt(0,0,-COURT.depth/2);
+    const grid=new THREE.Group();scene.add(grid);
+    const gridLines=[];
+    function rebuildGrid(){
+      while(grid.children.length)grid.remove(grid.children[0]);
+      gridLines.length=0;
+      const W=COURT.halfW,H=COURT.halfH;
+      for(let i=0;i<=LINES;i++){
+        const z=(i/LINES)*COURT.depth,edge=i===0||i===LINES;
+        const line=new THREE.Line(
           new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(-W, -H, -z),
-            new THREE.Vector3(W, -H, -z),
-            new THREE.Vector3(W, H, -z),
-            new THREE.Vector3(-W, H, -z),
-            new THREE.Vector3(-W, -H, -z),
+            new THREE.Vector3(-W,-H,-z),new THREE.Vector3(W,-H,-z),
+            new THREE.Vector3(W,H,-z),new THREE.Vector3(-W,H,-z),new THREE.Vector3(-W,-H,-z)
           ]),
-          new THREE.LineBasicMaterial({
-            color: edge ? 0x35c42b : 0x397d29,
-            transparent: true,
-            opacity: edge ? 0.95 : 0.55,
-            depthWrite: false,
-          })
+          new THREE.LineBasicMaterial({color:edge?0x35c42b:0x397d29,transparent:true,opacity:edge?.95:.55,depthWrite:false})
         );
-        grid.add(line);
-        gridLines.push({ line, z, edge });
+        grid.add(line);gridLines.push({line,z,edge});
       }
     }
-
-    const backGrid = new THREE.Group();
-    scene.add(backGrid);
-    const backCells = [];
-
-    function rebuildBackGrid() {
-      while (backGrid.children.length) backGrid.remove(backGrid.children[0]);
-      backCells.length = 0;
-
-      const W = COURT.halfW;
-      const H = COURT.halfH;
-      const cellW = (2 * W) / BACKGRID.cols;
-      const cellH = (2 * H) / BACKGRID.rows;
-      const zBack = -COURT.depth + 0.02;
-
-      for (let r = 0; r < BACKGRID.rows; r++) {
-        for (let c = 0; c < BACKGRID.cols; c++) {
-          const cx = -W + cellW * (c + 0.5);
-          const cy = H - cellH * (r + 0.5);
-
-          const frame = new THREE.Line(
-            new THREE.BufferGeometry().setFromPoints([
-              new THREE.Vector3(cx - cellW / 2, cy - cellH / 2, zBack),
-              new THREE.Vector3(cx + cellW / 2, cy - cellH / 2, zBack),
-              new THREE.Vector3(cx + cellW / 2, cy + cellH / 2, zBack),
-              new THREE.Vector3(cx - cellW / 2, cy + cellH / 2, zBack),
-              new THREE.Vector3(cx - cellW / 2, cy - cellH / 2, zBack),
-            ]),
-            new THREE.LineBasicMaterial({
-              color: BACKGRID.edgeColor,
-              transparent: true,
-              opacity: BACKGRID.edgeOpacity,
-              depthWrite: false,
-            })
-          );
-          backGrid.add(frame);
-
-          const fill = new THREE.Mesh(
-            new THREE.PlaneGeometry(cellW * 0.98, cellH * 0.98),
-            new THREE.MeshBasicMaterial({
-              color: BACKGRID.color,
-              transparent: true,
-              opacity: 0,
-              side: THREE.DoubleSide,
-              depthWrite: false,
-            })
-          );
-          fill.position.set(cx, cy, zBack + 0.01);
-          backGrid.add(fill);
-
-          backCells.push({ mesh: fill, col: c, row: r, intensity: 0, life: 0 });
-        }
+    const backGrid=new THREE.Group();scene.add(backGrid);
+    const backCells=[];
+    function rebuildBackGrid(){
+      while(backGrid.children.length)backGrid.remove(backGrid.children[0]);
+      backCells.length=0;
+      const W=COURT.halfW,H=COURT.halfH,cellW=2*W/BACKGRID.cols,cellH=2*H/BACKGRID.rows,zBack=-COURT.depth+.02;
+      for(let r=0;r<BACKGRID.rows;r++)for(let c=0;c<BACKGRID.cols;c++){
+        const cx=-W+cellW*(c+.5),cy=H-cellH*(r+.5),idx=r*BACKGRID.cols+c;
+        const fill=new THREE.Mesh(
+          new THREE.PlaneGeometry(cellW*.98,cellH*.98),
+          new THREE.MeshBasicMaterial({color:BACKGRID.color,transparent:true,opacity:0,side:THREE.DoubleSide,depthWrite:false})
+        );
+        fill.position.set(cx,cy,zBack+.01);backGrid.add(fill);backCells.push({mesh:fill,col:c,row:r,idx});
       }
     }
-
-    const paddleMesh = new THREE.Group();
-    const paddleDisc = new THREE.Mesh(
-      new THREE.CircleGeometry(COURT.paddleR, 48),
-      new THREE.MeshBasicMaterial({
-        color: 0xcccccc,
-        transparent: true,
-        opacity: 0.12,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-      })
+    const paddleMesh=new THREE.Group();
+    const paddleDisc=new THREE.Mesh(
+      new THREE.CircleGeometry(COURT.paddleR,48),
+      new THREE.MeshBasicMaterial({color:0xcccccc,transparent:true,opacity:.12,side:THREE.DoubleSide,depthWrite:false})
     );
-    paddleDisc.position.z = -0.005;
-    paddleMesh.add(paddleDisc);
-    paddleMesh.renderOrder = 3;
-    scene.add(paddleMesh);
-
-    const geo = new THREE.SphereGeometry(COURT.ballR, 32, 20);
-    for (const f of geo.faces) {
-      const vs = [geo.vertices[f.a], geo.vertices[f.b], geo.vertices[f.c]];
-      const sx = vs.reduce((a, p) => a + p.x, 0);
-      const sy = vs.reduce((a, p) => a + p.y, 0);
-      f.color.setHex(sx * sy > 0 ? 0xcccccc : 0x999999);
+    paddleDisc.position.z=-.005;paddleMesh.add(paddleDisc);paddleMesh.renderOrder=3;scene.add(paddleMesh);
+    const geo=new THREE.SphereGeometry(COURT.ballR,32,20);
+    for(const f of geo.faces){
+      const vs=[geo.vertices[f.a],geo.vertices[f.b],geo.vertices[f.c]];
+      f.color.setHex(vs.reduce((a,p)=>a+p.x,0)*vs.reduce((a,p)=>a+p.y,0)>0?0xcccccc:0x999999);
     }
-    const ballMesh = new THREE.Mesh(
-      geo,
-      new THREE.MeshBasicMaterial({ vertexColors: THREE.FaceColors, fog: false })
-    );
+    const ballMesh=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({vertexColors:THREE.FaceColors,fog:false}));
     scene.add(ballMesh);
+    const axisTmp=new THREE.Vector3(),colBase=new THREE.Color(0x555555),colFlash=new THREE.Color(0xcccccc),colTmp=new THREE.Color();
+    let flashT=0,clock=0;
 
-    const axisTmp = new THREE.Vector3();
-    const colBase = new THREE.Color(0x397d29);
-    const colFlash = new THREE.Color(0x88ff88);
-    const colTmp = new THREE.Color();
-    let flashT = 0;
-
-    function resize() {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      const dpr = window.devicePixelRatio || 1;
-      renderer.setPixelRatio(dpr);
-      renderer.setSize(w, h, false);
-      canvas.width = Math.floor(w * dpr);
-      canvas.height = Math.floor(h * dpr);
-      canvas.style.width = w + 'px';
-      canvas.style.height = h + 'px';
-      renderer.setViewport(0, 0, w, h);
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-      updateExtents(w / h);
-      rebuildGrid();
-      rebuildBackGrid();
+    function resize(){
+      const w=window.innerWidth,h=window.innerHeight,dpr=window.devicePixelRatio||1;
+      renderer.setPixelRatio(dpr);renderer.setSize(w,h,false);
+      canvas.width=Math.floor(w*dpr);canvas.height=Math.floor(h*dpr);
+      canvas.style.width=w+'px';canvas.style.height=h+'px';
+      renderer.setViewport(0,0,w,h);camera.aspect=w/h;camera.updateProjectionMatrix();
+      updateExtents(w/h);rebuildGrid();rebuildBackGrid();
     }
 
-    function pointer(cx, cy) {
-      const r = renderer.domElement.getBoundingClientRect();
-      const p = new THREE.Vector3(
-        ((cx - r.left) / r.width) * 2 - 1,
-        1 - ((cy - r.top) / r.height) * 2,
-        0.5
-      ).unproject(camera);
-      const dir = p.sub(camera.position).normalize();
-      const hit = camera.position.clone().add(dir.multiplyScalar(-camera.position.z / dir.z));
-      return { x: hit.x, y: hit.y };
+    function pointer(cx,cy){
+      const r=renderer.domElement.getBoundingClientRect();
+      const p=new THREE.Vector3(((cx-r.left)/r.width)*2-1,1-((cy-r.top)/r.height)*2,.5).unproject(camera);
+      const dir=p.sub(camera.position).normalize();
+      const hit=camera.position.clone().add(dir.multiplyScalar(-camera.position.z/dir.z));
+      return{x:hit.x,y:hit.y};
     }
 
-    function triggerFlash() {
-      flashT = FLASH.dur;
-    }
+    function triggerFlash(){flashT=FLASH.dur}
 
-    function triggerBackCell(col, row, intensity) {
-      for (const cell of backCells) {
-        if (cell.col === col && cell.row === row) {
-          cell.intensity = intensity;
-          cell.life = BACKGRID.flashDur;
-          return;
+    function render(game,dt){
+      clock+=dt;
+      paddleMesh.position.set(game.player.x,game.player.y,.012);
+      ballMesh.position.set(game.ball.x,game.ball.y,-game.ball.z);
+      if(flashT>0){flashT-=dt;const t=Math.max(0,flashT/FLASH.dur);paddleDisc.material.opacity=.12*(1-t)+FLASH.op*t}
+      else paddleDisc.material.opacity=.12;
+      const target=game.getTarget(),targetFlash=game.getTargetFlash();
+      const pulse=.5+.5*Math.sin(clock*BACKGRID.targetPulseSpeed*Math.PI*2);
+      for(const cell of backCells){
+        let opacity=0,color=BACKGRID.color;
+        if(cell.idx===target){
+          if(targetFlash>0){opacity=BACKGRID.targetHitOpacity*(targetFlash/BACKGRID.targetHitDur);color=BACKGRID.targetHitColor}
+          else{opacity=BACKGRID.targetOpacity+BACKGRID.targetPulse*pulse;color=BACKGRID.targetColor}
         }
+        cell.mesh.material.opacity=opacity;cell.mesh.material.color.setHex(color);
       }
+      const ox=game.ball.vy/COURT.ballR+game.ball.spinX,oy=-game.ball.vx/COURT.ballR+game.ball.spinY,o2=ox*ox+oy*oy;
+      if(o2>1e-12){const len=Math.sqrt(o2);axisTmp.set(ox/len,oy/len,0);ballMesh.rotateOnWorldAxis(axisTmp,len*dt)}
+      const bz=game.ball.z;
+      for(const e of gridLines){
+        const d=Math.abs(bz-e.z),f=d<2.4?1-d/2.4:0;
+        e.line.material.opacity=(e.edge?.95:.55)+f*.4;
+        colTmp.copy(colBase).lerp(colFlash,f*.8);e.line.material.color.copy(colTmp);
+      }
+      renderer.render(scene,camera);
     }
 
-    function render(game, dt) {
-      paddleMesh.position.set(game.player.x, game.player.y, 0.012);
-      ballMesh.position.set(game.ball.x, game.ball.y, -game.ball.z);
-
-      if (flashT > 0) {
-        flashT -= dt;
-        const t = Math.max(0, flashT / FLASH.dur);
-        paddleDisc.material.opacity = 0.12 * (1 - t) + FLASH.op * t;
-      } else {
-        paddleDisc.material.opacity = 0.12;
-      }
-
-      if (game.backGridHit) {
-        triggerBackCell(game.backGridHit.col, game.backGridHit.row, game.backGridHit.intensity);
-      }
-
-      for (const cell of backCells) {
-        if (cell.life > 0) {
-          cell.life -= dt;
-          const t = Math.max(0, cell.life / BACKGRID.flashDur);
-          const peak =
-            BACKGRID.opacityMin + (BACKGRID.opacityMax - BACKGRID.opacityMin) * cell.intensity;
-          cell.mesh.material.opacity = peak * t;
-        } else {
-          cell.mesh.material.opacity = 0;
-        }
-      }
-
-      const rollX = game.ball.vy / COURT.ballR;
-      const rollY = -game.ball.vx / COURT.ballR;
-      const ox = rollX + game.ball.spinX;
-      const oy = rollY + game.ball.spinY;
-      const o2 = ox * ox + oy * oy;
-      if (o2 > 1e-12) {
-        const len = Math.sqrt(o2);
-        axisTmp.set(ox / len, oy / len, 0);
-        ballMesh.rotateOnWorldAxis(axisTmp, len * dt);
-      }
-
-      const bz = game.ball.z;
-      for (const e of gridLines) {
-        const d = Math.abs(bz - e.z);
-        const f = d < 2.4 ? 1 - d / 2.4 : 0;
-        e.line.material.opacity = (e.edge ? 0.95 : 0.55) + f * 0.4;
-        colTmp.copy(colBase).lerp(colFlash, f * 0.8);
-        e.line.material.color.copy(colTmp);
-      }
-
-      renderer.render(scene, camera);
-    }
-
-    return { resize, pointer, render, triggerFlash };
+    return{resize,pointer,render,triggerFlash};
   }
 
-  const canvas = document.getElementById('court');
+  const canvas=document.getElementById('court');
   let renderer;
-  try {
-    renderer = createRenderer(canvas);
-  } catch (e) {
-    document.body.innerHTML =
-      '<h1 style="color:#fff;text-align:center;margin-top:40vh">WebGL not available</h1>';
-    return;
-  }
+  try{renderer=createRenderer(canvas)}
+  catch(e){document.body.innerHTML='<h1 style="color:#fff;text-align:center;margin-top:40vh">WebGL not available</h1>';return}
 
-  const game = createGame();
-  let last = performance.now();
-  let touch = null;
-  let lastPtr = 0;
-
-  window.addEventListener('resize', () => renderer.resize());
+  const game=createGame();
+  let last=performance.now(),touch=null,lastPtr=0;
+  window.addEventListener('resize',()=>renderer.resize());
   renderer.resize();
 
-  function movePtr(e) {
-    const p = renderer.pointer(e.clientX, e.clientY);
-    const dt = Math.max(1 / 240, Math.min(0.1, (e.timeStamp - lastPtr) / 1000 || 1 / 60));
-    lastPtr = e.timeStamp;
-    if (e.pointerType === 'touch') {
-      if (!touch || touch.id !== e.pointerId) return;
-      game.setPaddle(touch.paddleX + (p.x - touch.x), touch.paddleY + (p.y - touch.y), dt);
-    } else {
-      game.setPaddle(p.x, p.y, dt);
-    }
+  function movePtr(e){
+    const p=renderer.pointer(e.clientX,e.clientY);
+    const dt=Math.max(1/240,Math.min(.1,(e.timeStamp-lastPtr)/1000||1/60));
+    lastPtr=e.timeStamp;
+    if(e.pointerType==='touch'){
+      if(!touch||touch.id!==e.pointerId)return;
+      game.setPaddle(touch.paddleX+(p.x-touch.x),touch.paddleY+(p.y-touch.y),dt);
+    }else game.setPaddle(p.x,p.y,dt);
   }
 
-  canvas.addEventListener('pointermove', movePtr);
-  canvas.addEventListener('pointerdown', (e) => {
-    if (e.pointerType === 'touch') {
-      const p = renderer.pointer(e.clientX, e.clientY);
-      touch = {
-        id: e.pointerId,
-        x: p.x,
-        y: p.y,
-        paddleX: game.player.x,
-        paddleY: game.player.y,
-      };
+  canvas.addEventListener('pointermove',movePtr);
+  canvas.addEventListener('pointerdown',e=>{
+    if(e.pointerType==='touch'){
+      const p=renderer.pointer(e.clientX,e.clientY);
+      touch={id:e.pointerId,x:p.x,y:p.y,paddleX:game.player.x,paddleY:game.player.y};
       canvas.setPointerCapture(e.pointerId);
-    } else {
-      movePtr(e);
-    }
-    if (game.state === 'ready') game.serve();
+    }else movePtr(e);
+    if(game.state==='ready')game.serve();
     e.preventDefault();
   });
-  for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture'])
-    canvas.addEventListener(ev, () => {
-      touch = null;
-    });
-
-  window.addEventListener('keydown', (e) => {
-    if (e.key === ' ' && !e.repeat) {
-      e.preventDefault();
-      if (game.state === 'ready') game.serve();
-    }
+  for(const ev of['pointerup','pointercancel','lostpointercapture'])canvas.addEventListener(ev,()=>{touch=null});
+  window.addEventListener('keydown',e=>{
+    if(e.key===' '&&!e.repeat){e.preventDefault();if(game.state==='ready')game.serve()}
   });
 
-  function frame(t) {
-    const dt = Math.min(0.05, Math.max(0, (t - last) / 1000));
-    last = t;
-    game.step(dt);
-    if (game.lastHit) renderer.triggerFlash();
-    renderer.render(game, dt);
-    requestAnimationFrame(frame);
+  function frame(t){
+    const dt=Math.min(.05,Math.max(0,(t-last)/1000));
+    last=t;game.step(dt);
+    if(game.lastHit)renderer.triggerFlash();
+    renderer.render(game,dt);requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 })();
