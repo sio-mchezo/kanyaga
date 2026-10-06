@@ -9,9 +9,35 @@
     html,body{width:100%;height:100%}
     body{background:#000;overflow:hidden;font-family:system-ui,sans-serif}
     canvas{display:block;width:100vw;height:100vh;touch-action:none;cursor:none}
-  </style>
+    #fsBtn{
+      position:fixed;
+      top:14px;
+      right:14px;
+      z-index:10;
+      width:40px;
+      height:40px;
+      border-radius:8px;
+      border:none;
+      background:rgba(20,20,20,.55);
+      color:#ddd;
+      font-size:18px;
+      line-height:1;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      cursor:pointer;
+      -webkit-tap-highlight-color:transparent;
+      backdrop-filter:blur(4px);
+      transition:background .15s,color .15s,border-color .15s;
+      touch-action:manipulation;
+    }
+    #fsBtn:hover{background:rgba(40,40,40,.75);color:#fff;border-color:rgba(255,255,255,.35)}
+    #fsBtn:active{background:rgba(60,60,60,.9)}
+    #fsBtn svg{width:20px;height:20px;display:block;pointer-events:none}
+      </style>
 </head>
 <body>
+  <button id="fsBtn" aria-label="Toggle fullscreen" title="Toggle fullscreen"></button>
   <canvas id="court"></canvas>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r109/three.min.js"></script>
   <script>
@@ -403,6 +429,36 @@
       game.setPaddle(touch.paddleX+(p.x-touch.x),touch.paddleY+(p.y-touch.y),dt);
     }else game.setPaddle(p.x,p.y,dt);
   }
+
+
+  const fsBtn=document.getElementById('fsBtn');
+  const ICON_ENTER='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V5a1 1 0 0 1 1-1h4"/><path d="M20 9V5a1 1 0 0 0-1-1h-4"/><path d="M4 15v4a1 1 0 0 0 1 1h4"/><path d="M20 15v4a1 1 0 0 1-1 1h-4"/></svg>';
+  const ICON_EXIT ='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4v4a1 1 0 0 1-1 1H4"/><path d="M15 4v4a1 1 0 0 0 1 1h4"/><path d="M9 20v-4a1 1 0 0 0-1-1H4"/><path d="M15 20v-4a1 1 0 0 1 1-1h4"/></svg>';
+
+  function updateFsIcon(){
+    const active=!!document.fullscreenElement;
+    fsBtn.innerHTML=active?ICON_EXIT:ICON_ENTER;
+  }
+
+  fsBtn.addEventListener('click',e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    if(!document.fullscreenElement){
+      const el=document.documentElement;
+      const req=el.requestFullscreen||el.webkitRequestFullscreen||el.msRequestFullscreen;
+      if(req)req.call(el).catch(()=>{});
+    }else{
+      const exit=document.exitFullscreen||document.webkitExitFullscreen||document.msExitFullscreen;
+      if(exit)exit.call(document).catch(()=>{});
+    }
+  });
+
+  fsBtn.addEventListener('pointerdown',e=>e.stopPropagation());
+
+  for(const ev of['fullscreenchange','webkitfullscreenchange','msfullscreenchange'])
+    document.addEventListener(ev,()=>{updateFsIcon();renderer.resize()});
+
+  updateFsIcon();
 
   canvas.addEventListener('pointermove',movePtr);
   canvas.addEventListener('pointerdown',e=>{
