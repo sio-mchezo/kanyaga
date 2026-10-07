@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+	<style>
+		html,body{margin:0;height:100%;overflow:hidden;background:#000}
+		canvas{display:block}
+	</style>
+</head>
+<body>
+	<canvas id="c"></canvas>
+	<script>
+		const c=document.getElementById('c'),x=c.getContext('2d');
+		let p=[],mouse={x:0,y:0,down:false};
+		function resize(){c.width=innerWidth;c.height=innerHeight}
+		addEventListener('resize',resize);resize();
+		function draw(){
+			x.clearRect(0,0,c.width,c.height);
+			x.fillStyle='#fff';x.font='20px monospace';
+			p.forEach(o=>x.fillText(o.x+' . '+o.y,o.x,o.y));
+			if(mouse.down)x.fillText(mouse.x+' . '+mouse.y,mouse.x,mouse.y);
+		}
+		c.addEventListener('mousemove',e=>{mouse.x=e.clientX;mouse.y=e.clientY;draw()});
+		c.addEventListener('mousedown',e=>{mouse.down=true;mouse.x=e.clientX;mouse.y=e.clientY;draw()});
+		addEventListener('mouseup',()=>{mouse.down=false;draw()});
+		c.addEventListener('touchstart',e=>{
+			e.preventDefault();
+			for(const t of e.changedTouches){
+				let i=p.findIndex(o=>o.id===t.identifier);
+				if(i<0)p.push({id:t.identifier,x:t.clientX,y:t.clientY});
+				else{p[i].x=t.clientX;p[i].y=t.clientY}
+			}
+			draw();
+		},{passive:false});
+		c.addEventListener('touchmove',e=>{
+			e.preventDefault();
+			for(const t of e.changedTouches){
+				let o=p.find(o=>o.id===t.identifier);
+				if(o){o.x=t.clientX;o.y=t.clientY}
+			}
+			draw();
+		},{passive:false});
+		c.addEventListener('touchend',e=>{
+			e.preventDefault();
+			for(const t of e.changedTouches)p=p.filter(o=>o.id!==t.identifier);
+				draw();
+		},{passive:false});
+		c.addEventListener('touchcancel',e=>{
+			e.preventDefault();
+			for(const t of e.changedTouches)p=p.filter(o=>o.id!==t.identifier);
+				draw();
+		},{passive:false});
+	</script>
+</body>
+</html>
