@@ -28,7 +28,7 @@
 			for(const t of e.changedTouches){
 				let i=p.findIndex(o=>o.id===t.identifier);
 				if(i<0)p.push({id:t.identifier,x:t.clientX,y:t.clientY});
-				else{p[i].x=t.clientX;p[i].y=t.clientY}
+				else{p[i].x=Math.floor(t.clientX);p[i].y=Math.floor(t.clientY);}
 			}
 			draw();
 		},{passive:false});
