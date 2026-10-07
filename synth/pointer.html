@@ -36,7 +36,7 @@
 			e.preventDefault();
 			for(const t of e.changedTouches){
 				let o=p.find(o=>o.id===t.identifier);
-				if(o){o.x=t.clientX;o.y=t.clientY}
+				if(o){o.x=Math.floor(t.clientX);o.y=Math.floor(t.clientY);}
 			}
 			draw();
 		},{passive:false});
