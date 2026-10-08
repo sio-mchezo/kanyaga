@@ -74,7 +74,7 @@
   <div class="arrow" id="next">▶</div>
 </div>
 
-<script src="ammo.wasm.js"></script>
+<script src="../backup/three.js-dev/examples/js/libs/ammo.wasm.js"></script>
 <script async src="https://unpkg.com/es-module-shims@1.3.6/dist/es-module-shims.js"></script>
 <script type="importmap">
 {
@@ -395,10 +395,10 @@ function initPhysics() {
 
 function createObjects() {
   clothWidth = 16;
-  clothHeight = 11;
-  clothNumSegmentsZ = clothWidth;
-  clothNumSegmentsY = clothHeight;
-  clothPos = new THREE.Vector3(-clothWidth / 2, 9, 0);
+  clothHeight = 10;
+  clothNumSegmentsZ = clothWidth*2;
+  clothNumSegmentsY = clothHeight*2;
+  clothPos = new THREE.Vector3(-clothWidth / 2, 11, 0);
 
   const clothGeometry = new THREE.PlaneGeometry(clothWidth, clothHeight, clothNumSegmentsZ, clothNumSegmentsY);
 
@@ -411,9 +411,24 @@ function createObjects() {
   cloth.receiveShadow = true;
   scene.add(cloth);
 
+  // Invisible kinematic arm at the top edge
+  const armShape = new Ammo.btBoxShape(new Ammo.btVector3(clothWidth * 0.5, 0.1, 0.1));
+  const armTransform = new Ammo.btTransform();
+  armTransform.setIdentity();
+  armTransform.setOrigin(new Ammo.btVector3(clothPos.x + clothWidth / 2, clothPos.y, clothPos.z));
+
+  const armMotionState = new Ammo.btDefaultMotionState(armTransform);
+  const armInertia = new Ammo.btVector3(0, 0, 0);
+  const armInfo = new Ammo.btRigidBodyConstructionInfo(0, armMotionState, armShape, armInertia);
+  const armBody = new Ammo.btRigidBody(armInfo);
+  armBody.setCollisionFlags(armBody.getCollisionFlags() | 2); // CF_KINEMATIC_OBJECT
+  armBody.setActivationState(4); // DISABLE_DEACTIVATION
+  physicsWorld.addRigidBody(armBody);
+
+  // Cloth soft body
   const softBodyHelpers = new Ammo.btSoftBodyHelpers();
-  const clothCorner00 = new Ammo.btVector3(clothPos.x, clothPos.y, clothPos.z);
-  const clothCorner01 = new Ammo.btVector3(clothPos.x + clothWidth, clothPos.y, clothPos.z);
+  const clothCorner00 = new Ammo.btVector3(clothPos.x-2, clothPos.y, clothPos.z);
+  const clothCorner01 = new Ammo.btVector3(clothPos.x + clothWidth+2, clothPos.y, clothPos.z);
   const clothCorner10 = new Ammo.btVector3(clothPos.x, clothPos.y - clothHeight, clothPos.z);
   const clothCorner11 = new Ammo.btVector3(clothPos.x + clothWidth, clothPos.y - clothHeight, clothPos.z);
   const clothSoftBody = softBodyHelpers.CreatePatch(
@@ -421,20 +436,28 @@ function createObjects() {
     clothCorner00, clothCorner01, clothCorner10, clothCorner11,
     clothNumSegmentsZ + 1, clothNumSegmentsY + 1, 0, true
   );
+  clothSoftBody.get_m_materials().at(0).set_m_kLST(0.4);
+  clothSoftBody.get_m_materials().at(0).set_m_kAST(0.4);
   const sbConfig = clothSoftBody.get_m_cfg();
   sbConfig.set_viterations(5);
   sbConfig.set_piterations(5);
+  
 
-  clothSoftBody.setTotalMass(2.0, false);
+  clothSoftBody.setTotalMass(1.0, false);
   Ammo.castObject(clothSoftBody, Ammo.btCollisionObject).getCollisionShape().setMargin(0.05 * 3);
   physicsWorld.addSoftBody(clothSoftBody, 1, -1);
   cloth.userData.physicsBody = clothSoftBody;
   clothSoftBody.setActivationState(4);
 
-  const topRowCount = clothNumSegmentsZ + 1;
-  for (let i = 0; i < topRowCount; i++) {
+  
+  const influence = 0.5;
+  clothSoftBody.appendAnchor(0, armBody, false, influence);
+  clothSoftBody.appendAnchor(clothNumSegmentsZ, armBody, false, influence);
+  
+  for (let i = 0; i < 30; i++) {
     clothSoftBody.setMass(i, 0);
   }
+
 }
 
 function initPointer() {
@@ -486,11 +509,9 @@ function updatePhysics(deltaTime) {
   const numNodes = nodes.size();
 
   if (pointerStrength > 0.001) {
-    // const radius = 5.0;
-    // const force = pointerStrength * 80.0;
 
     const radius = 5.0;
-    const force = pointerStrength * 40.0;
+    const force = pointerStrength * 20.0;
 
     for (let i = 0; i < numNodes; i++) {
       const node = nodes.at(i);
@@ -517,7 +538,7 @@ function updatePhysics(deltaTime) {
       if (node.get_m_im() === 0) continue;
       node.get_m_v().setZ(node.get_m_v().z() + clothImpulse * deltaTime * 10);
     }
-    clothImpulse *= 0.85;
+    clothImpulse *= 0.65;
   }
 
   physicsWorld.stepSimulation(deltaTime, 10);
