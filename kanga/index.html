@@ -198,6 +198,16 @@ function drawPhrase(text, eng) {
   const boxX = (canvas.width - boxW) / 2;
   const boxY = (canvas.height - boxH) / 2 + canvas.height * 0.3;
 
+  // Subtle gradient: 5% black bottom-left, transparent top-right
+  const grad = ctx.createLinearGradient(0, canvas.height, canvas.width, 0);
+  grad.addColorStop(0, 'rgba(0, 0, 0, 0.3)');
+  grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.save();
+  ctx.globalAlpha = 0.9;
+
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(boxX, boxY, boxW, boxH);
   ctx.strokeStyle = '#000000';
@@ -218,7 +228,7 @@ function drawPhrase(text, eng) {
 
   if (eng) {
     ctx.save();
-    ctx.globalAlpha = 0.6;
+    ctx.globalAlpha = 0.6 * 0.9;
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -243,6 +253,8 @@ function drawPhrase(text, eng) {
 
     ctx.restore();
   }
+
+  ctx.restore();
 
   if (clothTexture) clothTexture.needsUpdate = true;
 }
