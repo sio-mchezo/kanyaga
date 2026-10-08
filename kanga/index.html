@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+<title>Kanga Cloth</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#111111}
+  #container{position:fixed;inset:0}
+  #num{
+    position:fixed;
+    top:12px;
+    left:16px;
+    color:#fff;
+    font-family:sans-serif;
+    font-size:22px;
+    z-index:10;
+    pointer-events:none;
+  }
+</style>
+</head>
+<body>
+<div id="container"></div>
+<div id="num">1</div>
+
+<script src="ammo.wasm.js"></script>
+<script async src="https://unpkg.com/es-module-shims@1.3.6/dist/es-module-shims.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.150.0/build/three.module.js"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+let container, camera, scene, renderer;
+const clock = new THREE.Clock();
+
+const gravityConstant = -9.8;
+let physicsWorld;
+let cloth;
+let transformAux1;
+let clothWidth, clothHeight, clothNumSegmentsZ, clothNumSegmentsY, clothPos;
+
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+const pointer3D = new THREE.Vector3();
+let pointerActive = false;
+let pointerStrength = 0;
+
+let sayings = [];
+let currentIndex = 0;
+let clothTexture;
+let clothCanvas, clothCtx;
+let cachedColor = null;
+
+Ammo().then(function (AmmoLib) {
+  window.Ammo = AmmoLib;
+  init();
+  animate();
+});
+
+function randomKangaColor() {
+  const h = Math.random() * 360;
+  const s = 55 + Math.random() * 25;
+  const l = 35 + Math.random() * 15;
+  return `hsl(${h}, ${s}%, ${l}%)`;
+}
+
+function makeClothTexture() {
+  clothCanvas = document.createElement('canvas');
+  clothCanvas.width = 1024;
+  clothCanvas.height = 512;
+  clothCtx = clothCanvas.getContext('2d');
+
+  drawPhrase('');
+
+  clothTexture = new THREE.CanvasTexture(clothCanvas);
+  clothTexture.anisotropy = 8;
+  return clothTexture;
+}
+
+function wrapText(ctx, text, maxWidth) {
+  const words = text.split(' ');
+  const lines = [];
+  let current = '';
+
+  for (const word of words) {
+    const test = current ? current + ' ' + word : word;
+    if (ctx.measureText(test).width <= maxWidth) {
+      current = test;
+    } else {
+      if (current) lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+function drawPhrase(text) {
+  const ctx = clothCtx;
+  const canvas = clothCanvas;
+
+  if (!cachedColor) cachedColor = randomKangaColor();
+  ctx.fillStyle = cachedColor;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  if (!text) {
+    if (clothTexture) clothTexture.needsUpdate = true;
+    return;
+  }
+
+  const targetBoxW = canvas.width * 0.4;
+  const maxTextW = targetBoxW - 30;
+
+  const wordCount = text.trim().split(/\s+/).length;
+  const maxLines = wordCount <= 8 ? 1 : 2;
+
+  let fontSize = 60;
+  let lines = [];
+
+  while (fontSize > 14) {
+    ctx.font = `bold ${fontSize}px sans-serif`;
+    lines = maxLines === 1 ? [text] : wrapText(ctx, text, maxTextW);
+    const fitsWidth = lines.every(l => ctx.measureText(l).width <= maxTextW);
+    if (fitsWidth && lines.length <= maxLines) break;
+    fontSize -= 1;
+  }
+
+  ctx.font = `bold ${fontSize}px sans-serif`;
+
+  const lineHeight = fontSize * 1.15;
+  const textH = lineHeight * lines.length;
+  let maxLineW = 0;
+  for (const l of lines) {
+    const w = ctx.measureText(l).width;
+    if (w > maxLineW) maxLineW = w;
+  }
+
+  const pad = 12;
+  const boxW = maxLineW + pad * 2;
+  const boxH = textH + pad * 2;
+  const boxX = (canvas.width - boxW) / 2;
+  const boxY = (canvas.height - boxH) / 2 + canvas.height * 0.3;
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(boxX, boxY, boxW, boxH);
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 6;
+  ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+  ctx.fillStyle = '#000000';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const cx = canvas.width / 2;
+  const cy = boxY + boxH / 2;
+  const startY = cy - (lines.length - 1) * lineHeight / 2;
+
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillText(lines[i], cx, startY + i * lineHeight);
+  }
+
+  if (clothTexture) clothTexture.needsUpdate = true;
+}
+
+function setSaying(i) {
+  if (!sayings.length) return;
+  currentIndex = (i + sayings.length) % sayings.length;
+  const s = sayings[currentIndex];
+  cachedColor = randomKangaColor();
+  drawPhrase(s.swa);
+  document.getElementById('num').textContent = s.num;
+}
+
+function init() {
+  initGraphics();
+  initPhysics();
+  createObjects();
+  initPointer();
+  initScroll();
+  loadSayings();
+}
+
+function loadSayings() {
+  fetch('kangas.json')
+    .then(r => r.json())
+    .then(data => {
+      sayings = data.kanga_sayings || [];
+      if (sayings.length) setSaying(0);
+    })
+    .catch(() => {
+      sayings = [{ num: 1, swa: 'Haraka haraka haina baraka', eng: '' }];
+      setSaying(0);
+    });
+}
+
+function initScroll() {
+  window.addEventListener('wheel', e => {
+    if (!sayings.length) return;
+    setSaying(currentIndex + (e.deltaY > 0 ? 1 : -1));
+  }, { passive: true });
+
+  let touchStartY = 0;
+  window.addEventListener('touchstart', e => {
+    touchStartY = e.touches[0].clientY;
+  }, { passive: true });
+  window.addEventListener('touchend', e => {
+    const dy = touchStartY - e.changedTouches[0].clientY;
+    if (Math.abs(dy) < 40) return;
+    setSaying(currentIndex + (dy > 0 ? 1 : -1));
+  }, { passive: true });
+}
+
+function initGraphics() {
+  container = document.getElementById('container');
+
+  camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.2, 2000);
+  camera.position.set(0, 3.5, 10);
+  camera.lookAt(0, 3.5, 0);
+
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x111111);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  container.appendChild(renderer.domElement);
+
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+  scene.add(ambientLight);
+
+  const light = new THREE.DirectionalLight(0xffffff, 1);
+  light.position.set(-7, 10, 15);
+  light.castShadow = true;
+  const d = 15;
+  light.shadow.camera.left = -d;
+  light.shadow.camera.right = d;
+  light.shadow.camera.top = d;
+  light.shadow.camera.bottom = -d;
+  light.shadow.camera.near = 2;
+  light.shadow.camera.far = 50;
+  light.shadow.mapSize.set(1024, 1024);
+  light.shadow.bias = -0.003;
+  scene.add(light);
+
+  window.addEventListener('resize', onWindowResize);
+}
+
+function initPhysics() {
+  const collisionConfiguration = new Ammo.btSoftBodyRigidBodyCollisionConfiguration();
+  const dispatcher = new Ammo.btCollisionDispatcher(collisionConfiguration);
+  const broadphase = new Ammo.btDbvtBroadphase();
+  const solver = new Ammo.btSequentialImpulseConstraintSolver();
+  const softBodySolver = new Ammo.btDefaultSoftBodySolver();
+  physicsWorld = new Ammo.btSoftRigidDynamicsWorld(dispatcher, broadphase, solver, collisionConfiguration, softBodySolver);
+  physicsWorld.setGravity(new Ammo.btVector3(0, gravityConstant, 0));
+  physicsWorld.getWorldInfo().set_m_gravity(new Ammo.btVector3(0, gravityConstant, 0));
+  transformAux1 = new Ammo.btTransform();
+}
+
+function createObjects() {
+  clothWidth = 16;
+  clothHeight = 9;
+  clothNumSegmentsZ = clothWidth * 3;
+  clothNumSegmentsY = clothHeight * 3;
+  clothPos = new THREE.Vector3(-clothWidth / 2, 8, 0);
+
+  const clothGeometry = new THREE.PlaneGeometry(clothWidth, clothHeight, clothNumSegmentsZ, clothNumSegmentsY);
+
+  const clothMaterial = new THREE.MeshLambertMaterial({
+    map: makeClothTexture(),
+    side: THREE.DoubleSide
+  });
+  cloth = new THREE.Mesh(clothGeometry, clothMaterial);
+  cloth.castShadow = true;
+  cloth.receiveShadow = true;
+  scene.add(cloth);
+
+  const softBodyHelpers = new Ammo.btSoftBodyHelpers();
+  const clothCorner00 = new Ammo.btVector3(clothPos.x, clothPos.y, clothPos.z);
+  const clothCorner01 = new Ammo.btVector3(clothPos.x + clothWidth, clothPos.y, clothPos.z);
+  const clothCorner10 = new Ammo.btVector3(clothPos.x, clothPos.y - clothHeight, clothPos.z);
+  const clothCorner11 = new Ammo.btVector3(clothPos.x + clothWidth, clothPos.y - clothHeight, clothPos.z);
+  const clothSoftBody = softBodyHelpers.CreatePatch(
+    physicsWorld.getWorldInfo(),
+    clothCorner00, clothCorner01, clothCorner10, clothCorner11,
+    clothNumSegmentsZ + 1, clothNumSegmentsY + 1, 0, true
+  );
+  const sbConfig = clothSoftBody.get_m_cfg();
+  sbConfig.set_viterations(5);
+  sbConfig.set_piterations(5);
+
+  clothSoftBody.setTotalMass(2.0, false);
+  Ammo.castObject(clothSoftBody, Ammo.btCollisionObject).getCollisionShape().setMargin(0.05 * 3);
+  physicsWorld.addSoftBody(clothSoftBody, 1, -1);
+  cloth.userData.physicsBody = clothSoftBody;
+  clothSoftBody.setActivationState(4);
+
+  const topRowCount = clothNumSegmentsZ + 1;
+  for (let i = 0; i < topRowCount; i++) {
+    clothSoftBody.setMass(i, 0);
+  }
+}
+
+function initPointer() {
+  window.addEventListener('pointerdown', e => {
+    pointerActive = true;
+    pointerStrength = 1.0;
+    updatePointer(e);
+  });
+  window.addEventListener('pointerup', () => {
+    pointerActive = false;
+    pointerStrength = 0;
+  });
+  window.addEventListener('pointerleave', () => {
+    pointerActive = false;
+    pointerStrength = 0;
+  });
+  window.addEventListener('pointermove', e => {
+    updatePointer(e);
+    if (pointerActive) pointerStrength = 1.0;
+  });
+}
+
+function updatePointer(e) {
+  pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
+  pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+  raycaster.ray.intersectPlane(plane, pointer3D);
+}
+
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  const deltaTime = clock.getDelta();
+  updatePhysics(deltaTime);
+  renderer.render(scene, camera);
+}
+
+function updatePhysics(deltaTime) {
+  if (pointerStrength > 0.001 && cloth) {
+    const softBody = cloth.userData.physicsBody;
+    const nodes = softBody.get_m_nodes();
+    const numNodes = nodes.size();
+    const radius = 5.0;
+    const force = pointerStrength * 80.0;
+
+    for (let i = 0; i < numNodes; i++) {
+      const node = nodes.at(i);
+      if (node.get_m_im() === 0) continue;
+      const pos = node.get_m_x();
+      const dx = pos.x() - pointer3D.x;
+      const dy = pos.y() - pointer3D.y;
+      const dz = pos.z() - pointer3D.z;
+      const distSq = dx * dx + dy * dy + dz * dz;
+      if (distSq < radius * radius) {
+        const dist = Math.sqrt(distSq) + 0.001;
+        const falloff = 1.0 - dist / radius;
+        const f = force * falloff * deltaTime;
+        node.get_m_v().setX(node.get_m_v().x() + (dx / dist) * f * -1);
+        node.get_m_v().setY(node.get_m_v().y() + (dy / dist) * f * -1);
+        node.get_m_v().setZ(node.get_m_v().z() + (dz / dist) * f * -1);
+      }
+    }
+  }
+
+  physicsWorld.stepSimulation(deltaTime, 10);
+
+  const softBody = cloth.userData.physicsBody;
+  const clothPositions = cloth.geometry.attributes.position.array;
+  const numVerts = clothPositions.length / 3;
+  const nodes = softBody.get_m_nodes();
+  let indexFloat = 0;
+
+  for (let i = 0; i < numVerts; i++) {
+    const node = nodes.at(i);
+    const nodePos = node.get_m_x();
+    clothPositions[indexFloat++] = nodePos.x();
+    clothPositions[indexFloat++] = nodePos.y();
+    clothPositions[indexFloat++] = nodePos.z();
+  }
+
+  cloth.geometry.computeVertexNormals();
+  cloth.geometry.attributes.position.needsUpdate = true;
+  cloth.geometry.attributes.normal.needsUpdate = true;
+}
+</script>
+</body>
+</html>
