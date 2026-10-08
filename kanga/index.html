@@ -94,6 +94,7 @@ let physicsWorld;
 let cloth;
 let transformAux1;
 let clothWidth, clothHeight, clothNumSegmentsZ, clothNumSegmentsY, clothPos;
+let clothImpulse = 0;
 
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -222,12 +223,19 @@ function drawPhrase(text, eng) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    const engFontSize = 28;
+    let engFontSize = 28;
     ctx.font = `bold ${engFontSize}px sans-serif`;
-    const engMaxW = canvas.width * 0.8;
-    const engLines = wrapText(ctx, eng, engMaxW);
+    let engLines = wrapText(ctx, eng, boxW);
+
+    while (engLines.length > 2 && engFontSize > 12) {
+      engFontSize -= 1;
+      ctx.font = `bold ${engFontSize}px sans-serif`;
+      engLines = wrapText(ctx, eng, boxW);
+    }
+
     const engLineHeight = engFontSize * 1.2;
-    const engStartY = canvas.height / 2 - (engLines.length - 1) * engLineHeight / 2;
+    const engCenterY = canvas.height / 2 - 10;
+    const engStartY = engCenterY - (engLines.length - 1) * engLineHeight / 2;
 
     for (let i = 0; i < engLines.length; i++) {
       ctx.fillText(engLines[i], canvas.width / 2, engStartY + i * engLineHeight);
@@ -246,6 +254,7 @@ function setSaying(i) {
   cachedColor = randomKangaColor();
   drawPhrase(s.swa, s.eng);
   document.getElementById('num').value = s.num;
+  clothImpulse = 0.05;
 }
 
 function init() {
@@ -316,18 +325,6 @@ function initControls() {
     if (!sayings.length) return;
     setSaying(currentIndex + (e.deltaY > 0 ? 1 : -1));
   }, { passive: true });
-
-  let touchStartY = 0;
-  window.addEventListener('touchstart', e => {
-    if (e.target.closest('#topbar')) return;
-    touchStartY = e.touches[0].clientY;
-  }, { passive: true });
-  window.addEventListener('touchend', e => {
-    if (e.target.closest('#topbar')) return;
-    const dy = touchStartY - e.changedTouches[0].clientY;
-    if (Math.abs(dy) < 40) return;
-    setSaying(currentIndex + (dy > 0 ? 1 : -1));
-  }, { passive: true });
 }
 
 function initGraphics() {
@@ -344,24 +341,30 @@ function initGraphics() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   container.appendChild(renderer.domElement);
 
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.15);
   scene.add(ambientLight);
 
-  const light = new THREE.DirectionalLight(0xffffff, 1);
-  light.position.set(-7, 10, 15);
+  const light = new THREE.DirectionalLight(0xffffff, 1.6);
+  light.position.set(0, 12, 8);
+  light.shadow.intensity = 0.7;
+  light.target.position.set(0, 3.5, 0);
   light.castShadow = true;
   const d = 15;
   light.shadow.camera.left = -d;
   light.shadow.camera.right = d;
   light.shadow.camera.top = d;
   light.shadow.camera.bottom = -d;
-  light.shadow.camera.near = 2;
-  light.shadow.camera.far = 50;
-  light.shadow.mapSize.set(1024, 1024);
-  light.shadow.bias = -0.003;
+  light.shadow.camera.near = 1;
+  light.shadow.camera.far = 40;
+  light.shadow.mapSize.set(2048, 2048);
+  light.shadow.bias = -0.0005;
+  light.shadow.normalBias = 0.02;
+  light.shadow.radius = 4;
   scene.add(light);
+  scene.add(light.target);
 
   window.addEventListener('resize', onWindowResize);
 }
@@ -380,10 +383,10 @@ function initPhysics() {
 
 function createObjects() {
   clothWidth = 16;
-  clothHeight = 9;
-  clothNumSegmentsZ = clothWidth * 3;
-  clothNumSegmentsY = clothHeight * 3;
-  clothPos = new THREE.Vector3(-clothWidth / 2, 8, 0);
+  clothHeight = 11;
+  clothNumSegmentsZ = clothWidth;
+  clothNumSegmentsY = clothHeight;
+  clothPos = new THREE.Vector3(-clothWidth / 2, 9, 0);
 
   const clothGeometry = new THREE.PlaneGeometry(clothWidth, clothHeight, clothNumSegmentsZ, clothNumSegmentsY);
 
@@ -466,12 +469,16 @@ function animate() {
 }
 
 function updatePhysics(deltaTime) {
-  if (pointerStrength > 0.001 && cloth) {
-    const softBody = cloth.userData.physicsBody;
-    const nodes = softBody.get_m_nodes();
-    const numNodes = nodes.size();
+  const softBody = cloth.userData.physicsBody;
+  const nodes = softBody.get_m_nodes();
+  const numNodes = nodes.size();
+
+  if (pointerStrength > 0.001) {
+    // const radius = 5.0;
+    // const force = pointerStrength * 80.0;
+
     const radius = 5.0;
-    const force = pointerStrength * 80.0;
+    const force = pointerStrength * 40.0;
 
     for (let i = 0; i < numNodes; i++) {
       const node = nodes.at(i);
@@ -492,12 +499,19 @@ function updatePhysics(deltaTime) {
     }
   }
 
+  if (clothImpulse > 0.001) {
+    for (let i = 0; i < numNodes; i++) {
+      const node = nodes.at(i);
+      if (node.get_m_im() === 0) continue;
+      node.get_m_v().setZ(node.get_m_v().z() + clothImpulse * deltaTime * 10);
+    }
+    clothImpulse *= 0.85;
+  }
+
   physicsWorld.stepSimulation(deltaTime, 10);
 
-  const softBody = cloth.userData.physicsBody;
   const clothPositions = cloth.geometry.attributes.position.array;
   const numVerts = clothPositions.length / 3;
-  const nodes = softBody.get_m_nodes();
   let indexFloat = 0;
 
   for (let i = 0; i < numVerts; i++) {
