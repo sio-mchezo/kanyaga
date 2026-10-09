@@ -34,7 +34,7 @@
     #fsBtn:hover{background:rgba(40,40,40,.75);color:#fff;border-color:rgba(255,255,255,.35)}
     #fsBtn:active{background:rgba(60,60,60,.9)}
     #fsBtn svg{width:20px;height:20px;display:block;pointer-events:none}
-      </style>
+  </style>
 </head>
 <body>
   <button id="fsBtn" aria-label="Toggle fullscreen" title="Toggle fullscreen"></button>
@@ -58,6 +58,8 @@
   const COURT_FORCE={funnelStart:.55,funnelForce:26,wallDamp:.78,wallCrossDamp:.92,wallSpinDamp:.75,farWallDamp:.95,farWallCrossDamp:.92,farWallSpinDamp:.85};
   const RUBBER={hitBoost:.9,gripMin:.84,gripMax:.99,sweetPower:1.6,aimBase:.1,aimEdgeBonus:.08,aimPower:2.6,driveRef:18,carryBlock:.35,carryDrive:1.05,sideBlock:.26,sideDrive:.28,depthReward:.08,spinFromBrush:.7,spinFromStroke:.5,spinClamp:55,slideResidual:.05};
   const BACKGRID={cols:3,rows:3,color:0x333333,targetColor:0x555555,targetOpacity:.4,targetPulse:.1,targetPulseSpeed:1,targetHitDur:.12,targetHitOpacity:1,targetHitColor:0xffffff};
+
+  const TRAIL={len:24,rows:48,radius:0.42,opacity:.4,color:0xbbbbbb};
 
   const clamp=(v,lo,hi)=>v<lo?lo:v>hi?hi:v;
   const sign=v=>v<0?-1:1;
@@ -189,7 +191,6 @@
           ball.spinX=nx;ball.spinY=ny;
         }
       }
-      
 
       const z0=ball.z;
       ball.x+=ball.vx*dt;ball.y+=ball.vy*dt;ball.z+=ball.vz*dt;
@@ -325,7 +326,7 @@
             new THREE.Vector3(-W,-H,-z),new THREE.Vector3(W,-H,-z),
             new THREE.Vector3(W,H,-z),new THREE.Vector3(-W,H,-z),new THREE.Vector3(-W,-H,-z)
           ]),
-          new THREE.LineBasicMaterial({color:edge?0x35c42b:0x397d29,transparent:true,opacity:edge?.95:.55,depthWrite:false})
+          new THREE.LineBasicMaterial({color:0xffffff,depthWrite:false})
         );
         grid.add(line);gridLines.push({line,z,edge});
       }
@@ -358,6 +359,86 @@
     }
     const ballMesh=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({vertexColors:THREE.FaceColors,fog:false}));
     scene.add(ballMesh);
+
+    // --- Ball trail ribbon ---
+    const trailGeom=new THREE.PlaneGeometry(1,1,1,TRAIL.rows-1);
+    const trailMesh=new THREE.Mesh(
+      trailGeom,
+      new THREE.MeshBasicMaterial({
+        color:0x666666,
+        side:THREE.DoubleSide,
+        transparent:true,
+        opacity:1,
+        depthWrite:false,
+        fog:true
+      })
+    );
+    trailMesh.frustumCulled=false;
+    trailMesh.renderOrder=1;
+    scene.add(trailMesh);
+
+    const trailHistory=[];
+    for(let i=0;i<TRAIL.len;i++)trailHistory.push(new THREE.Vector3(0,0,0));
+    let trailSeeded=false;
+
+    const _a=new THREE.Vector3();
+    const _b=new THREE.Vector3();
+    const _p=new THREE.Vector3();
+    const _dir=new THREE.Vector3();
+    const _perp=new THREE.Vector3();
+    const _fallback=new THREE.Vector3(1,0,0);
+
+    function updateTrail(){
+      const bx=ballMesh.position.x,by=ballMesh.position.y,bz=ballMesh.position.z;
+      if(!trailSeeded){
+        for(const p of trailHistory)p.set(bx,by,bz);
+        trailSeeded=true;
+      }
+      for(let i=0;i<TRAIL.len-1;i++)trailHistory[i].copy(trailHistory[i+1]);
+      trailHistory[TRAIL.len-1].set(bx,by,bz);
+
+      const verts=trailGeom.vertices;
+      const span=TRAIL.len-1;
+
+      for(let i=0;i<TRAIL.rows;i++){
+        const t=i/(TRAIL.rows-1);
+        const f0=Math.max(0,t*span-0.5);
+        const f1=Math.min(span,t*span+0.5);
+        const i0=Math.floor(f0),i1=Math.min(span,i0+1);
+        const s0=f0-i0,s1=f1-i1;
+
+        _a.copy(trailHistory[i0]).lerp(trailHistory[i1],s0);
+        _b.copy(trailHistory[i1]).lerp(trailHistory[Math.min(span,i1+1)],s1);
+
+        _dir.subVectors(_b,_a);
+        if(_dir.lengthSq()<1e-8)_dir.copy(_fallback);
+        _dir.normalize();
+
+        _perp.set(-_dir.y,_dir.x,0);
+        if(_perp.lengthSq()<1e-8)_perp.copy(_fallback);
+        _perp.normalize();
+
+        const w=TRAIL.radius*t;
+        const ic=Math.floor(t*span);
+        const sc=t*span-ic;
+        _p.copy(trailHistory[ic]).lerp(trailHistory[Math.min(span,ic+1)],sc);
+
+        const vL=verts[i*2+0];
+        const vR=verts[i*2+1];
+
+        vL.x=_p.x+_perp.x*w;
+        vL.y=_p.y+_perp.y*w;
+        vL.z=_p.z+_perp.z*w;
+
+        vR.x=_p.x-_perp.x*w;
+        vR.y=_p.y-_perp.y*w;
+        vR.z=_p.z-_perp.z*w;
+      }
+
+      trailGeom.verticesNeedUpdate=true;
+      trailGeom.computeBoundingSphere();
+    }
+
     const axisTmp=new THREE.Vector3(),colBase=new THREE.Color(0x555555),colFlash=new THREE.Color(0xcccccc),colTmp=new THREE.Color();
     let flashT=0,clock=0;
 
@@ -404,6 +485,7 @@
         e.line.material.opacity=(e.edge?.95:.55)+f*.4;
         colTmp.copy(colBase).lerp(colFlash,f*.8);e.line.material.color.copy(colTmp);
       }
+      updateTrail();
       renderer.render(scene,camera);
     }
 
@@ -429,7 +511,6 @@
       game.setPaddle(touch.paddleX+(p.x-touch.x),touch.paddleY+(p.y-touch.y),dt);
     }else game.setPaddle(p.x,p.y,dt);
   }
-
 
   const fsBtn=document.getElementById('fsBtn');
   const ICON_ENTER='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V5a1 1 0 0 1 1-1h4"/><path d="M20 9V5a1 1 0 0 0-1-1h-4"/><path d="M4 15v4a1 1 0 0 0 1 1h4"/><path d="M20 15v4a1 1 0 0 1-1 1h-4"/></svg>';
