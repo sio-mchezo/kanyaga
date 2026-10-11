@@ -40,12 +40,6 @@
   <button id="fsBtn" aria-label="Toggle fullscreen" title="Toggle fullscreen"></button>
   <canvas id="court"></canvas>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r109/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.109.0/examples/js/postprocessing/EffectComposer.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.109.0/examples/js/postprocessing/RenderPass.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.109.0/examples/js/postprocessing/ShaderPass.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.109.0/examples/js/shaders/CopyShader.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.109.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.109.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
   <script>
 (()=>{
   const COURT={halfW:5.4,halfH:3.6,depth:24,paddleR:2,ballR:.38};
@@ -54,7 +48,7 @@
   const LINES=20;
   const PHYS={
     drift:30,minVz:8,maxBall:40,minBall:14,maxPaddle:42,
-    paddleDecay:.13,strokeSmooth:28,peakDecay:14,
+    paddleDecay:.13,strokeSmooth:28,
     spinDecay:.09,
     spinToVx:.8,
     spinToVy:.8,
@@ -77,30 +71,25 @@
   const BACKGRID={
     cols:3,rows:3,color:0x333333,targetColor:0x555555,targetOpacity:.4,targetPulse:.1,targetPulseSpeed:1,targetHitDur:.12,targetHitOpacity:1,targetHitColor:0xffffff,
     previewOpacity:.18,
-    previewColor:0x777777,
-    previewSpeedScale:1
+    previewColor:0x777777
   };
   const TRAIL={
-    len:24,rows:48,radius:0.3,
-    opacity:.4,color:0xbbbbbb,
+    len:16,rows:32,radius:0.3,
     speedRef:22,
     speedWidthMin:.55,
-    speedWidthMax:1.35
-  };
-  const BLOOM={
-    enabled:true,
-    strength:0.65,
-    radius:0.7,
-    threshold:0.5,
-    hitBoost:0.9,
-    rampRate:14
+    speedWidthMax:1.35,
+    taperExp:0.35
   };
   const COURT_LINES={
-    thickness:0.09,          // visual weight in world units
-    interiorOpacity:0.75,    // non-edge frames
-    edgeOpacity:0.95,        // first and last frame
-    flashRange:2.4,          // z-distance over which a line brightens
-    flashAmount:0.4          // max opacity boost near the ball
+    thickness:0.09,
+    interiorOpacity:0.75,
+    edgeOpacity:0.95,
+    flashRange:2.4,
+    flashAmount:0.4
+  };
+  const PADDLE={
+    baseOpacity:.3,
+    flashOpacity:1.0
   };
 
   const clamp=(v,lo,hi)=>v<lo?lo:v>hi?hi:v;
@@ -122,9 +111,9 @@
     let targetCell=0,targetFlashT=0,pointT=0,lastLine=-1;
     const g={
       state:'ready',player,ball,
-      lastHit:false,lastHitActor:'human',lastScore:false,lastTargetHit:false,
+      lastHit:false,lastScore:false,lastTargetHit:false,
       linesCrossed:[],
-      start,setPaddle,serve,step,
+      setPaddle,serve,step,
       getTarget:()=>targetCell,
       getTargetFlash:()=>targetFlashT
     };
@@ -134,17 +123,6 @@
       let next=Math.floor(rng()*total);
       if(next===targetCell)next=(next+1)%total;
       targetCell=next;
-    }
-
-    function start(){
-      g.state='ready';
-      player.x=player.y=0;
-      player.vx=player.vy=player.svx=player.svy=player.pvx=player.pvy=0;
-      pointT=0;g.lastHit=false;g.lastHitActor='human';g.lastScore=false;g.lastTargetHit=false;
-      g.linesCrossed.length=0;
-      targetFlashT=0;lastLine=-1;
-      targetCell=Math.floor(rng()*(BACKGRID.cols*BACKGRID.rows));
-      readyBall();
     }
 
     function readyBall(){
@@ -280,10 +258,8 @@
         }
         ball.vz=-Math.abs(ball.vz)*COURT_FORCE.farWallDamp;
         ball.vx*=COURT_FORCE.farWallCrossDamp;ball.vy*=COURT_FORCE.farWallCrossDamp;
-
         ball.vx+=ball.spinX*PHYS.backWallSpinKickX;
         ball.vy+=ball.spinY*PHYS.backWallSpinKickY;
-
         ball.spinX*=COURT_FORCE.farWallSpinDamp;ball.spinY*=COURT_FORCE.farWallSpinDamp;
       }
 
@@ -296,7 +272,7 @@
       }
     }
 
-    function trackLines(z0){
+    function trackLines(){
       const lineSpacing=COURT.depth/LINES;
       const currentLine=Math.max(0,Math.min(LINES,Math.floor(ball.z/lineSpacing)));
       if(currentLine!==lastLine){
@@ -336,7 +312,7 @@
       for(let i=0;i<steps;i++){
         const z0=ball.z;
         integrateBall(subDt);
-        trackLines(z0);
+        trackLines();
 
         if(z0>COURT.ballR&&ball.z<COURT.ballR&&ball.vz<0){
           const tHit=(z0-COURT.ballR)/(z0-ball.z||1e-9);
@@ -391,9 +367,12 @@
       ball.spinX=clamp(brushX*spinGain+strokeX*RUBBER.spinFromStroke-oldSpinX*absorb*.5,-RUBBER.spinClamp,RUBBER.spinClamp);
       ball.spinY=clamp(-brushY*spinGain-strokeY*RUBBER.spinFromStroke-oldSpinY*absorb*.5,-RUBBER.spinClamp,RUBBER.spinClamp);
       ball.z=COURT.ballR;
-      g.lastHitActor='human';
       g.lastHit=true;
     }
+
+    // initialize
+    readyBall();
+    targetCell=Math.floor(rng()*(BACKGRID.cols*BACKGRID.rows));
 
     return g;
   }
@@ -405,24 +384,6 @@
     scene.fog=new THREE.Fog(0x000000,9,60);
     const camera=new THREE.PerspectiveCamera(CAM.fov,1.5,.1,100);
     camera.position.set(0,0,CAM.z);camera.lookAt(0,0,-COURT.depth/2);
-
-    // --- Bloom composer ---
-    let composer=null,bloomPass=null;
-    const canBloom=
-      typeof THREE.EffectComposer!=='undefined'&&
-      typeof THREE.RenderPass!=='undefined'&&
-      typeof THREE.UnrealBloomPass!=='undefined';
-    if(canBloom&&BLOOM.enabled){
-      composer=new THREE.EffectComposer(renderer);
-      composer.addPass(new THREE.RenderPass(scene,camera));
-      bloomPass=new THREE.UnrealBloomPass(
-        new THREE.Vector2(window.innerWidth,window.innerHeight),
-        BLOOM.strength,
-        BLOOM.radius,
-        BLOOM.threshold
-      );
-      composer.addPass(bloomPass);
-    }
 
     // --- Court line frames: one textured plane per line ---
     const grid=new THREE.Group();scene.add(grid);
@@ -444,9 +405,6 @@
         const z=(i/LINES)*COURT.depth,edge=i===0||i===LINES;
         const baseOpacity=edge?COURT_LINES.edgeOpacity:COURT_LINES.interiorOpacity;
 
-        const planeW=2*W+t*2;
-        const planeH=2*H+t*2;
-
         const mat=new THREE.MeshBasicMaterial({
           map:lineTexture,
           color:0xffffff,
@@ -457,12 +415,12 @@
           blending:THREE.AdditiveBlending
         });
 
-        const mesh=new THREE.Mesh(new THREE.PlaneGeometry(planeW,planeH),mat);
+        const mesh=new THREE.Mesh(new THREE.PlaneGeometry(2*W+t*2,2*H+t*2),mat);
         mesh.position.z=-z;
         mesh.renderOrder=2;
         grid.add(mesh);
 
-        gridLines.push({mesh,z,edge,baseOpacity});
+        gridLines.push({mesh,z,baseOpacity});
       }
     }
 
@@ -478,7 +436,7 @@
           new THREE.PlaneGeometry(cellW*.98,cellH*.98),
           new THREE.MeshBasicMaterial({color:BACKGRID.color,transparent:true,opacity:0,side:THREE.DoubleSide,depthWrite:false})
         );
-        fill.position.set(cx,cy,zBack+.01);backGrid.add(fill);backCells.push({mesh:fill,col:c,row:r,idx});
+        fill.position.set(cx,cy,zBack+.01);backGrid.add(fill);backCells.push({mesh:fill,idx});
       }
     }
 
@@ -488,17 +446,21 @@
       new THREE.MeshBasicMaterial({
         color:0xffffff,
         transparent:true,
-        opacity:.8,
+        opacity:PADDLE.baseOpacity,
         map:new THREE.TextureLoader().load('bat.png'),
+        blending:THREE.AdditiveBlending,        
         side:THREE.DoubleSide,
         depthWrite:false})
     );
     paddleDisc.position.z=-.005;paddleMesh.add(paddleDisc);paddleMesh.renderOrder=3;scene.add(paddleMesh);
 
-    const geo=new THREE.SphereGeometry(COURT.ballR,32,20);
-    const ballMesh=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({
-      map: new THREE.TextureLoader().load('ball.png'),
-    }));
+    const ballMesh=new THREE.Mesh(
+      new THREE.SphereGeometry(COURT.ballR,32,20),
+      new THREE.MeshBasicMaterial({
+        map:new THREE.TextureLoader().load('ball.png'),
+        blending:THREE.AdditiveBlending
+      })
+    );
     ballMesh.renderOrder=4;
     scene.add(ballMesh);
 
@@ -507,10 +469,8 @@
     const trailMesh=new THREE.Mesh(
       trailGeom,
       new THREE.MeshBasicMaterial({
-        color:0xffffff,
+        color:0x555555,
         side:THREE.DoubleSide,
-        transparent:true,
-        opacity:1,
         depthWrite:false,
         fog:true
       })
@@ -522,6 +482,7 @@
     const trailHistory=[];
     for(let i=0;i<TRAIL.len;i++)trailHistory.push(new THREE.Vector3(0,0,0));
     let trailSeeded=false;
+    let effectiveRadius=TRAIL.radius;
 
     const _a=new THREE.Vector3();
     const _b=new THREE.Vector3();
@@ -529,18 +490,6 @@
     const _dir=new THREE.Vector3();
     const _perp=new THREE.Vector3();
     const _fallback=new THREE.Vector3(1,0,0);
-
-    // target preview line
-    const previewGeom=new THREE.BufferGeometry();
-    previewGeom.setAttribute('position',new THREE.BufferAttribute(new Float32Array(6),3));
-    const previewMat=new THREE.LineBasicMaterial({color:BACKGRID.previewColor,transparent:true,opacity:BACKGRID.previewOpacity,depthWrite:false});
-    const previewLine=new THREE.Line(previewGeom,previewMat);
-    previewLine.frustumCulled=false;
-    previewLine.renderOrder=5;
-    previewLine.visible=false;
-    scene.add(previewLine);
-
-    let effectiveRadius=TRAIL.radius;
 
     function updateTrail(){
       const bx=ballMesh.position.x,by=ballMesh.position.y,bz=ballMesh.position.z;
@@ -572,7 +521,7 @@
         if(_perp.lengthSq()<1e-8)_perp.copy(_fallback);
         _perp.normalize();
 
-        const w=effectiveRadius*t;
+        const w=effectiveRadius*Math.pow(t,TRAIL.taperExp);
         const ic=Math.floor(t*span);
         const sc=t*span-ic;
         _p.copy(trailHistory[ic]).lerp(trailHistory[Math.min(span,ic+1)],sc);
@@ -594,20 +543,13 @@
     }
 
     const axisTmp=new THREE.Vector3(),colBase=new THREE.Color(0x555555),colFlash=new THREE.Color(0xffffff),colTmp=new THREE.Color();
-    let flashT=0,clock=0;
+    let clock=0,flashT=0;
 
     function resize(){
       const w=window.innerWidth,h=window.innerHeight,dpr=window.devicePixelRatio||1;
       renderer.setPixelRatio(dpr);renderer.setSize(w,h,false);
-      canvas.width=Math.floor(w*dpr);canvas.height=Math.floor(h*dpr);
-      canvas.style.width=w+'px';canvas.style.height=h+'px';
-      renderer.setViewport(0,0,w,h);camera.aspect=w/h;camera.updateProjectionMatrix();
+      camera.aspect=w/h;camera.updateProjectionMatrix();
       updateExtents(w/h);rebuildGrid();rebuildBackGrid();
-      if(composer){
-        composer.setPixelRatio(dpr);
-        composer.setSize(w,h);
-        if(bloomPass)bloomPass.resolution.set(w*dpr,h*dpr);
-      }
     }
 
     function pointer(cx,cy){
@@ -620,35 +562,20 @@
 
     function triggerFlash(){flashT=FLASH.dur}
 
-    function updatePreview(game){
-      const b=game.ball;
-      if(game.state!=='playing'||b.vz<=0.001){
-        previewLine.visible=false;
-        return;
-      }
-      const farZ=COURT.depth-COURT.ballR;
-      const t=(farZ-b.z)/b.vz;
-      if(t<0||t>4){previewLine.visible=false;return}
-
-      let px=b.x+b.vx*t;
-      let py=b.y+b.vy*t;
-      px=clamp(px,-COURT.halfW,COURT.halfW);
-      py=clamp(py,-COURT.halfH,COURT.halfH);
-
-      const pos=previewGeom.attributes.position;
-      pos.array[0]=b.x;pos.array[1]=b.y;pos.array[2]=-b.z;
-      pos.array[3]=px;pos.array[4]=py;pos.array[5]=-farZ;
-      pos.needsUpdate=true;
-      previewGeom.computeBoundingSphere();
-      previewLine.visible=true;
-    }
-
     function render(game,dt){
       clock+=dt;
       paddleMesh.position.set(game.player.x,game.player.y,.012);
       ballMesh.position.set(game.ball.x,game.ball.y,-game.ball.z);
-      if(flashT>0){flashT-=dt;const t=Math.max(0,flashT/FLASH.dur);paddleDisc.material.opacity=.8*(1-t)+FLASH.op*t}
-      else paddleDisc.material.opacity=.12;
+
+      // paddle flash
+      if(flashT>0){
+        flashT-=dt;
+        const k=Math.max(0,flashT/FLASH.dur);
+        paddleDisc.material.opacity=PADDLE.baseOpacity*k+FLASH.op*2;
+      }else{
+        paddleDisc.material.opacity=PADDLE.baseOpacity;
+      }
+
       const target=game.getTarget(),targetFlash=game.getTargetFlash();
       const pulse=.5+.5*Math.sin(clock*BACKGRID.targetPulseSpeed*Math.PI*2);
       for(const cell of backCells){
@@ -659,10 +586,10 @@
         }
         cell.mesh.material.opacity=opacity;cell.mesh.material.color.setHex(color);
       }
+
       const ox=game.ball.vy/COURT.ballR+game.ball.spinX,oy=-game.ball.vx/COURT.ballR+game.ball.spinY,o2=ox*ox+oy*oy;
       if(o2>1e-12){const len=Math.sqrt(o2);axisTmp.set(ox/len,oy/len,0);ballMesh.rotateOnWorldAxis(axisTmp,len*dt)}
 
-      // per-frame court line flash
       const bz=game.ball.z;
       for(const e of gridLines){
         const d=Math.abs(bz-e.z),f=d<COURT_LINES.flashRange?1-d/COURT_LINES.flashRange:0;
@@ -676,24 +603,11 @@
       const widthScale=clamp(1/speedNorm,TRAIL.speedWidthMin,TRAIL.speedWidthMax);
       effectiveRadius=TRAIL.radius*widthScale;
       updateTrail();
-      updatePreview(game);
 
-      if(composer){
-        if(bloomPass){
-          const targetStrength=BLOOM.strength+(flashT>0?BLOOM.strength*BLOOM.hitBoost:0);
-          bloomPass.strength+=(targetStrength-bloomPass.strength)*Math.min(1,dt*BLOOM.rampRate);
-        }
-        composer.render(dt);
-      }else{
-        renderer.render(scene,camera);
-      }
+      renderer.render(scene,camera);
     }
 
-    return{
-      resize,pointer,render,triggerFlash,
-      setBloom(v){if(bloomPass)bloomPass.strength=v},
-      hasBloom:()=>!!composer
-    };
+    return{resize,pointer,render,triggerFlash};
   }
 
   const canvas=document.getElementById('court');
