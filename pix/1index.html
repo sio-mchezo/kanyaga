@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; background: #222; }
+        canvas { width: 512px; height: 512px; image-rendering: pixelated; image-rendering: crisp-edges; }
+    </style>
+</head>
+<body>
+    <canvas id="c" width="128" height="128"></canvas>
+    <script>
+        const W = 128, H = 128;
+        const canvas = document.getElementById('c');
+        const gl = canvas.getContext('webgl');
+
+        const SPRITE_SIZE = 16;
+        const SHEET_COLS = 16;
+        const SHEET_ROWS = 16;
+
+        // ---- SPRITE SHADERS ----
+        const vs = gl.createShader(gl.VERTEX_SHADER);
+        gl.shaderSource(vs, `
+            attribute vec2 aPos;
+            attribute vec2 aUV;
+            varying vec2 vUV;
+            uniform vec2 uOffset;
+            uniform vec2 uScale;
+            void main() {
+                vUV = aUV;
+                gl_Position = vec4(aPos * uScale + uOffset, 0, 1);
+            }
+        `);
+        gl.compileShader(vs);
+
+        const fs = gl.createShader(gl.FRAGMENT_SHADER);
+        gl.shaderSource(fs, `
+            precision mediump float;
+            varying vec2 vUV;
+            uniform sampler2D uTex;
+            void main() {
+                vec4 col = texture2D(uTex, vUV);
+                if (col.a < 0.1) discard;
+                gl_FragColor = col;
+            }
+        `);
+        gl.compileShader(fs);
+
+        const prog = gl.createProgram();
+        gl.attachShader(prog, vs);
+        gl.attachShader(prog, fs);
+        gl.linkProgram(prog);
+
+        // ---- BACKGROUND SHADERS ----
+        const bgVs = gl.createShader(gl.VERTEX_SHADER);
+        gl.shaderSource(bgVs, `
+            attribute vec2 aPos;
+            varying vec2 vUV;
+            void main() {
+                vUV = (aPos + 1.0) * 0.5;
+                gl_Position = vec4(aPos, 0, 1);
+            }
+        `);
+        gl.compileShader(bgVs);
+
+        const bgFs = gl.createShader(gl.FRAGMENT_SHADER);
+        gl.shaderSource(bgFs, `
+            precision mediump float;
+            varying vec2 vUV;
+            uniform sampler2D uTex;
+            uniform float uScroll;
+            void main() {
+                float repeatX = 16.0;
+                vec2 uv = vec2(vUV.x * repeatX - uScroll * repeatX, vUV.y);
+                gl_FragColor = texture2D(uTex, uv);
+            }
+        `);
+        gl.compileShader(bgFs);
+
+        const bgProg = gl.createProgram();
+        gl.attachShader(bgProg, bgVs);
+        gl.attachShader(bgProg, bgFs);
+        gl.linkProgram(bgProg);
+
+        // ---- SEPARATE BUFFERS ----
+        // Sprite quad: 4 verts * 4 floats = 16 floats
+        const spriteBuf = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, spriteBuf);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(16), gl.DYNAMIC_DRAW);
+
+        // Background quad: 4 verts * 2 floats = 8 floats (fullscreen, static)
+        const bgBuf = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, bgBuf);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+            -1, -1,  1, -1,  -1, 1,  1, 1
+        ]), gl.STATIC_DRAW);
+
+        // ---- SPRITE PROGRAM UNIFORMS ----
+        const uOffset = gl.getUniformLocation(prog, 'uOffset');
+        const uScale  = gl.getUniformLocation(prog, 'uScale');
+        const uTex    = gl.getUniformLocation(prog, 'uTex');
+
+        // ---- BACKGROUND PROGRAM UNIFORMS ----
+        const bgUTex    = gl.getUniformLocation(bgProg, 'uTex');
+        const bgUScroll = gl.getUniformLocation(bgProg, 'uScroll');
+
+        // ---- TEXTURES ----
+        function createTexture(repeat) {
+            const t = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, t);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, repeat ? gl.REPEAT : gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            return t;
+        }
+
+        const tex   = createTexture(false);
+        const bgTex = createTexture(true);
+
+        let spritesheetReady = false;
+        let bgReady = false;
+
+        function loadImage(url, texture, callback) {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+                gl.bindTexture(gl.TEXTURE_2D, texture);
+                gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+                callback();
+            };
+            img.src = url;
+        }
+
+        loadImage('L1col.png', bgTex, () => { bgReady = true; });
+        loadImage('sprites.png', tex, () => { spritesheetReady = true; });
+
+        // ---- DRAW SPRITE ----
+        function drawSprite(col, row, xPx, yPx, sizePx) {
+            if (!spritesheetReady) return;
+
+            xPx    = Math.floor(xPx);
+            yPx    = Math.floor(yPx);
+            sizePx = Math.floor(sizePx);
+
+            const u0 = col / SHEET_COLS;
+            const v0 = 1 - (row + 1) / SHEET_ROWS;
+            const u1 = (col + 1) / SHEET_COLS;
+            const v1 = 1 - row / SHEET_ROWS;
+
+            const ndcX = ((xPx + sizePx / 2) / W) * 2 - 1;
+            const ndcY = 1 - ((yPx + sizePx / 2) / H) * 2;
+            const ndcS = (sizePx / W) * 2;
+
+            gl.useProgram(prog);
+            gl.bindBuffer(gl.ARRAY_BUFFER, spriteBuf);
+            gl.bufferSubData(gl.ARRAY_BUFFER, 0, new Float32Array([
+                -0.5, -0.5, u0, v0,
+                 0.5, -0.5, u1, v0,
+                -0.5,  0.5, u0, v1,
+                 0.5,  0.5, u1, v1,
+            ]));
+
+            // (Re)bind attributes for sprite program each draw
+            const aPos = gl.getAttribLocation(prog, 'aPos');
+            const aUV  = gl.getAttribLocation(prog, 'aUV');
+            gl.enableVertexAttribArray(aPos);
+            gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 16, 0);
+            gl.enableVertexAttribArray(aUV);
+            gl.vertexAttribPointer(aUV, 2, gl.FLOAT, false, 16, 8);
+
+            gl.uniform2f(uOffset, ndcX, ndcY);
+            gl.uniform2f(uScale, ndcS, ndcS);
+            gl.uniform1i(uTex, 0);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        }
+
+        // ---- RENDER LOOP ----
+        function frame(t) {
+            gl.viewport(0, 0, W, H);
+            gl.clearColor(0, 0, 0, 1);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+
+            // --- Background ---
+            if (bgReady) {
+                gl.useProgram(bgProg);
+                gl.bindBuffer(gl.ARRAY_BUFFER, bgBuf);
+                const bgAPos = gl.getAttribLocation(bgProg, 'aPos');
+                gl.enableVertexAttribArray(bgAPos);
+                gl.vertexAttribPointer(bgAPos, 2, gl.FLOAT, false, 8, 0);
+
+                const scroll = (t * 0.001) * 0.001;
+                gl.uniform1f(bgUScroll, scroll);
+                gl.uniform1i(bgUTex, 1);
+                gl.activeTexture(gl.TEXTURE1);
+                gl.bindTexture(gl.TEXTURE_2D, bgTex);
+                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+            }
+
+            // --- Sprites ---
+            const bobPx = Math.round(Math.sin(t * 0.005) * 3);
+            drawSprite(0, 0, 64 - 16, 64 - 16 + bobPx, 32);
+
+            requestAnimationFrame(frame);
+        }
+        requestAnimationFrame(frame);
+    </script>
+</body>
+</html>
