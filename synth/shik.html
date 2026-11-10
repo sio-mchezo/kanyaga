@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>N32B</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #000;
+      color: #999;
+      font-family: monospace;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 16px;
+    }
+    #status {
+      position: fixed; top: 10px; left: 10px;
+      color: #999; font-size: 12px; pointer-events: none;
+      text-transform: lowercase;
+      opacity: 0.3;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      grid-template-rows: repeat(4, 1fr);
+      grid-auto-flow: column;
+      gap: 2px;
+    }
+    .knob {
+      width: 48px;
+      height: 48px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .value {
+      color: red;
+      font-size: 14px;
+      height: 14px;
+      line-height: 14px;
+    }
+    .number {
+      font-size: 12px;
+      color: #999;
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/webmidi@latest/dist/iife/webmidi.iife.js"></script>
+</head>
+<body>
+  <div id="status">Initialising...</div>
+
+  <div class="grid" id="grid"></div>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const statusLog = (msg, err = false) => {
+      statusEl.textContent = msg;
+      statusEl.style.color = err ? '#ff6b6b' : '#999';
+    };
+
+    // Build the 32 knobs — column-first order so the grid fills down.
+    const grid = document.getElementById('grid');
+    const valueEls = [];
+    for (let i = 0; i < 32; i++) {
+      const knob = document.createElement('div');
+      knob.className = 'knob';
+
+      const value = document.createElement('div');
+      value.className = 'value';
+      value.textContent = '';
+
+      const number = document.createElement('div');
+      number.className = 'number';
+      number.textContent = i + 1;
+
+      knob.appendChild(value);
+      knob.appendChild(number);
+      grid.appendChild(knob);
+      valueEls.push(value);
+    }
+
+    // ---------- Web MIDI ----------
+    if (typeof WebMidi === 'undefined') {
+      statusLog('WebMidi library failed to load.', true);
+    } else {
+      WebMidi
+        .enable()
+        .then(() => {
+          if (WebMidi.inputs.length < 1) {
+            statusLog('No MIDI inputs detected.', true);
+            return;
+          }
+
+          const input = WebMidi.inputs.find(d =>
+            d.name.toLowerCase().includes('n32b')
+          ) || WebMidi.inputs[0];
+
+          statusLog(`Listening: ${input.name}`);
+
+          input.addListener('controlchange', e => {
+            const cc = e.controller.number;
+            const val = e.rawValue;
+
+            if (cc < 0 || cc >= 32) return;
+
+            const col = Math.floor(cc / 4);
+            const row = cc % 4;
+            const boxIndex = col * 4 + row;
+
+            if (val > 0) {
+              valueEls[boxIndex].textContent = val;
+            } else {
+              valueEls[boxIndex].textContent = '';
+            }
+
+          });
+        })
+        .catch(err => statusLog(`Web MIDI failed: ${err}`, true));
+    }
+  </script>
+</body>
+</html>
