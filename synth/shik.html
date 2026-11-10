@@ -3,9 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>N32B</title>
+  <title>N32B GRID</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
     body {
       background: #000;
       color: #999;
@@ -14,113 +19,214 @@
       display: flex;
       justify-content: center;
       align-items: center;
-      padding: 16px;
+      padding: 100px;
+      overflow: hidden;
     }
+
     #status {
-      position: fixed; top: 10px; left: 10px;
-      color: #999; font-size: 12px; pointer-events: none;
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      color: #999;
+      font-size: 12px;
+      pointer-events: none;
       text-transform: lowercase;
       opacity: 0.3;
+      z-index: 20;
     }
+
+    #fsBtn {
+      position: fixed;
+      top: 14px;
+      right: 14px;
+      z-index: 10;
+      width: 40px;
+      height: 40px;
+      border: none;
+      color: #ddd;
+      font-size: 18px;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      transition: background .15s, color .15s, border-color .15s;
+      touch-action: manipulation;
+      background: transparent;
+    }
+    #fsBtn:hover {
+      color: #fff;
+    }
+    #fsBtn:active {
+      background: rgba(60, 60, 60, .9);
+    }
+    #fsBtn svg {
+      width: 20px;
+      height: 20px;
+      display: block;
+      pointer-events: none;
+    }
+
+
     .grid {
       display: grid;
       grid-template-columns: repeat(8, 1fr);
       grid-template-rows: repeat(4, 1fr);
       grid-auto-flow: column;
       gap: 2px;
+      width: 80%;
+      height: 80%;
+      max-width: 100vw;
+      max-height: 100vh;
     }
+
     .knob {
-      width: 48px;
-      height: 48px;
+      width: 100%;
+      height: 100%;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
+      aspect-ratio: 1 / 1;
+      max-width: 100%;
+      max-height: 100%;
+      overflow: hidden;
     }
+
+
     .value {
       color: red;
-      font-size: 14px;
-      height: 14px;
-      line-height: 14px;
+      line-height: 1.1;
+      height: auto;
+      min-height: 1em;
+      text-align: center;
     }
+
     .number {
-      font-size: 12px;
       color: #999;
+      text-align: center;
+    }
+
+    .grid {
+      font-size: clamp(8px, 2.5vmin, 20px);
+    }
+
+    @media (max-width: 600px) {
+      .grid {
+        gap: 1px;
+      }
     }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/webmidi@latest/dist/iife/webmidi.iife.js"></script>
 </head>
 <body>
+  <button id="fsBtn" aria-label="Toggle fullscreen" title="Toggle fullscreen"></button>
   <div id="status">Initialising...</div>
+
 
   <div class="grid" id="grid"></div>
 
   <script>
-    const statusEl = document.getElementById('status');
-    const statusLog = (msg, err = false) => {
-      statusEl.textContent = msg;
-      statusEl.style.color = err ? '#ff6b6b' : '#999';
-    };
+    (function() {
+      const statusEl = document.getElementById('status');
+      const statusLog = (msg, err = false) => {
+        statusEl.textContent = msg;
+        statusEl.style.color = err ? '#ff6b6b' : '#999';
+      };
 
-    // Build the 32 knobs — column-first order so the grid fills down.
-    const grid = document.getElementById('grid');
-    const valueEls = [];
-    for (let i = 0; i < 32; i++) {
-      const knob = document.createElement('div');
-      knob.className = 'knob';
 
-      const value = document.createElement('div');
-      value.className = 'value';
-      value.textContent = '';
+      const grid = document.getElementById('grid');
+      const valueEls = [];
+      for (let i = 0; i < 32; i++) {
+        const knob = document.createElement('div');
+        knob.className = 'knob';
 
-      const number = document.createElement('div');
-      number.className = 'number';
-      number.textContent = i + 1;
+        const value = document.createElement('div');
+        value.className = 'value';
+        value.textContent = '';
 
-      knob.appendChild(value);
-      knob.appendChild(number);
-      grid.appendChild(knob);
-      valueEls.push(value);
-    }
+        const number = document.createElement('div');
+        number.className = 'number';
+        number.textContent = i + 1;
 
-    // ---------- Web MIDI ----------
-    if (typeof WebMidi === 'undefined') {
-      statusLog('WebMidi library failed to load.', true);
-    } else {
-      WebMidi
-        .enable()
-        .then(() => {
-          if (WebMidi.inputs.length < 1) {
-            statusLog('No MIDI inputs detected.', true);
-            return;
-          }
+        knob.appendChild(value);
+        knob.appendChild(number);
+        grid.appendChild(knob);
+        valueEls.push(value);
+      }
 
-          const input = WebMidi.inputs.find(d =>
-            d.name.toLowerCase().includes('n32b')
-          ) || WebMidi.inputs[0];
-
-          statusLog(`Listening: ${input.name}`);
-
-          input.addListener('controlchange', e => {
-            const cc = e.controller.number;
-            const val = e.rawValue;
-
-            if (cc < 0 || cc >= 32) return;
-
-            const col = Math.floor(cc / 4);
-            const row = cc % 4;
-            const boxIndex = col * 4 + row;
-
-            if (val > 0) {
-              valueEls[boxIndex].textContent = val;
-            } else {
-              valueEls[boxIndex].textContent = '';
+      // ----- Web MIDI -----
+      if (typeof WebMidi === 'undefined') {
+        statusLog('WebMidi library failed to load.', true);
+      } else {
+        WebMidi
+          .enable()
+          .then(() => {
+            if (WebMidi.inputs.length < 1) {
+              statusLog('No MIDI inputs detected.', true);
+              return;
             }
 
-          });
-        })
-        .catch(err => statusLog(`Web MIDI failed: ${err}`, true));
-    }
+            const input = WebMidi.inputs.find(d =>
+              d.name.toLowerCase().includes('n32b')
+            ) || WebMidi.inputs[0];
+
+            statusLog(`Listening: ${input.name}`);
+
+            input.addListener('controlchange', e => {
+              const cc = e.controller.number;
+              const val = e.rawValue;
+
+              if (cc < 0 || cc >= 32) return;
+
+              const col = Math.floor(cc / 4);
+              const row = cc % 4;
+              const boxIndex = col * 4 + row;
+
+              if (val > 0) {
+                valueEls[boxIndex].textContent = val;
+              } else {
+                valueEls[boxIndex].textContent = '';
+              }
+            });
+          })
+          .catch(err => statusLog(`Web MIDI failed: ${err}`, true));
+      }
+
+      // ----- fullscreen button -----
+      const fsBtn = document.getElementById('fsBtn');
+      const ICON_ENTER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V5a1 1 0 0 1 1-1h4"/><path d="M20 9V5a1 1 0 0 0-1-1h-4"/><path d="M4 15v4a1 1 0 0 0 1 1h4"/><path d="M20 15v4a1 1 0 0 1-1 1h-4"/></svg>';
+      const ICON_EXIT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4v4a1 1 0 0 1-1 1H4"/><path d="M15 4v4a1 1 0 0 0 1 1h4"/><path d="M9 20v-4a1 1 0 0 0-1-1H4"/><path d="M15 20v-4a1 1 0 0 1 1-1h4"/></svg>';
+
+      function updateFsIcon() {
+        const active = !!document.fullscreenElement;
+        fsBtn.innerHTML = active ? ICON_EXIT : ICON_ENTER;
+      }
+
+      fsBtn.addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!document.fullscreenElement) {
+          const el = document.documentElement;
+          const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+          if (req) req.call(el).catch(() => {});
+        } else {
+          const exit = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+          if (exit) exit.call(document).catch(() => {});
+        }
+      });
+
+      fsBtn.addEventListener('pointerdown', e => e.stopPropagation());
+
+      for (const ev of ['fullscreenchange', 'webkitfullscreenchange', 'msfullscreenchange']) {
+        document.addEventListener(ev, () => {
+          updateFsIcon();
+        });
+      }
+
+      updateFsIcon();
+    })();
   </script>
 </body>
 </html>
