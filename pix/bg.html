@@ -16,8 +16,8 @@
             touch-action: none;
         }
         canvas {
-            width: 512px;
-            height: 512px;
+            width: 256px;
+            height: 256px;
             image-rendering: pixelated;
             image-rendering: crisp-edges;
             display: block;
@@ -163,7 +163,6 @@
                 ctx.fillRect(0, 0, W, H);
                 return;
             }
-            // Use exact float positions for the ground so it scrolls smoothly
             const sx = ((camX % GROUND_SIZE) + GROUND_SIZE) % GROUND_SIZE;
             const sy = ((camY % GROUND_SIZE) + GROUND_SIZE) % GROUND_SIZE;
             
@@ -191,7 +190,6 @@
             player.x += vx * 60 * delta;
             player.y += vy * 60 * delta;
 
-            // Keep camera as a float
             const camX = player.x - W / 2;
             const camY = player.y - H / 2;
 
@@ -216,7 +214,6 @@
                 drawSprite(n.tex, n.sx, n.sy);
             }
 
-            // Player draws perfectly centered since camera follows exact x/y
             drawSprite(player.tex, player.x - camX, player.y - camY);
         }
 
