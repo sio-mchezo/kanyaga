@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>512x512 Pixel Perfect</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #111;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            touch-action: none;
+        }
+        canvas {
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            display: block;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.9.0/nipplejs.min.js"></script>
+</head>
+<body>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        const INTERNAL_RES = 64; 
+        const DISPLAY_SIZE = 512;
+        const FRUSTUM_SIZE = 10; 
+
+        const PIXEL_STEP = FRUSTUM_SIZE / INTERNAL_RES;
+        function snap(v) { return Math.round(v / PIXEL_STEP) * PIXEL_STEP; }
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x111111);
+
+        const camera = new THREE.OrthographicCamera(
+            -FRUSTUM_SIZE / 2, FRUSTUM_SIZE / 2,
+            FRUSTUM_SIZE / 2, -FRUSTUM_SIZE / 2,
+            0.1, 100
+        );
+        
+        camera.position.set(0, 10, 0);
+        camera.up.set(0, 0, -1);
+        camera.lookAt(0, 0, 0);
+
+        const CONFIG = {
+            HEIGHT_OFFSET: 0.5,
+            WALK_SPEED: 20,
+            SPRITE_SIZE: 2.0
+        };
+        const JOYSTICK_MAX_SPEED = 1;
+        
+        let posX = 0, posZ = 0;
+        let vx = 0, vz = 0;
+        let rotation = 0;
+        let force = 0;
+        let currentSpeed = CONFIG.WALK_SPEED;
+        let currentRotation = 0;
+        const rotationSmoothing = 0.2;
+        
+        let joystick = null;
+        let moving = false;
+
+        const renderer = new THREE.WebGLRenderer({
+            antialias: false,
+            alpha: false
+        });
+        
+        renderer.setSize(INTERNAL_RES, INTERNAL_RES, false);
+        renderer.setPixelRatio(1);
+        renderer.domElement.style.width = DISPLAY_SIZE + 'px';
+        renderer.domElement.style.height = DISPLAY_SIZE + 'px';
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.BasicShadowMap;
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+        document.body.appendChild(renderer.domElement);
+
+        // --- Ground ---
+        const gtexture = new THREE.TextureLoader().load('grid.png');
+        gtexture.magFilter = THREE.NearestFilter;
+        gtexture.minFilter = THREE.NearestFilter;
+        gtexture.wrapS = THREE.RepeatWrapping;
+        gtexture.wrapT = THREE.RepeatWrapping;
+        gtexture.repeat.set(10, 10); 
+        gtexture.colorSpace = THREE.SRGBColorSpace;
+
+        const groundGeometry = new THREE.PlaneGeometry(50, 50);
+        const groundMaterial = new THREE.MeshBasicMaterial({ 
+            color: 0x777777, map: gtexture 
+        });
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // --- Spritesheet Loader ---
+        const SHEET_COLS = 10;
+        const SHEET_ROWS = 10;
+        const NPC_TEXTURES = [];
+        let playerMesh = null;
+        const npcs = [];
+
+        const spritesheet = new Image();
+        spritesheet.crossOrigin = 'anonymous';
+        spritesheet.src = 'sprites.png';
+
+        spritesheet.onload = () => {
+            const cellW = spritesheet.width / SHEET_COLS;
+            const cellH = spritesheet.height / SHEET_ROWS;
+
+            for (let r = 0; r < SHEET_ROWS; r++) {
+                for (let c = 0; c < SHEET_COLS; c++) {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = cellW;
+                    canvas.height = cellH;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(
+                        spritesheet,
+                        c * cellW, r * cellH, cellW, cellH,
+                        0, 0, cellW, cellH
+                    );
+
+                    const tex = new THREE.CanvasTexture(canvas);
+                    tex.magFilter = THREE.NearestFilter;
+                    tex.minFilter = THREE.NearestFilter;
+                    tex.generateMipmaps = false;
+                    tex.colorSpace = THREE.SRGBColorSpace;
+                    NPC_TEXTURES.push(tex);
+                }
+            }
+            initEntities();
+        };
+
+        function createEntity(tex) {
+            const geo = new THREE.PlaneGeometry(CONFIG.SPRITE_SIZE, CONFIG.SPRITE_SIZE);
+            const mat = new THREE.MeshBasicMaterial({ 
+                map: tex,
+                alphaTest: 0.5,
+                side: THREE.DoubleSide
+            });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.rotation.x = -Math.PI / 2; 
+            mesh.castShadow = true;
+            return mesh;
+        }
+
+        function initEntities() {
+            playerMesh = createEntity(NPC_TEXTURES[0]);
+            playerMesh.position.set(posX, CONFIG.HEIGHT_OFFSET, posZ);
+            scene.add(playerMesh);
+
+            const pool = [];
+            for (let i = 1; i < NPC_TEXTURES.length; i++) pool.push(i);
+            for (let i = pool.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [pool[i], pool[j]] = [pool[j], pool[i]];
+            }
+
+            for (let i = 0; i < 99; i++) {
+                const npc = createEntity(NPC_TEXTURES[pool[i]]);
+                const rx = snap((Math.random() - 0.5) * 50);
+                const rz = snap((Math.random() - 0.5) * 50);
+                npc.position.set(rx, CONFIG.HEIGHT_OFFSET, rz);
+                scene.add(npc);
+                npcs.push(npc);
+            }
+        }
+
+        function limitVelocity(vx, vz, max) {
+            const len = Math.hypot(vx, vz);
+            if (!len) return { vx: 0, vz: 0 };
+            const scale = Math.min(len, max) / len;
+            return { vx: vx * scale, vz: vz * scale };
+        }
+
+        function processJoystick(data) {
+            if (!data.force || data.force < 0.1) {
+                moving = false;
+                vx = 0;
+                vz = 0;
+                force = 0;
+                return;
+            }
+            force = data.force;
+            const newVx = data.force * Math.cos(data.angle.radian) * currentSpeed;
+            const newVz = -data.force * Math.sin(data.angle.radian) * currentSpeed;
+            const limited = limitVelocity(newVx, newVz, JOYSTICK_MAX_SPEED);
+            vx = limited.vx;
+            vz = limited.vz;
+            moving = true;
+            rotation = Math.atan2(vz, vx) - Math.PI / 2;
+        }
+
+        function update(delta) {
+            if (moving && force > 0.2 && playerMesh) {
+                posX += vx * delta * 10;
+                posZ += vz * delta * 10;
+                
+                playerMesh.position.x = snap(posX);
+                playerMesh.position.z = snap(posZ);
+
+            }
+
+            // NPCs face the player
+            if (playerMesh) {
+                npcs.forEach(npc => {
+                    const dx = playerMesh.position.x - npc.position.x;
+                    const dz = playerMesh.position.z - npc.position.z;
+                });
+            }
+        }
+
+        // --- Joystick Setup (Keyboard Removed) ---
+        if (typeof nipplejs !== 'undefined') {
+            joystick = nipplejs.create({ dataOnly: true });
+            joystick.on('move', (evt, data) => processJoystick(data));
+            joystick.on('end', () => { 
+                moving = false; 
+                vx = 0; 
+                vz = 0; 
+                force = 0; 
+            });
+        }
+
+        const clock = new THREE.Clock();
+
+        (function loop() {
+            requestAnimationFrame(loop);
+            const delta = clock.getDelta();
+            update(delta);
+
+            if (playerMesh) {
+                const camX = snap(playerMesh.position.x);
+                const camZ = snap(playerMesh.position.z);
+                
+                camera.position.set(camX, 10, camZ);
+                camera.lookAt(camX, 0, camZ);
+            }
+
+            renderer.render(scene, camera);
+        })();
+    </script>
+</body>
+</html>
