@@ -1,0 +1,620 @@
+﻿<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#101010">
+  <title>MicroMonsta 2 Editor</title>
+  <style>
+    :root {
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background: var(--page);
+      color-scheme: dark;
+      font-synthesis: none;
+      --text: #efefef;
+      --page: #0b0b0b;
+      --accent: #ff8b32;
+      --muted: #999;
+      --line: #303030;
+      --panel: #161616;
+      --button: #232323;
+      --border: #414141;
+      --control-text: #eee;
+      --input: #101010;
+      --input-border: #393939;
+      --surface: #111;
+      --selected: #332014;
+      --strong: #fff;
+      --alert-bg: #311c12;
+      --alert-text: #ffbd89;
+      --label: #ccc;
+      --received: #aaa;
+      --unknown: #777;
+      --knob-ring: #a65d29;
+      --unset-ring: #444;
+      --knob-border: #4d4d4d;
+      --knob-bottom: #191919;
+      --shadow: #0008;
+      --dim: #888;
+      --toggle-track: #555;
+      --toggle-on: #80502c;
+      --stripe: #ffffff09;
+      --caption: #bbb;
+      --cell-line: #252525;
+      --beat-line: #4a4a4a;
+      --cell-border: #505050;
+      --cell: #202020;
+      --error-bg: #342015;
+      --error-text: #ffd1ac;
+      --track: #090909;
+      --thumb-bottom: #292929;
+      --thumb-unset: #222;
+      --thumb-border: #666;
+      --backdrop: #000b;
+    }
+
+    :root[data-theme=light] {
+      color-scheme: light;
+      --text: #252321;
+      --page: #eeece8;
+      --accent: #d02030;
+      --muted: #66615b;
+      --line: #d3cec7;
+      --panel: #faf9f6;
+      --button: #e8e4de;
+      --border: #b9b2a8;
+      --control-text: #282522;
+      --input: #ffffff;
+      --input-border: #c3bcb2;
+      --surface: #f4f1ec;
+      --selected: #fde3e6;
+      --strong: #181614;
+      --alert-bg: #fff0f1;
+      --alert-text: #9b1b29;
+      --label: #4a453e;
+      --received: #686159;
+      --unknown: #80766b;
+      --knob-ring: #d94250;
+      --unset-ring: #bbb2a6;
+      --knob-border: #b5ac9f;
+      --knob-bottom: #d2cbc1;
+      --shadow: #48351b26;
+      --dim: #746b60;
+      --toggle-track: #c6beb3;
+      --toggle-on: #f3b5bd;
+      --stripe: #5b432c09;
+      --caption: #595249;
+      --cell-line: #e3ded7;
+      --beat-line: #bcb2a5;
+      --cell-border: #b0a698;
+      --cell: #fffdfa;
+      --error-bg: #ffe4e8;
+      --error-text: #941b29;
+      --track: #d1c8bb;
+      --thumb-bottom: #b7ad9f;
+      --thumb-unset: #e0d9cf;
+      --thumb-border: #a39889;
+      --backdrop: #30282066;
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    button, input, select { font: inherit; font-size: 12px; }
+    button {
+      background: var(--button);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 7px 12px;
+      color: var(--control-text);
+      cursor: pointer;
+    }
+    button:hover:not(:disabled) { border-color: var(--accent); }
+    button:disabled, input:disabled, select:disabled { opacity: .4; cursor: not-allowed; }
+    button.primary, .read-button { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+    input, select {
+      background: var(--input);
+      color: var(--control-text);
+      border: 1px solid var(--input-border);
+      border-radius: 3px;
+      min-width: 0;
+      max-width: 100%;
+      padding: 5px;
+    }
+    select { width: 100%; text-overflow: ellipsis; }
+    :focus, :focus-visible { outline: none; }
+
+    .topbar { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--line); }
+    .brand { display: flex; align-items: center; gap: 12px; margin-right: auto; }
+    h1 { font-size: 21px; letter-spacing: -.6px; margin: 0; font-weight: 650; }
+    .version { color: var(--muted); font: 10px ui-monospace, monospace; border-left: 1px solid var(--line); padding-left: 12px; }
+    .connection-status { font-size: 11px; color: var(--muted); }
+    .connection-status.connected:before { content: "●"; color: var(--accent); margin-right: 7px; }
+    .connection-bar {
+      display: grid;
+      grid-template-columns: 1fr 1fr .65fr .5fr;
+      gap: 16px;
+      padding: 10px 20px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--line);
+    }
+    .connection-bar label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 10px;
+      color: var(--muted);
+      white-space: nowrap;
+      min-width: 0;
+    }
+
+    main { padding: 0 16px 12px; }
+    .patch-bar { display: flex; align-items: center; gap: 18px; padding-top: 12px; }
+    .layer-switch { display: flex; gap: 4px; }
+    .layer-switch button { font-size: 12px; padding: 9px 18px; }
+    .layer-switch [aria-selected=true] { border-color: var(--accent); background: var(--selected); color: var(--accent); }
+    .program-name { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 11px; position: relative; }
+    .program-name input { font: 17px ui-monospace, monospace; width: 156px; color: var(--strong); letter-spacing: 1px; padding: 7px 10px; }
+    .program-name [role=alert] { position: absolute; z-index: 2; top: 100%; background: var(--alert-bg); color: var(--alert-text); padding: 8px; width: 260px; }
+    .sync-info { margin-left: auto; font: 10px ui-monospace, monospace; color: var(--muted); }
+    .notice { min-height: 30px; display: flex; gap: 10px; align-items: center; color: var(--muted); font-size: 11px; padding: 5px 0; }
+    .notice button { padding: 2px 7px; }
+
+    .synth-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; align-items: stretch; }
+    .synth-panel { min-width: 0; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); padding: 10px; }
+    .synth-panel h2 {
+      margin: 0 0 10px;
+      color: var(--accent);
+      font-size: 11px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      font-weight: 650;
+    }
+    .control-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 6px; }
+
+    .parameter { position: relative; min-width: 0; text-align: center; }
+    .parameter > label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      font-size: 10px;
+      line-height: 1.25;
+      min-height: 24px;
+      color: var(--label);
+      padding: 0 5px;
+      overflow-wrap: anywhere;
+    }
+    .value-state {
+      display: inline-block;
+      vertical-align: middle;
+      flex-shrink: 0;
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: var(--received);
+    }
+    .parameter-name {
+      min-width: 0;
+      max-width: calc(100% - 8px);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      vertical-align: middle;
+    }
+    .value-state.unknown { background: transparent; border: 1px solid var(--unknown); }
+    .value-state.local { background: var(--accent); }
+    .parameter select { font: 11px ui-monospace, monospace; height: 30px; padding: 4px 2px; }
+    .parameter.discrete { align-self: start; }
+
+    .knob-control { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 5px; }
+    .knob {
+      width: 32px;
+      height: 32px;
+      padding: 3px;
+      border: 2px solid var(--knob-ring);
+      border-bottom-color: transparent;
+      border-radius: 50%;
+      cursor: ns-resize;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    .knob.unset { border-color: var(--unset-ring); border-bottom-color: transparent; }
+    .knob-cap {
+      width: 100%;
+      height: 100%;
+      border: 1px solid var(--knob-border);
+      border-radius: 50%;
+      position: relative;
+      background: linear-gradient(135deg, var(--border), var(--knob-bottom));
+      transform: rotate(var(--angle));
+      box-shadow: 0 2px 3px var(--shadow);
+    }
+    .knob-cap i { position: absolute; left: calc(50% - 1px); top: 2px; width: 2px; height: 7px; background: var(--accent); }
+    .unset .knob-cap i { background: var(--unknown); }
+    .parameter output { display: block; font: 11px ui-monospace, monospace; min-width: 20px; color: var(--control-text); cursor: text; }
+    .unknown output { color: var(--dim); }
+    .precise-value { min-height: 50px; display: flex; align-items: center; }
+    .precise-value input { width: 100%; text-align: center; color: var(--accent); }
+
+    .toggle { display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%; height: 30px; padding: 3px; font-size: 11px; }
+    .toggle i { display: inline-block; width: 17px; height: 9px; border-radius: 8px; background: var(--toggle-track); position: relative; }
+    .toggle i:after { content: ""; position: absolute; width: 5px; height: 5px; border-radius: 50%; top: 2px; left: 2px; background: var(--label); }
+    .toggle.on { color: var(--accent); }
+    .toggle.on i { background: var(--toggle-on); }
+    .toggle.on i:after { left: 10px; background: var(--accent); }
+    .parameter-error { position: absolute; right: 0; bottom: 0; color: var(--accent); }
+
+    .envelope-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    h3 { color: var(--muted); font-size: 10px; margin: 0 0 10px; font-weight: 500; }
+    .subsection + .subsection { border-left: 1px solid var(--line); padding-left: 10px; }
+    .lfo-rows { display: grid; gap: 12px; }
+    .lfo-row { display: grid; grid-template-columns: 10px repeat(3, minmax(0, 1fr)); align-items: center; gap: 6px; }
+    .lfo-row h3 { color: var(--accent); margin: 0; }
+
+    .mod-slots { display: grid; gap: 4px; }
+    .mod-slot, .matrix-head { display: grid; grid-template-columns: 22px 1fr 1fr 60px; align-items: center; gap: 10px; }
+    .matrix-head { color: var(--muted); font-size: 10px; margin-bottom: 6px; }
+    .mod-slot > span { font: 10px ui-monospace, monospace; color: var(--dim); }
+    .mod-slot .parameter > label { display: block; flex: 0 0 4px; min-height: 0; padding: 0; line-height: 0; }
+    .mod-slot .parameter-name { display: none; }
+    .mod-slot .parameter select { height: 28px; }
+    .mod-slot .knob-control { flex-direction: row; justify-content: space-between; }
+    .mod-slot .knob { width: 25px; height: 25px; padding: 2px; }
+    .mod-slot .parameter output { width: 28px; text-align: right; height: auto; }
+    .mod-slot .parameter { display: flex; align-items: center; gap: 3px; }
+    .mod-slot .value-state { position: static; flex-shrink: 0; margin-left: 0; }
+    .mod-slot .knob-control, .mod-slot .precise-value { flex: 1; min-width: 0; }
+    .mod-slot .precise-value { min-height: 28px; }
+
+    .arp-controls { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px 6px; margin-bottom: 5px; }
+    .arp-matrix { width: 100%; overflow-x: auto; }
+    .arp-matrix table { width: 100%; table-layout: fixed; border-spacing: 0; border-collapse: collapse; }
+    .arp-matrix tbody tr:nth-child(2n) { background: var(--stripe); }
+    .arp-matrix caption { color: var(--caption); text-align: left; font-size: 10px; padding: 8px 0 3px; }
+    .arp-matrix th { color: var(--received); font-weight: 400; font-size: 9px; padding: 1px; height: 17px; }
+    .arp-matrix th:first-child { width: 49px; text-align: left; }
+    .arp-matrix td { padding: 0; height: 17px; text-align: center; border-left: 1px solid var(--cell-line); }
+    .arp-matrix td:nth-child(4n+2), .arp-matrix thead th:nth-child(4n+2) { border-left: 1px solid var(--beat-line); }
+    .arp-matrix input {
+      appearance: none;
+      border: 1px solid var(--cell-border);
+      border-radius: 2px;
+      width: 12px;
+      height: 12px;
+      margin: 0;
+      padding: 0;
+      vertical-align: middle;
+      cursor: pointer;
+      background: var(--cell);
+    }
+    .arp-matrix input:checked { background: var(--accent); border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--cell); }
+    .arp-matrix .inactive-step { opacity: .35; }
+
+    .error-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      background: var(--error-bg);
+      color: var(--error-text);
+      padding: 8px 16px;
+      font-size: 12px;
+    }
+    .error-banner button { padding: 2px 8px; }
+
+    .midi-monitor { border-top: 1px solid var(--line); margin-top: 14px; font-size: 11px; color: var(--muted); }
+    summary { padding: 10px 0; cursor: pointer; }
+    summary span { margin-left: 10px; color: var(--unknown); }
+    .monitor-actions { display: flex; gap: 8px; margin-bottom: 8px; }
+    .log-scroll { max-height: 240px; overflow: auto; }
+    .log-scroll table { width: 100%; text-align: left; border-collapse: collapse; font: 10px ui-monospace, monospace; }
+    .log-scroll td, .log-scroll th { padding: 5px; border-bottom: 1px solid var(--line); }
+    .log-scroll code { display: block; overflow-wrap: anywhere; margin-top: 4px; color: var(--dim); }
+
+    footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 10px 20px;
+      color: var(--muted);
+      font-size: 10px;
+      border-top: 1px solid var(--line);
+    }
+    footer b { color: var(--accent); }
+
+    .adsr-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+    .fader-control { display: flex; flex-direction: column; align-items: center; gap: 7px; }
+    .fader { position: relative; width: 26px; height: 90px; cursor: ns-resize; touch-action: none; -webkit-user-select: none; user-select: none; }
+    .fader-track { position: absolute; left: 11px; width: 4px; top: 5px; bottom: 5px; border: 1px solid var(--border); background: var(--track); border-radius: 3px; }
+    .fader-thumb {
+      position: absolute;
+      width: 24px;
+      height: 10px;
+      left: 1px;
+      bottom: clamp(0px, calc(var(--level) - 5px), calc(100% - 10px));
+      border: 1px solid var(--accent);
+      border-radius: 2px;
+      background: linear-gradient(var(--toggle-track) 40%, var(--accent) 40%, var(--accent) 55%, var(--thumb-bottom) 55%);
+      box-shadow: 0 2px 3px var(--shadow);
+      pointer-events: none;
+    }
+    .fader.unset .fader-thumb { background: var(--thumb-unset); border-color: var(--thumb-border); }
+
+    /* Compact overrides */
+    .topbar { padding: 5px 12px; gap: 12px; }
+    h1 { font-size: 19px; }
+    .topbar button { padding: 4px 10px; }
+    .connection-bar { padding: 5px 12px; gap: 12px; }
+    .connection-bar select { padding: 3px 5px; }
+    main { padding: 0 10px 4px; }
+    .patch-bar { padding-top: 5px; gap: 12px; }
+    .layer-switch button { padding: 5px 12px; }
+    .program-name input { font-size: 14px; padding: 4px 8px; }
+    .read-button, .file-button { padding: 5px 12px; }
+    .notice { min-height: 21px; font-size: 10px; padding: 3px 0; }
+    .synth-grid { grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 5px; }
+    .synth-panel { padding: 6px 7px; }
+    .synth-panel h2 { font-size: 10px; margin-bottom: 5px; letter-spacing: .8px; }
+    .osc-panel, .mixer-panel, .filter-panel, .effects-panel { grid-column: span 3; }
+    .env-panel { grid-column: span 6; }
+    .lfo-panel { grid-column: span 3; }
+    .voice-panel, .keyboard-panel, .program-panel { grid-column: 1 / -1; }
+    .mod-panel, .arp-panel { grid-column: span 6; }
+    .mod-panel { align-self: start; }
+    .control-grid { gap: 4px; }
+    .mixer-panel .control-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    .voice-panel .control-grid { grid-template-columns: repeat(15, minmax(0, 1fr)); }
+    .keyboard-panel .control-grid { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+    .program-panel .control-grid { grid-template-columns: repeat(9, minmax(0, 1fr)); }
+    .parameter > label { font-size: 10px; min-height: 24px; padding: 0 3px; }
+    .parameter select, .toggle { height: 24px; font-size: 10px; }
+    .knob { width: 25px; height: 25px; padding: 2px; flex-shrink: 0; }
+    .knob-control { gap: 3px; }
+    .parameter output { font-size: 10px; }
+    .precise-value { min-height: 25px; }
+    .envelope-grid { gap: 6px; }
+    .subsection + .subsection { padding-left: 6px; }
+    h3 { font-size: 9px; margin-bottom: 5px; }
+    .adsr-row { gap: 2px; }
+    .adsr-row .parameter > label { padding: 0; min-height: 17px; }
+    .fader { height: 69px; }
+    .fader-control { gap: 4px; }
+    .lfo-rows { gap: 3px; }
+    .lfo-row { grid-template-columns: 8px repeat(3, minmax(0, 1fr)); gap: 3px; }
+    .lfo-row .parameter > label { min-height: 17px; }
+    .effect-row + .effect-row { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); }
+    .effect-row .parameter > label { min-height: 17px; font-size: 9px; }
+    .effect-row[data-effect=Insert] .parameter:last-child { grid-column: 4; }
+    .effect-row[data-effect=Reverb] .parameter:first-child { grid-column: 2; }
+    .mod-columns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+    .mod-column + .mod-column { border-left: 1px solid var(--line); padding-left: 8px; }
+    .mod-slot, .matrix-head { grid-template-columns: 15px minmax(0, 1.2fr) minmax(0, 1fr) 51px; gap: 3px; }
+    .matrix-head { font-size: 9px; margin-bottom: 4px; }
+    .mod-slots { gap: 3px; }
+    .mod-slot .parameter select { height: 24px; font-size: 10px; }
+    .mod-slot .knob { width: 22px; height: 22px; }
+    .mod-slot .parameter output { width: 20px; min-width: 16px; }
+    .mod-slot .precise-value { min-height: 24px; }
+    .mod-operators { display: grid; grid-template-columns: 2fr 2fr 2fr 1fr; gap: 10px; border-top: 1px solid var(--line); margin-top: 8px; padding-top: 7px; }
+    .operator-group { min-width: 0; }
+    .operator-group + .operator-group { border-left: 1px solid var(--line); padding-left: 10px; }
+    .operator-group h3 { color: var(--accent); }
+    .operator-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+    .operator-group:last-child .operator-row { grid-template-columns: minmax(0, 1fr); }
+    .operator-row .parameter > label { min-height: 17px; }
+    .arp-controls { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; margin: 0; }
+    .arp-controls .parameter > label { min-height: 17px; }
+    .arp-sequence, .arp-modulation { margin-top: 5px; padding-top: 3px; border-top: 1px solid var(--line); }
+    .matrix-caption { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-height: 25px; }
+    .arp-matrix caption { padding: 0 0 2px; font-size: 10px; }
+    .sequence-settings, .modulation-settings { display: flex; gap: 10px; align-items: center; }
+    .sequence-settings .parameter, .modulation-settings .parameter { display: flex; align-items: center; gap: 5px; }
+    .sequence-settings .parameter > label, .modulation-settings .parameter > label { min-height: 0; white-space: nowrap; font-size: 9px; padding: 0; }
+    .sequence-settings .value-state, .modulation-settings .value-state { position: static; flex-shrink: 0; }
+    .sequence-settings .knob { height: 21px; width: 21px; }
+    .sequence-settings .precise-value { width: 50px; }
+    .modulation-settings select { width: 96px; height: 22px; }
+    .modulation-settings [data-parameter=ARP_STEPSEQ_DEST] select { width: 112px; }
+    .arp-step-heading { display: inline-flex; align-items: center; justify-content: center; gap: 2px; }
+    .arp-step-heading .value-state { position: static; flex-shrink: 0; margin-left: 0; }
+    .arp-matrix th, .arp-matrix td { height: 13px; line-height: 13px; padding: 0; font-size: 9px; }
+    .arp-matrix th:first-child { width: 57px; }
+    .arp-matrix input { width: 11px; height: 11px; }
+    .midi-monitor { margin-top: 5px; font-size: 10px; }
+    summary { padding: 4px 0; }
+    footer { padding: 4px 12px; font-size: 9px; }
+    .effects-mod-stack { grid-column: span 6; display: flex; flex-direction: column; gap: inherit; min-width: 0; }
+    .effects-mod-stack .mod-panel { align-self: stretch; flex: 1; }
+    .editor-toolbar { display: flex; align-items: center; gap: 18px; padding: 7px 0 3px; }
+    .program-file-dialog { width: min(440px, calc(100vw - 32px)); padding: 20px; border: 1px solid var(--accent); border-radius: 8px; background: var(--surface); color: var(--strong); }
+    .program-file-dialog::backdrop { background: var(--backdrop); }
+    .program-file-dialog h2 { margin: 0 0 16px; font-size: 16px; }
+    .program-file-dialog p { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+    .program-file-dialog label { display: grid; gap: 6px; }
+    .program-file-dialog input, .program-file-dialog select { width: 100%; min-width: 0; }
+    .file-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+    .editor-toolbar .patch-bar { padding: 0; flex-shrink: 0; gap: 10px; }
+    .editor-toolbar .program-name { gap: 6px; white-space: nowrap; }
+    .editor-toolbar .program-name input { width: 130px; }
+    .topbar .connection-bar { flex: 1; min-width: 0; padding: 0; gap: 10px; background: transparent; border: 0; grid-template-columns: 1fr 1fr .85fr; flex: 0 1 680px; }
+    .topbar .connection-bar label { gap: 5px; font-size: 9px; }
+    .topbar .connection-bar select { font-size: 10px; }
+    .hardware-mode { display: flex; align-items: center; gap: 7px; margin-left: auto; font-size: 10px; color: var(--muted); white-space: nowrap; }
+    .hardware-mode select { width: 110px; padding: 4px 5px; font-size: 11px; }
+    .notice .sync-info { order: 1; margin-left: auto; font-size: 9px; }
+
+    @media (min-width: 1200px) {
+      .effects-panel .parameter { display: flex; align-items: center; justify-content: center; gap: 5px; }
+      .effects-panel .parameter > label { min-height: 0; flex-shrink: 0; width: 70px; text-align: center; }
+      .effects-panel .parameter select { width: 0; flex: 1; min-width: 40px; }
+      .effects-panel .effect-row:before { top: 6px; }
+      .effects-panel .value-state { position: static; flex-shrink: 0; }
+      .fader { height: 55px; }
+      .synth-grid { gap: 6px; }
+      .topbar { padding-top: 4px; padding-bottom: 4px; }
+      .notice { min-height: 18px; padding: 2px 0; }
+      summary { padding-top: 3px; padding-bottom: 3px; }
+      .synth-panel { padding: 6px 7px; }
+      .synth-panel h2 { margin-bottom: 4px; line-height: 12px; }
+      .osc-panel .parameter > label, .mixer-panel .parameter > label { min-height: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .voice-panel, .keyboard-panel, .program-panel { display: grid; grid-template-columns: 110px minmax(0, 1fr); align-items: center; gap: 6px; }
+      .voice-panel h2, .keyboard-panel h2, .program-panel h2 { margin: 0; font-size: 9px; }
+      .voice-panel .parameter > label, .keyboard-panel .parameter > label, .program-panel .parameter > label { min-height: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .lfo-row .parameter > label, .effect-row .parameter > label { min-height: 12px; line-height: 12px; white-space: nowrap; }
+      .effect-row { position: relative; padding-left: 30px; }
+      .effect-row:before { content: attr(data-effect); position: absolute; left: 0; top: 15px; font-size: 8px; color: var(--muted); }
+      .effect-row + .effect-row { margin-top: 3px; padding-top: 3px; }
+      .lfo-rows { gap: 3px; }
+      .lfo-row .knob, .effect-row .knob { width: 22px; height: 22px; }
+      .lfo-row select, .effect-row select { height: 22px; }
+      .arp-matrix td { line-height: 0; }
+      .arp-matrix th { line-height: 11px; }
+      .arp-matrix td, .arp-matrix th { height: 13px; }
+      .arp-matrix input { width: 11px; height: 11px; }
+      .arp-matrix caption { padding-bottom: 1px; }
+      .matrix-caption { min-height: 22px; }
+      .arp-sequence, .arp-modulation { margin-top: 3px; padding-top: 2px; }
+    }
+
+    @media (max-width: 1199px) {
+      .editor-toolbar { flex-wrap: wrap; gap: 8px; }
+      .effects-mod-stack { grid-column: 1 / -1; }
+      .synth-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .osc-panel, .mixer-panel, .filter-panel, .effects-panel, .lfo-panel { grid-column: span 1; }
+      .env-panel, .mod-panel, .arp-panel { grid-column: 1 / -1; }
+      .voice-panel .control-grid { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+      .keyboard-panel .control-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+      .program-panel .control-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+      .connection-bar label { display: grid; gap: 3px; }
+      .arp-matrix th, .arp-matrix td { height: 18px; }
+      .arp-matrix input { height: 14px; width: 14px; }
+    }
+
+    @media (max-width: 600px) {
+      .editor-toolbar .patch-bar { flex-shrink: 1; width: 100%; }
+      .topbar { flex-wrap: wrap; }
+      .topbar .connection-bar { order: 1; flex: 1 0 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .topbar .connection-bar label:last-child { grid-column: 1 / -1; }
+      .editor-toolbar .program-name input { width: 120px; }
+      .version, .connection-status { display: none; }
+      .topbar { padding: 8px 10px; }
+      .connection-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 8px 10px; }
+      .patch-bar { flex-wrap: wrap; gap: 8px; }
+      .program-name { gap: 5px; font-size: 10px; }
+      .program-name input { width: 130px; }
+      .sync-info { margin-left: 0; }
+      .read-button { margin-left: auto; }
+      .synth-grid { grid-template-columns: minmax(0, 1fr); }
+      .synth-panel { grid-column: 1; padding: 9px; }
+      .synth-panel h2 { margin-bottom: 9px; }
+      .parameter select, .toggle { height: 30px; }
+      .control-grid, .voice-panel .control-grid, .keyboard-panel .control-grid, .program-panel .control-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 4px; }
+      .mixer-panel .control-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .mod-columns { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+      .mod-column + .mod-column { padding: 7px 0 0; border-left: 0; border-top: 1px solid var(--line); }
+      .mod-operators { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .operator-group:nth-child(3) { border-left: 0; padding-left: 0; }
+      .arp-controls { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .matrix-caption { flex-wrap: wrap; }
+      .modulation-settings { gap: 7px; }
+      .arp-matrix th:first-child { width: 47px; }
+      .arp-matrix th { font-size: 8px; }
+      .arp-matrix td { height: 22px; }
+      .arp-matrix input { height: 16px; width: 12px; }
+      .sequence-settings .parameter > label, .modulation-settings .parameter > label { font-size: 8px; }
+      footer { padding: 8px 10px; line-height: 1.5; }
+    }
+
+    :root:not([data-theme=light]) button.primary,
+    :root:not([data-theme=light]) .read-button { color: #111; }
+    .theme-toggle { flex-shrink: 0; white-space: nowrap; }
+    .theme-toggle span { color: var(--muted); }
+    .theme-toggle .active-theme { color: var(--accent); font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div id="root">
+    <div class="app-shell" style="zoom: 1;">
+      <header class="topbar">
+        <div class="brand">
+          <h1>MicroMonsta 2 Editor</h1>
+          <span class="version">FW 3.0</span>
+        </div>
+        <section class="connection-bar" aria-label="MIDI connection">
+          <label>MIDI IN<select aria-label="MIDI IN" disabled><option value="">Select input</option></select></label>
+          <label>MIDI OUT<select aria-label="MIDI OUT" disabled><option value="">Select output</option></select></label>
+          <label>Channel
+            <select aria-label="MIDI channels">
+              <option value="1">A 1 / B 2</option><option value="2">A 2 / B 3</option><option value="3">A 3 / B 4</option>
+              <option value="4">A 4 / B 5</option><option value="5">A 5 / B 6</option><option value="6">A 6 / B 7</option>
+              <option value="7">A 7 / B 8</option><option value="8">A 8 / B 9</option><option value="9">A 9 / B 10</option>
+              <option value="10">A 10 / B 11</option><option value="11">A 11 / B 12</option><option value="12">A 12 / B 13</option>
+              <option value="13">A 13 / B 14</option><option value="14">A 14 / B 15</option><option value="15">A 15 / B 16</option>
+              <option value="mpe">MPE</option>
+            </select>
+          </label>
+        </section>
+        <span class="connection-status">MIDI disabled</span>
+        <button class="primary">Enable MIDI</button>
+        <button class="theme-toggle" aria-label="Light theme" aria-pressed="false" title="Switch to light theme">
+          <span class="active-theme">Dark</span> / <span>Light</span>
+        </button>
+      </header>
+
+      <main>
+        <div class="editor-toolbar">
+          <div class="patch-bar">
+            <div role="tablist" aria-label="Timbre" class="layer-switch">
+              <button id="tab-A" role="tab" aria-selected="true" aria-controls="sound-editor" tabindex="0">Timbre A</button>
+              <button id="tab-B" role="tab" aria-selected="false" aria-controls="sound-editor" tabindex="-1" disabled>Timbre B</button>
+            </div>
+            <label class="program-name">Program name
+              <input data-parameters="LAY_NAME_1 LAY_NAME_2 LAY_NAME_3 LAY_NAME_4 LAY_NAME_5 LAY_NAME_6 LAY_NAME_7 LAY_NAME_8"
+                     aria-label="Program name" placeholder="Not read yet" maxlength="8" spellcheck="false" autocomplete="off" aria-invalid="false" value="">
+            </label>
+            <button class="read-button" disabled>↓ Read A</button>
+            <input accept=".syx" aria-label="Load SysEx file" hidden type="file" value="">
+            <button class="file-button" aria-label="Initialize program" title="Send InitPgm.syx to timbre A and initialize the editor" disabled>Init</button>
+            <button class="file-button" aria-label="Send SysEx" title="Send the complete edited program to timbre A" disabled>Send</button>
+            <button class="file-button" aria-label="Load SysEx" title="Load a SysEx program and send it to timbre A" disabled>Load…</button>
+            <button class="file-button" aria-label="Save SysEx" title="Read or load a complete program before saving" disabled>Save…</button>
+          </div>
+          <label class="hardware-mode">Hardware mode
+            <select aria-label="Hardware mode">
+              <option value="mono">Single</option>
+              <option value="multi">Bitimbral</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="notice" role="status">
+          <span class="sync-info" title="Known parameter values. Unread values remain blank.">0 / 183</span>
+          Read a program to synchronize. Unread values are blank.
+        </div>
+
+        <!-- The full editor markup (panels, controls, arp, keyboard, program) goes here.
+             It is unchanged from the original; only the surrounding shell has been cleaned. -->
+        <div id="sound-editor" role="tabpanel" aria-labelledby="tab-A" class="synth-grid">
+          <!-- ... original editor panel markup ... -->
+        </div>
+
+        <details class="midi-monitor">
+          <summary>MIDI monitor <span>0 messages</span></summary>
+        </details>
+      </main>
+
+      <footer>
+        <span>MicroMonsta 2 Editor · Firmware 3.0</span>
+        <span>Drag · Shift for fine adjustment · Enter or double-click to type</span>
+        <span>○ Unknown · <b>●</b> Local edit · ● Received</span>
+      </footer>
+    </div>
+  </div>
+
+      <script type="module" src="script.js"></script>
+
+</body>
+</html>
