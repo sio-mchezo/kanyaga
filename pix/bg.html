@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>game</title>
+    <style>
+        body {
+            margin: 0;
+            background: #111;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            touch-action: none;
+        }
+        canvas {
+            width: 512px;
+            height: 512px;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            display: block;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.9.0/nipplejs.min.js"></script>
+</head>
+<body>
+    <canvas id="c" width="32" height="32"></canvas>
+    <script>
+        const W = 32, H = 32;
+        const ctx = document.getElementById('c').getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+
+        const SPRITE_SIZE = 16;
+        const WORLD_SIZE = 200;
+        const MIN_DIST = SPRITE_SIZE;
+        const MAX_ATTEMPTS = 90;
+
+        const GROUND_TILE = 16;
+        const GROUND_SIZE = 64;
+        const GROUND_TILES = GROUND_SIZE / GROUND_TILE;
+
+        const player = { x: 0, y: 0, tex: null };
+        const npcs = [];
+        const visible = [];
+
+        const grid = new Image();
+        grid.src = 'grid.png';
+
+        const bg1 = new Image();
+        bg1.src = 'bg1.png';
+        
+        const bg2 = new Image();
+        bg2.src = 'bg2.png';
+
+        const spriteImg = new Image();
+        spriteImg.src = 'sprites.png';
+
+        let groundCanvas = null;
+        let bg1Ready = false, bg2Ready = false;
+
+        bg1.onload = () => { bg1Ready = true; };
+        bg2.onload = () => { bg2Ready = true; };
+
+        grid.onload = () => {
+            groundCanvas = document.createElement('canvas');
+            groundCanvas.width = GROUND_SIZE;
+            groundCanvas.height = GROUND_SIZE;
+            const g = groundCanvas.getContext('2d');
+            g.imageSmoothingEnabled = false;
+            for (let ty = 0; ty < GROUND_TILES; ty++) {
+                for (let tx = 0; tx < GROUND_TILES; tx++) {
+                    g.drawImage(grid, tx * GROUND_TILE, ty * GROUND_TILE, GROUND_TILE, GROUND_TILE);
+                }
+            }
+        };
+
+        spriteImg.onload = () => {
+            const cellW = spriteImg.width / 10;
+            const cellH = spriteImg.height / 10;
+            const textures = [];
+
+            for (let r = 0; r < 10; r++) {
+                for (let c = 0; c < 10; c++) {
+                    const cv = document.createElement('canvas');
+                    cv.width = cellW;
+                    cv.height = cellH;
+                    const cx = cv.getContext('2d');
+                    cx.imageSmoothingEnabled = false;
+                    cx.drawImage(spriteImg, c*cellW, r*cellH, cellW, cellH, 0, 0, cellW, cellH);
+                    textures.push(cv);
+                }
+            }
+
+            player.tex = textures[0];
+
+            const pool = [];
+            for (let i = 1; i < textures.length; i++) pool.push(i);
+            for (let i = pool.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [pool[i], pool[j]] = [pool[j], pool[i]];
+            }
+
+            for (let i = 0; i < 99; i++) {
+                const pos = findFreeSpot(i);
+                if (!pos) continue;
+                npcs.push({
+                    x: pos.x,
+                    y: pos.y,
+                    tex: textures[pool[i]]
+                });
+            }
+        };
+
+        function findFreeSpot(placedCount) {
+            for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+                const x = Math.round((Math.random() - 0.5) * WORLD_SIZE);
+                const y = Math.round((Math.random() - 0.5) * WORLD_SIZE);
+
+                if (Math.hypot(x, y) < 20) continue;
+
+                let free = true;
+                for (let j = 0; j < placedCount; j++) {
+                    const dx = npcs[j].x - x;
+                    const dy = npcs[j].y - y;
+                    if (dx*dx + dy*dy < MIN_DIST * MIN_DIST) {
+                        free = false;
+                        break;
+                    }
+                }
+                if (free) return { x, y };
+            }
+            return null;
+        }
+
+        let vx = 0, vy = 0;
+        if (typeof nipplejs !== 'undefined') {
+            const joystick = nipplejs.create({ dataOnly: true });
+            joystick.on('move', (evt, data) => {
+                if (data.force < 0.1) { vx = 0; vy = 0; }
+                else {
+                    vx = Math.cos(data.angle.radian) * (data.force*0.5);
+                    vy = -Math.sin(data.angle.radian) * (data.force*0.5);
+                }
+            });
+            joystick.on('end', () => { vx = 0; vy = 0; });
+        }
+
+        function drawSprite(tex, screenX, screenY) {
+            ctx.drawImage(
+                tex,
+                screenX - tex.width * 0.5,
+                screenY - tex.height * 0.5,
+                tex.width,
+                tex.height
+            );
+        }
+
+        function drawGround(camX, camY) {
+            if (!groundCanvas) {
+                ctx.fillStyle = '#333';
+                ctx.fillRect(0, 0, W, H);
+                return;
+            }
+            // Use exact float positions for the ground so it scrolls smoothly
+            const sx = ((camX % GROUND_SIZE) + GROUND_SIZE) % GROUND_SIZE;
+            const sy = ((camY % GROUND_SIZE) + GROUND_SIZE) % GROUND_SIZE;
+            
+            ctx.drawImage(groundCanvas, -sx, -sy);
+            if (sx > GROUND_SIZE - W) ctx.drawImage(groundCanvas, -sx + GROUND_SIZE, -sy);
+            if (sy > GROUND_SIZE - H) ctx.drawImage(groundCanvas, -sx, -sy + GROUND_SIZE);
+            if (sx > GROUND_SIZE - W && sy > GROUND_SIZE - H) {
+                ctx.drawImage(groundCanvas, -sx + GROUND_SIZE, -sy + GROUND_SIZE);
+            }
+        }
+
+        function drawWorldBackgrounds(camX, camY) {
+            if (bg1Ready) ctx.drawImage(bg1, -camX, -camY);
+            if (bg2Ready) ctx.drawImage(bg2, 33 - camX, -camY);
+        }
+
+        let last = performance.now();
+
+        function loop(now) {
+            requestAnimationFrame(loop);
+
+            const delta = Math.min((now - last) / 1000, 0.05);
+            last = now;
+
+            player.x += vx * 60 * delta;
+            player.y += vy * 60 * delta;
+
+            // Keep camera as a float
+            const camX = player.x - W / 2;
+            const camY = player.y - H / 2;
+
+            ctx.clearRect(0, 0, W, H);
+
+            drawGround(camX, camY);
+            drawWorldBackgrounds(camX, camY);
+
+            visible.length = 0;
+            for (let i = 0; i < npcs.length; i++) {
+                const n = npcs[i];
+                const sx = n.x - camX;
+                const sy = n.y - camY;
+                if (sx > -32 && sx < W + 32 && sy > -32 && sy < H + 32) {
+                    visible.push({ sx, sy, tex: n.tex });
+                }
+            }
+            visible.sort((a, b) => a.sy - b.sy);
+
+            for (let i = 0; i < visible.length; i++) {
+                const n = visible[i];
+                drawSprite(n.tex, n.sx, n.sy);
+            }
+
+            // Player draws perfectly centered since camera follows exact x/y
+            drawSprite(player.tex, player.x - camX, player.y - camY);
+        }
+
+        requestAnimationFrame(loop);
+    </script>
+</body>
+</html>
