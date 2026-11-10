@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>128x128 Canvas Game</title>
+    <style>
+        body {
+            margin: 0;
+            background: #111;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            touch-action: none;
+        }
+        canvas {
+            width: 512px;
+            height: 512px;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            display: block;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.9.0/nipplejs.min.js"></script>
+</head>
+<body>
+    <canvas id="c" width="64" height="64"></canvas>
+    <script>
+        const W = 64, H = 64;
+        const ctx = document.getElementById('c').getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+
+        const SPRITE_SIZE = 16;
+        const WORLD_SIZE = 200;          // NPC spawn area (pixels)
+        const MIN_DIST = SPRITE_SIZE;     // minimum center-to-center distance
+        const MAX_ATTEMPTS = 90;          // per-NPC rejection cap
+
+        const player = { x: 0, y: 0, tex: null };
+        const npcs = [];
+
+        // ---- Assets ----
+        const grid = new Image();
+        grid.src = 'grid.png';
+
+        const spriteImg = new Image();
+        spriteImg.src = 'sprites.png';
+        spriteImg.onload = () => {
+            const cellW = spriteImg.width / 10;
+            const cellH = spriteImg.height / 10;
+            const textures = [];
+
+            for (let r = 0; r < 10; r++) {
+                for (let c = 0; c < 10; c++) {
+                    const cv = document.createElement('canvas');
+                    cv.width = cellW;
+                    cv.height = cellH;
+                    const cx = cv.getContext('2d');
+                    cx.imageSmoothingEnabled = false;
+                    cx.drawImage(spriteImg, c*cellW, r*cellH, cellW, cellH, 0, 0, cellW, cellH);
+                    textures.push(cv);
+                }
+            }
+
+            player.tex = textures[0];
+
+            // Shuffle sprite pool so each NPC gets a unique texture
+            const pool = [];
+            for (let i = 1; i < textures.length; i++) pool.push(i);
+            for (let i = pool.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [pool[i], pool[j]] = [pool[j], pool[i]];
+            }
+
+            // Place 99 NPCs with rejection sampling (no overlap)
+            for (let i = 0; i < 99; i++) {
+                const pos = findFreeSpot(i);
+                if (!pos) continue;  // give up if area is saturated
+                npcs.push({
+                    x: pos.x,
+                    y: pos.y,
+                    tex: textures[pool[i]]
+                });
+            }
+        };
+
+        // Rejection sampling: try random positions until one doesn't overlap
+        function findFreeSpot(placedCount) {
+            for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+                // Random position in a square world around origin
+                const x = Math.round((Math.random() - 0.5) * WORLD_SIZE);
+                const y = Math.round((Math.random() - 0.5) * WORLD_SIZE);
+
+                // Avoid the player spawn area (radius 40)
+                if (Math.hypot(x, y) < 20) continue;
+
+                // Check against every already-placed NPC
+                let free = true;
+                for (let j = 0; j < placedCount; j++) {
+                    const dx = npcs[j].x - x;
+                    const dy = npcs[j].y - y;
+                    if (dx*dx + dy*dy < MIN_DIST * MIN_DIST) {
+                        free = false;
+                        break;
+                    }
+                }
+                if (free) return { x, y };
+            }
+            return null;  // couldn't place — skip this NPC
+        }
+
+        // ---- Input ----
+        let vx = 0, vy = 0;
+        if (typeof nipplejs !== 'undefined') {
+            const joystick = nipplejs.create({ dataOnly: true });
+            joystick.on('move', (evt, data) => {
+                if (data.force < 0.1) { vx = 0; vy = 0; }
+                else {
+                    vx = Math.cos(data.angle.radian) * (data.force*0.5);
+                    vy = -Math.sin(data.angle.radian) * (data.force*0.5);
+                }
+            });
+            joystick.on('end', () => { vx = 0; vy = 0; });
+        }
+
+        // ---- Drawing ----
+        function drawSprite(tex, screenX, screenY) {
+            ctx.drawImage(
+                tex,
+                Math.round(screenX - tex.width / 2),
+                Math.round(screenY - tex.height / 2),
+                tex.width,
+                tex.height
+            );
+        }
+
+        function drawGround(camX, camY) {
+            if (!grid.complete || !grid.naturalWidth) {
+                ctx.fillStyle = '#333';
+                ctx.fillRect(0, 0, W, H);
+                return;
+            }
+            const tileSize = 16;
+            const startX = -((camX % tileSize) + tileSize) % tileSize;
+            const startY = -((camY % tileSize) + tileSize) % tileSize;
+            for (let y = startY; y < H; y += tileSize) {
+                for (let x = startX; x < W; x += tileSize) {
+                    ctx.drawImage(grid, Math.round(x), Math.round(y), tileSize, tileSize);
+                }
+            }
+        }
+
+        // ---- Loop ----
+        let last = performance.now();
+
+        function loop(now) {
+            requestAnimationFrame(loop);
+
+            const delta = Math.min((now - last) / 1000, 0.05);
+            last = now;
+
+            // Move player (120 px/sec)
+            player.x += vx * 60 * delta;
+            player.y += vy * 60 * delta;
+
+            const camX = Math.round(player.x - W/2);
+            const camY = Math.round(player.y - H/2);
+
+            // Clear
+            ctx.clearRect(0, 0, W, H);
+
+            // Ground
+            drawGround(camX, camY);
+
+            // NPCs sorted by Y (depth)
+            const visible = npcs
+                .map(n => ({ sx: n.x - camX, sy: n.y - camY, tex: n.tex }))
+                .filter(n => n.sx > -32 && n.sx < W + 32 && n.sy > -32 && n.sy < H + 32);
+            visible.sort((a, b) => a.sy - b.sy);
+
+            for (const n of visible) {
+                drawSprite(n.tex, n.sx, n.sy);
+            }
+
+            // Player on top
+            drawSprite(player.tex, player.x - camX, player.y - camY);
+        }
+
+        requestAnimationFrame(loop);
+    </script>
+</body>
+</html>
